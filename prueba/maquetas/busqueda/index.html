@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Infradoc · Maquetas de búsqueda</title>
+<style>
+  :root { color-scheme: light dark; --fondo:#f6f7f9; --superficie:#fff; --texto:#1d232b; --suave:#5a6572; --borde:#d9dee4; --acento:#2563a8; }
+  @media (prefers-color-scheme: dark) { :root { --fondo:#14181d; --superficie:#1c2128; --texto:#e6e9ed; --suave:#9aa5b1; --borde:#2f3640; --acento:#6ea8e6; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--fondo); color:var(--texto); }
+  main { max-width: 960px; margin: 0 auto; padding: 48px 24px; }
+  h1 { margin:0 0 4px; font-size: 28px; }
+  p { color: var(--suave); margin: 0 0 24px; }
+  .opciones { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:16px; }
+  a.opcion { display:block; padding:20px; background:var(--superficie); border:1px solid var(--borde); border-radius:10px; color:inherit; text-decoration:none; }
+  a.opcion:hover, a.opcion:focus-visible { border-color: var(--acento); outline: none; }
+  a.opcion strong { display:block; font-size:18px; margin-bottom:6px; color: var(--acento); }
+  a.opcion span { color: var(--suave); font-size: 15px; }
+  ol { color: var(--suave); padding-left: 20px; }
+  .aviso { margin-top: 32px; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Infradoc · Búsqueda</h1>
+  <p>Tres opciones visuales de la misma pantalla, con los mismos datos ficticios. Elegí la que te resulte más cómoda para trabajar todos los días, o qué tomarías de cada una.</p>
+  <div class="opciones">
+    <a class="opcion" href="opcion-a.html"><strong>Opción A · Consola técnica</strong><span>Densa y sobria, como una consola de administración: mucha información por pantalla, filas compactas.</span></a>
+    <a class="opcion" href="opcion-b.html"><strong>Opción B · Limpia y aireada</strong><span>Clara y espaciosa, como una controladora de red moderna: campo grande y tarjetas.</span></a>
+    <a class="opcion" href="opcion-c.html"><strong>Opción C · Panel de operaciones</strong><span>Filtros a la vista y un color por tipo de dato, a mitad de camino entre A y B.</span></a>
+  </div>
+  <h2>Qué probar en cada una</h2>
+  <ol>
+    <li>Abrí la búsqueda con el botón «Buscar» (o con Ctrl + K).</li>
+    <li>Tocá las búsquedas de ejemplo: <code>ilo srv</code>, <code>vpn admin</code>, <code>192.168.10.</code></li>
+    <li>Movete con ↑ ↓ y mirá la vista previa. En una credencial, probá «Copiar» y «Mostrar».</li>
+    <li>Elegí una organización en la cabecera y fijate cómo filtra.</li>
+    <li>Cambiá a tema oscuro.</li>
+  </ol>
+  <p class="aviso">Maquetas con datos 100 % ficticios. No es el sistema funcionando: nada se guarda.</p>
+</main>
+</body>
+</html>
