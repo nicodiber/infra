@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es-AR" data-theme="claro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:,">
+<title>SINET: Infradoc</title>
+<link rel="stylesheet" href="assets/css/estilos.css">
+<script src="assets/js/tema-inicial.js"></script>
+</head>
+<body class="sinsesion">
+<header id="cabecera">
+  <div class="marca"><span class="marca-logo"><span class="ico" data-icon="red"></span></span>SINET: Infradoc</div>
+  <label for="selOrg" class="sr-only">Organización</label>
+  <select id="selOrg" class="conSesion" hidden></select>
+  <span id="lblOrg" class="conSesion" hidden></span>
+  <span class="esp"></span>
+  <button class="btn-buscar conSesion" id="btnBuscar" type="button" aria-keyshortcuts="Control+K"><span class="ico" data-icon="buscar"></span>Buscar <kbd>Ctrl K</kbd></button>
+  <button class="conSesion" id="btnSol" type="button" title="Solicitudes"><span class="ico" data-icon="solicitudes"></span>Solicitudes <span class="insignia" id="insSol">0</span></button>
+  <button class="conSesion" id="btnUsuario" type="button" aria-haspopup="menu"></button>
+</header>
+<div id="cuerpo">
+  <nav id="lateral" aria-label="Navegación"></nav>
+  <main id="principal"><div id="cargando" role="status"><div><div class="cargador" aria-hidden="true"></div><b>Cargando SINET: Infradoc…</b><div>La primera vez se preparan los datos de ejemplo en este navegador; puede tardar un momento.</div><noscript>Hace falta JavaScript para usar Infradoc.</noscript></div></div></main>
+</div>
+<div id="menuUsuario" class="menu-usuario" role="menu"></div>
+<div id="pie"><span>SINET: Infradoc <span class="version" id="version">v0.5.0</span></span><span id="ultima-exportacion"></span></div>
+<div id="velo"><div id="modal"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
