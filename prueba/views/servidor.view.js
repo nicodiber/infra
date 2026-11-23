@@ -12,8 +12,8 @@ import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { h, tabla, fmtFechaHora, indicadorVerificacion, icono } from '../assets/js/utiles.js';
 import { ROTULO_CREDENCIAL_TIPO } from '../assets/js/modelos.js';
 import { pintarNotas } from '../assets/js/notas.js';
-import {
 import { confirmarConPasos } from '../assets/js/verificacion.js';
+import {
   aplicarEstilos, bloqueSinPermiso, estadoVacio, estadoPill, botonBaja, miniRack, fichaBloque, pieVerificacion, nombresDeUsuarios, partesHash, rangoU, rutaEquipo,
   CAMPOS_SERVIDOR, valorCampo, textoCampo, crearCampo, validarServidor, aplicarServidor, validarLugarEnRack, porId, rutaUbicacion
 } from '../assets/js/racks.js';
@@ -141,7 +141,7 @@ export async function renderVista(contenedor) {
     const botones = editando
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }), h('button', { type: 'button', text: 'Cancelar', onclick: () => { editando = false; errorForm = null; pintar(); } })]
       : [h('button', { type: 'button', text: 'Etiqueta', title: 'Imprimir la etiqueta con QR', onclick: () => { location.hash = '#/etiqueta/equipos/' + eq.id; } }),
-        [puedeModificar ? h('button', { type: 'button', text: 'Editar', onclick: () => { editando = true; errorForm = null; pintar(); } }) : null,
+        puedeModificar ? h('button', { type: 'button', text: 'Editar', onclick: () => { editando = true; errorForm = null; pintar(); } }) : null,
         rack ? h('button', { type: 'button', text: 'Ver en rack', onclick: () => ir('#/rack/' + rack.id + '?resaltar=' + eq.id) }) : null];
 
     if (!editando) {

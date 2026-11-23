@@ -11,8 +11,8 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { h, tabla, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
-import {
 import { confirmarConPasos } from '../assets/js/verificacion.js';
+import {
   aplicarEstilos, botonBaja, bloqueSinPermiso, estadoVacio, fichaBloque, pieVerificacion, nombresDeUsuarios, partesHash, rangoU, rutaEquipo, moduloEquipo,
   claseTipoRack, porId, rutaUbicacion, textoUnidadesLibres, unidadesOcupadas
 } from '../assets/js/racks.js';
@@ -131,7 +131,7 @@ export async function renderVista(contenedor) {
     const botones = editando
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }), h('button', { type: 'button', text: 'Cancelar', onclick: () => { editando = false; errorForm = null; pintar(); } })]
       : [h('button', { type: 'button', text: 'Etiqueta', title: 'Imprimir la etiqueta con QR', onclick: () => { location.hash = '#/etiqueta/racks/' + rack.id; } }),
-        [puedeModificar ? h('button', { type: 'button', text: 'Editar', onclick: () => { editando = true; errorForm = null; pintar(); } }) : null,
+        puedeModificar ? h('button', { type: 'button', text: 'Editar', onclick: () => { editando = true; errorForm = null; pintar(); } }) : null,
         puedeVerificar ? h('button', { type: 'button', class: 'primario', text: 'Recorrido de verificación', title: 'Confirmar en el lugar, uno por uno, los equipos y puertos de este rack',
           onclick: () => ir('#/recorrido/' + rack.id) }) : null];
     if (!editando) {
