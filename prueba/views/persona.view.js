@@ -12,7 +12,7 @@ import { h, tabla, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion } fro
 import { ROTULO_PERSONA_ESTADO } from '../assets/js/modelos.js';
 import { encabezado, leerRuta, pestanas, campo, enlace, formulario, fichaCab, textoUltimoCambio, pedirBaja, seguro, valorHistorial } from '../assets/js/red.js';
 import {
-  inyectarEstilosPersonas, cargarContextoPersonas, avisoPersonas, enlaceFila, nombreCuenta, hashDeEquipo, tipoEquipo, pillCuenta, alertaCuentaDeBaja, modalAsignar, modalDevolver, modalMudar
+  cargarContextoPersonas, avisoPersonas, enlaceFila, nombreCuenta, hashDeEquipo, tipoEquipo, pillCuenta, alertaCuentaDeBaja, modalAsignar, modalDevolver, modalMudar
 } from '../assets/js/personas.js';
 
 /** @typedef {import('../assets/js/red.js').Contexto} Contexto */
@@ -37,7 +37,6 @@ async function cargarNotas() {
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilosPersonas();
   const ctx = await cargarContextoPersonas();
   const partes = leerRuta().partes;
   const id = partes[0];
@@ -308,7 +307,7 @@ function confirmarEliminar(ctx, p) {
     h('p', { text: 'La ficha deja de aparecer en listados y búsquedas. El historial se conserva y se puede revertir desde el historial de cambios.' }),
     h('div', { class: 'herr', style: 'justify-content:flex-end' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }),
       h('button', { type: 'button', class: 'primario', text: 'Sí, eliminar', onclick: async () => {
-        const ok = await seguro(() => repositorio.guardar('personas', { ...p, eliminado_en: ahoraISO() }, ctx.u.id));
+        const ok = await seguro(() => repositorio.darDeBaja('personas', p.id, { usuarioId: ctx.u.id }));
         cerrarModal();
         if (ok) { toast('Ficha eliminada'); ir('#/personas'); }
       } })])]));

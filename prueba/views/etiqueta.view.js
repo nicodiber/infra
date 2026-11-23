@@ -18,19 +18,8 @@ import { qrSvg } from '../assets/js/qr.js';
 const NS = 'http://www.w3.org/2000/svg';
 const CATEGORIAS_PC = ['PC de escritorio', 'Notebook'];
 
+/** Solo el CSS de impresión; el de pantalla está en assets/css/estilos.css (el @page y el @media print se quedan acá para no cambiar la impresión). */
 const CSS = `
-.et-vista{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;margin-top:12px}
-.et-papel{background:#fff;color:#000;width:100mm;height:50mm;box-shadow:0 0 0 1px #888,0 4px 14px rgba(0,0,0,.25);flex:none;line-height:0}
-.et-papel svg{display:block}
-.et-lado{flex:1;min-width:260px;max-width:560px}
-.et-lado .herr{margin-top:0}
-.et-nota{border:1px solid var(--acc-borde);border-left:4px solid var(--acc);background:var(--acc-suave);border-radius:8px;padding:9px 14px;margin-top:14px;color:var(--texto);max-width:760px}
-.et-barra{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:10px 0}
-.et-barra label{display:block;font-size:12.5px;color:var(--muted)}
-.et-lista{max-height:calc(100vh - 430px);min-height:200px;overflow:auto;border:1px solid var(--borde);border-radius:8px;background:var(--surf);margin-top:8px}
-.et-lista table{border:0;border-radius:0}
-.et-lista th{position:sticky;top:0;z-index:2}
-#et-impresion{display:none}
 @media print{
   @page{size:100mm 50mm;margin:0}
   html,body{margin:0 !important;padding:0 !important;background:#fff !important;height:auto !important;overflow:visible !important}

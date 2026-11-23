@@ -15,7 +15,7 @@ import { h, icono, indicadorVerificacion, diasDesde, normalizar } from '../asset
 import { confirmarConPasos, pasosDe, leerPlantillas } from '../assets/js/verificacion.js';
 import { ROTULO_EQUIPO_TIPO, ROTULO_ESTADO_EQUIPO } from '../assets/js/modelos.js';
 import {
-  aplicarEstilos, bloqueSinPermiso, estadoVacio, partesHash, rangoU, rutaEquipo, moduloEquipo, porId, crearCampo, validarLugarEnRack, ipValida
+  bloqueSinPermiso, estadoVacio, partesHash, rangoU, rutaEquipo, moduloEquipo, porId, crearCampo, validarLugarEnRack, ipValida
 } from '../assets/js/racks.js';
 
 /** @typedef {import('../assets/js/racks.js').CampoDef} CampoDef */
@@ -76,7 +76,6 @@ const tieneAlgo = p => !!(p.conectado_a_puerto_id || p.conectado_a_descripcion |
  * @param {HTMLElement} contenedor
  */
 export async function renderVista(contenedor) {
-  aplicarEstilos();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const org = sesion.organizacionActiva();
   const { segs } = partesHash();

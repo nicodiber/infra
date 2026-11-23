@@ -14,6 +14,7 @@ const CLAVE_USUARIO = 'infradoc.sesion.usuario';
 const CLAVE_ORG = 'infradoc.sesion.organizacion';
 const CLAVE_PREVIO = 'infradoc.sesion.ingreso_previo';
 const CLAVE_AVISO = 'infradoc.sesion.aviso_visto';
+const CLAVE_AVISO_INGRESO = 'infradoc.sesion.aviso_ingreso';
 
 /** @type {UsuarioSesion|null} */
 let actual = null;
@@ -34,6 +35,8 @@ async function cargar(usuarioId) {
  * @param {string} usuarioId
  */
 export async function ingresar(usuarioId) {
+  const baja = await repositorio.organizacionDeBajaDe(usuarioId);
+  if (baja) throw new Error(textoOrganizacionDeBaja(baja));
   const u = await cargar(usuarioId);
   if (!u) throw new Error('El usuario no puede ingresar.');
   const previo = await repositorio.ultimoIngreso(usuarioId);
@@ -49,11 +52,35 @@ export async function ingresar(usuarioId) {
   return u;
 }
 
+/** Aviso que ve quien no puede ingresar porque su organización está dada de baja (QC50-A). @param {string} nombre */
+export function textoOrganizacionDeBaja(nombre) { return 'La organización ' + nombre + ' está dada de baja. Pedile al superadmin que la reactive.'; }
+
+/**
+ * Si la organización del usuario con la sesión abierta se dio de baja, cierra la sesión y deja el aviso para la pantalla de ingreso.
+ * El superadmin no se ve afectado. @returns {Promise<boolean>} true si cerró la sesión.
+ */
+export async function cerrarSiOrganizacionDeBaja() {
+  if (!actual) return false;
+  const baja = await repositorio.organizacionDeBajaDe(actual.id);
+  if (!baja) return false;
+  salir();
+  sessionStorage.setItem(CLAVE_AVISO_INGRESO, textoOrganizacionDeBaja(baja));
+  return true;
+}
+
+/** Aviso pendiente para la pantalla de ingreso (se muestra una sola vez), o null. */
+export function tomarAvisoIngreso() {
+  const t = sessionStorage.getItem(CLAVE_AVISO_INGRESO);
+  sessionStorage.removeItem(CLAVE_AVISO_INGRESO);
+  return t;
+}
+
 /** Retoma la sesión de esta pestaña (por ejemplo al recargar). Devuelve el usuario o null. */
 export async function restaurar() {
   const id = sessionStorage.getItem(CLAVE_USUARIO);
   actual = id ? await cargar(id) : null;
   if (!actual) sessionStorage.removeItem(CLAVE_USUARIO);
+  else await cerrarSiOrganizacionDeBaja();
   return actual;
 }
 

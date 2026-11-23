@@ -11,7 +11,7 @@ import * as solicitudes from '../assets/js/solicitudes.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, repintarMarco, toast } from '../assets/js/marco.js';
 import {
-  h, icono, tabla, ahoraISO, fmtFecha, fmtFechaHora, diasHasta, textoVence, indicadorVerificacion, estadoVerificacion, diasDesde
+  h, icono, tabla, fmtFecha, fmtFechaHora, diasHasta, textoVence, indicadorVerificacion, estadoVerificacion, diasDesde
 } from '../assets/js/utiles.js';
 import {
   COLECCION_DE_ENTIDAD, ROTULO_CREDENCIAL_TIPO, ROTULO_SERVICIO_TIPO, ROTULO_EQUIPO_TIPO, ROTULO_PERFIL, moduloDeEntidad
@@ -166,10 +166,6 @@ async function bloqueSolicitudes(u, orgId, alCambiar) {
     const confirmarResolucion = async (/** @type {'aprobada'|'rechazada'} */ r, /** @type {'credencial'|'tipo_credencial'|null} */ alcance) => {
       try {
         await repositorio.resolverSolicitud(s.id, r, u.id, alcance);
-        if (esBaja && r === 'aprobada') {
-          const e = await repositorio.obtener('equipos', s.solicitud_entidad_id);
-          if (e) await repositorio.guardar('equipos', { ...e, eliminado_en: ahoraISO() }, u.id, { motivo: 'Baja aprobada por solicitud.' });
-        }
         toast(r === 'aprobada' ? 'Solicitud aprobada' : 'Solicitud rechazada');
         await repintarMarco();
         alCambiar();

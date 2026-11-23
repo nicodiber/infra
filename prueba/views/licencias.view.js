@@ -13,28 +13,7 @@ import { h, tabla, fmtFecha, diasHasta, textoVence, indicadorVerificacion, norma
 import { ROTULO_LICENCIA_TIPO } from '../assets/js/modelos.js';
 import { sinPermiso, chips } from '../assets/js/credenciales.js';
 
-const CSS = `
-.lic-uso{display:flex;align-items:center;gap:8px;min-width:150px}
-.lic-barra{flex:0 0 84px;height:9px;border-radius:5px;background:var(--surf2);border:1px solid var(--borde-fuerte);overflow:hidden}
-.lic-barra>i{display:block;height:100%;background:var(--acc)}
-.lic-barra.exc{border-color:var(--bad-borde)}
-.lic-barra.exc>i{background:repeating-linear-gradient(45deg,var(--bad-fg) 0 4px,var(--bad-bg) 4px 8px)}
-.lic-barra.lleno>i{background:repeating-linear-gradient(90deg,var(--acc) 0 6px,var(--acc-borde) 6px 8px)}
-.lic-n{font:600 12.5px var(--mono);white-space:nowrap}
-.lic-n.exc{color:var(--bad-fg);font-weight:700}
-.lic-venc{font-size:12.5px}
-.lic-venc b{display:inline-block;margin-right:6px;padding:0 6px;border-radius:4px;border:1px solid currentColor;font-size:11px}
-.lic-venc.pasado{color:var(--bad-fg)} .lic-venc.pronto{color:var(--warn-fg)}
-`;
 
-/** Agrega los estilos propios una sola vez. */
-export function aplicarEstilosLicencias() {
-  if (document.getElementById('estilos-licencias')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-licencias';
-  s.textContent = CSS;
-  document.head.appendChild(s);
-}
 
 /**
  * Estado de vencimiento de una licencia.
@@ -71,7 +50,6 @@ export function barraUso(uso) {
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  aplicarEstilosLicencias();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const orgId = /** @type {string} */ (sesion.organizacionActiva());
   const migas = await migasRaiz();

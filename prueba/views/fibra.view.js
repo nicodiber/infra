@@ -10,7 +10,7 @@ import { puede } from '../assets/js/permisos.js';
 import { ir } from '../assets/js/marco.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_FIBRA_TIPO, ATENUACION_ALTA_DB } from '../assets/js/modelos.js';
-import { cargarContexto, encabezado, pestanas, chipsEstado, avisoVista, inyectarEstilos } from '../assets/js/red.js';
+import { cargarContexto, encabezado, pestanas, chipsEstado, avisoVista } from '../assets/js/red.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -40,38 +40,6 @@ export function pelosConAtenuacionAlta(t) {
 /** @param {number} n */
 export const textoDb = n => String(n).replace('.', ',') + ' dB';
 
-/** Agrega los estilos de fibra una sola vez. */
-export function estilosFibra() {
-  if (document.getElementById('estilos-fibra')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-fibra';
-  s.textContent = `
-.fb-esquema{width:100%;max-height:420px;background:var(--surf2);border:1px solid var(--borde);border-radius:8px}
-.fb-caja rect{fill:var(--surf);stroke:var(--c-equipo);stroke-width:2}
-.fb-caja text{fill:var(--texto);font:600 12px var(--sans)}
-.fb-caja .sub{fill:var(--muted);font:11px var(--sans)}
-.fb-tramo{cursor:pointer}
-.fb-tramo line,.fb-tramo path{fill:none;stroke:var(--c-vlan);stroke-width:3}
-.fb-tramo.alta line,.fb-tramo.alta path{stroke:var(--bad-fg);stroke-width:4;stroke-dasharray:9 5}
-.fb-tramo:hover line,.fb-tramo:focus line,.fb-tramo:hover path,.fb-tramo:focus path{stroke-width:6}
-.fb-tramo:focus{outline:none}
-.fb-tramo .fb-et rect{fill:var(--surf);stroke:var(--borde-fuerte)}
-.fb-tramo.alta .fb-et rect{fill:var(--bad-bg);stroke:var(--bad-fg)}
-.fb-tramo .fb-et text{fill:var(--texto);font:11px var(--sans)}
-.fb-leyenda{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;font-size:12.5px;color:var(--muted);align-items:center}
-.fb-leyenda svg{vertical-align:middle}
-.fb-pelos{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:8px}
-.fb-pelo{border:1px solid var(--borde);border-radius:6px;padding:6px 8px;background:var(--surf);min-height:62px;font-size:13px}
-.fb-pelo b{font-size:15px}
-.fb-pelo.usado{border-left:5px solid var(--c-vlan)}
-.fb-pelo.libre{border-style:dashed;color:var(--muted)}
-.fb-pelo.alta{border-color:var(--bad-fg);background:var(--bad-bg)}
-.fb-pelo .acc{margin-top:4px}
-tr.fb-alta td{background:var(--bad-bg);color:var(--bad-fg)}
-.fb-tag{display:inline-block;border:1px solid var(--bad-fg);color:var(--bad-fg);background:var(--bad-bg);border-radius:10px;padding:0 7px;font-size:11.5px;font-weight:700}
-`;
-  document.head.appendChild(s);
-}
 
 /** @param {string} tag @param {Object<string, string|number>} [attrs] @param {string} [texto] */
 function sv(tag, attrs, texto) {
@@ -83,7 +51,6 @@ function sv(tag, attrs, texto) {
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilos(); estilosFibra();
   const ctx = await cargarContexto();
   await encabezado(contenedor, 'P30', 'Fibra óptica', [['Red', '#/red/equipos'], ['Fibra']]);
   if (!puede(ctx.u, 'ver', 'red', ctx.org)) { avisoVista(contenedor, 'Tu rol no tiene acceso al módulo Red.'); return; }

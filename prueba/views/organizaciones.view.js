@@ -96,7 +96,7 @@ export async function renderVistaOrganizaciones(contenedor) {
       h('p', { text: 'Solo el superadmin puede reactivarla, desde «Ver dadas de baja». Sus usuarios no van a poder trabajar con ella mientras esté dada de baja.' }), error,
       h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Sí, dar de baja', onclick: async () => {
         try {
-          await repositorio.guardar('organizaciones', { ...o, eliminado_en: new Date().toISOString() }, u.id);
+          await repositorio.darDeBaja('organizaciones', o.id, { usuarioId: u.id });
           if (sesion.organizacionActiva() === o.id) sesion.fijarOrganizacionActiva(null);
           cerrarModal(); toast('Organización «' + o.organizacion_nombre + '» dada de baja'); await refrescar();
         } catch (e) { error.textContent = e instanceof Error ? e.message : 'No se pudo dar de baja.'; error.hidden = false; }

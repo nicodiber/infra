@@ -574,47 +574,6 @@ async function interpretarConIA(pregunta) {
 // Interfaz
 // ---------------------------------------------------------------------------------------------
 
-const CSS = `
-.as-fab{position:fixed;right:18px;bottom:42px;z-index:40;width:48px;height:48px;border-radius:50%;padding:0;display:grid;place-items:center;background:var(--acc);color:var(--acc-fg);border:2px solid var(--surf);box-shadow:0 6px 20px rgba(0,0,0,.3)}
-.as-fab:hover{background:var(--acc);filter:brightness(1.08)}
-.as-fab:focus-visible,.as-chip:focus-visible,.as-enviar:focus-visible,.as-cerrar:focus-visible{outline:3px solid var(--texto);outline-offset:2px}
-.as-fab .ico{width:24px;height:24px}
-.as-fab[hidden],.as-panel[hidden]{display:none}
-.as-panel{position:fixed;right:18px;bottom:98px;z-index:40;width:380px;max-width:calc(100vw - 36px);height:min(540px,calc(100vh - 150px));display:flex;flex-direction:column;background:var(--surf);color:var(--texto);border:1px solid var(--borde-fuerte);border-radius:10px;box-shadow:var(--sombra);overflow:hidden;font-size:13.5px}
-.as-cab{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surf2);border-bottom:1px solid var(--borde)}
-.as-cab h2{margin:0;font-size:14.5px;flex:1}
-.as-cab .as-alcance{font-size:12px;color:var(--muted);font-weight:500}
-.as-cerrar{width:28px;height:28px;padding:0;display:grid;place-items:center;border:0;background:transparent;font-size:18px;line-height:1;color:var(--muted)}
-.as-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
-.as-msg{max-width:94%;padding:8px 11px;border-radius:9px;line-height:1.4;overflow-wrap:anywhere}
-.as-usr{align-self:flex-end;background:var(--acc-suave);color:var(--acc-texto);border:1px solid var(--acc-borde)}
-.as-bot{align-self:flex-start;background:var(--surf2);border:1px solid var(--borde)}
-.as-bot p{margin:0 0 6px}
-.as-bot p:last-child{margin-bottom:0}
-.as-lista{list-style:none;margin:4px 0 6px;padding:0;display:flex;flex-direction:column;gap:6px}
-.as-lista li{padding:6px 8px;background:var(--surf);border:1px solid var(--borde);border-radius:6px}
-.as-lista a{color:var(--acc-texto);font-weight:600}
-.as-flecha{color:var(--muted);margin:0 4px}
-.as-det{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
-.as-org{display:inline-block;margin-top:3px;padding:0 6px;border-radius:9px;background:var(--nunca-bg);color:var(--nunca-fg);font-size:11.5px}
-.as-mas,.as-nota,.as-aviso{color:var(--muted);font-size:12px}
-.as-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px}
-.as-chip{height:auto;min-height:28px;padding:4px 10px;border-radius:14px;font-weight:500;font-size:12.5px;text-align:left;background:var(--surf);border:1px solid var(--borde-fuerte);color:var(--texto)}
-.as-chip:hover{background:var(--acc-suave);border-color:var(--acc-borde)}
-.as-form{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--borde);background:var(--surf2)}
-.as-input{flex:1;height:34px;padding:0 10px;border:1px solid var(--ctl);border-radius:6px;background:var(--surf);color:var(--texto);font:inherit}
-.as-aviso{padding:0 12px 8px;background:var(--surf2);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.as-aviso button{height:26px;font-size:12px}
-@media (max-width:760px){
-.as-fab{right:12px;bottom:calc(36px + env(safe-area-inset-bottom,0px));width:52px;height:52px;z-index:30}
-.as-panel{inset:0;right:0;bottom:0;width:100vw;max-width:100vw;height:100dvh;border-radius:0;border:0;z-index:48}
-.as-cab{padding:10px 12px}
-.as-cerrar{width:44px;height:44px;font-size:24px}
-.as-input{height:44px;font-size:16px}
-.as-enviar{min-height:44px}
-.as-chip{min-height:40px;font-size:13.5px}
-}
-`;
 
 /** @type {HTMLElement|null} */ let fab = null;
 /** @type {HTMLElement|null} */ let panel = null;
@@ -797,11 +756,6 @@ function sincronizarSesion() {
 /** Arma el botón flotante y el panel (una sola vez) y los conecta a la sesión. */
 export function iniciarAsistente() {
   if (fab) return;
-  const estilo = document.createElement('style');
-  estilo.id = 'as-estilos';
-  estilo.textContent = CSS;
-  document.head.appendChild(estilo);
-
   fab = h('button', { type: 'button', class: 'as-fab', 'aria-label': 'Asistente de consultas', title: 'Asistente de consultas', 'aria-expanded': 'false', 'aria-controls': 'as-panel', hidden: true }, [icono('pregunta')]);
   fab.addEventListener('click', () => { if (panel && panel.hidden) abrirPanel(); else cerrarPanel(); });
 

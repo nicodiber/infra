@@ -10,7 +10,7 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import {
-  aplicarEstilos, bloqueSinPermiso, estadoVacio, estadoPill, chipsEstado, porId, rangoU, rutaEquipo,
+  bloqueSinPermiso, estadoVacio, estadoPill, chipsEstado, porId, rangoU, rutaEquipo,
   CAMPOS_SERVIDOR, crearCampo, validarServidor, aplicarServidor, validarLugarEnRack
 } from '../assets/js/racks.js';
 
@@ -18,7 +18,6 @@ import {
  * @param {HTMLElement} contenedor
  */
 export async function renderVista(contenedor) {
-  aplicarEstilos();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const org = sesion.organizacionActiva();
   const migas = (await migasRaiz()).concat([['Servidores']]);

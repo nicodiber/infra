@@ -11,7 +11,7 @@ import { ir, toast, abrirModal, cerrarModal } from '../assets/js/marco.js';
 import { h, tabla, ahoraISO, fmtFecha, fmtFechaHora } from '../assets/js/utiles.js';
 import { ROTULO_CUENTA_ESTADO } from '../assets/js/modelos.js';
 import { encabezado, leerRuta, pestanas, campo, enlace, formulario, fichaCab, textoUltimoCambio, pedirBaja, seguro, valorHistorial } from '../assets/js/red.js';
-import { inyectarEstilosPersonas, cargarContextoPersonas, avisoPersonas, nombreCuenta, pillCuenta, alertaCuentaDeBaja } from '../assets/js/personas.js';
+import { cargarContextoPersonas, avisoPersonas, nombreCuenta, pillCuenta, alertaCuentaDeBaja } from '../assets/js/personas.js';
 
 /** @typedef {import('../assets/js/red.js').Contexto} Contexto */
 /** @typedef {import('../assets/js/modelos.js').CuentaDominio} CuentaDominio */
@@ -66,7 +66,6 @@ async function usuarioRepetido(dominio, usuario, idActual, org) {
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilosPersonas();
   const ctx = await cargarContextoPersonas();
   const { partes, consulta } = leerRuta();
   const id = partes[0];
@@ -220,7 +219,7 @@ function confirmarEliminar(ctx, c) {
     h('p', { text: 'La cuenta deja de aparecer en listados y búsquedas. Esto no la borra del dominio. El historial se conserva y se puede revertir desde el historial de cambios.' }),
     h('div', { class: 'herr', style: 'justify-content:flex-end' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }),
       h('button', { type: 'button', class: 'primario', text: 'Sí, eliminar', onclick: async () => {
-        const ok = await seguro(() => repositorio.guardar('cuentas_dominio', { ...c, eliminado_en: ahoraISO() }, ctx.u.id));
+        const ok = await seguro(() => repositorio.darDeBaja('cuentas_dominio', c.id, { usuarioId: ctx.u.id }));
         cerrarModal();
         if (ok) { toast('Cuenta eliminada'); ir('#/personas/cuentas'); }
       } })])]));

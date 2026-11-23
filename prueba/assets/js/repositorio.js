@@ -566,6 +566,19 @@ function nuevoCambio(coleccion, registro, operacion, campo, anterior, nuevo, usu
  */
 export async function guardar(coleccion, registro, usuarioId, opciones) {
   await iniciar();
+  const r = armarGuardado(coleccion, registro, usuarioId, opciones);
+  if (r.sinCambios) return publico(coleccion, r.nuevo);
+  await persistir(r.escrituras);
+  return publico(coleccion, r.nuevo);
+}
+
+/**
+ * Arma lo que `guardar` escribiría (el registro nuevo y sus `Cambio`) sin tocar el almacenamiento, para poder juntar
+ * varias escrituras en una sola operación atómica (`darDeBaja`, `resolverSolicitud`). Valida igual que `guardar`.
+ * @param {string} coleccion @param {any} registro @param {string} usuarioId @param {{motivo?: string}} [opciones]
+ * @returns {{nuevo: any, escrituras: Array<[string, any]>, sinCambios: boolean}}
+ */
+function armarGuardado(coleccion, registro, usuarioId, opciones) {
   if (!cache[coleccion]) throw new Error('Colección desconocida: ' + coleccion);
   const motivo = (opciones && opciones.motivo) || null;
   const ahora = ahoraISO();
@@ -606,13 +619,80 @@ export async function guardar(coleccion, registro, usuarioId, opciones) {
       nuevo.eliminado_en = entrante.eliminado_en ? ahora : null;
       nuevo.eliminado_por = entrante.eliminado_en ? usuarioId : null;
     }
-    if (!cambios.length) return publico(coleccion, previo);
+    if (!cambios.length) return { nuevo: previo, escrituras: [], sinCambios: true };
     if (coleccion === 'credenciales' && cambios.some(c => c.cambio_campo === 'credencial_secreto')) nuevo.credencial_secreto_actualizado_en = ahora;
     if (COLECCIONES_COMUNES.includes(coleccion)) Object.assign(nuevo, { actualizado_en: ahora, actualizado_por: usuarioId, verificado_en: ahora, verificado_por: usuarioId });
   }
   validarEscritura(coleccion, nuevo);
-  await persistir(/** @type {[string, any][]} */ ([[coleccion, nuevo]]).concat(cambios.map(c => /** @type {[string, any]} */ (['cambios', c]))));
-  return publico(coleccion, nuevo);
+  return { nuevo, escrituras: /** @type {Array<[string, any]>} */ ([[coleccion, nuevo]]).concat(cambios.map(c => /** @type {[string, any]} */ (['cambios', c]))), sinCambios: false };
+}
+
+/** Colecciones con posición en el plano (`plano_x`, `plano_y`). */
+const CON_POSICION_EN_PLANO = ['equipos', 'racks', 'puestos'];
+
+/**
+ * Arma, sin escribir, la baja de un registro con todas sus dependencias (regla 5 de `docs/modelo-de-datos.md`):
+ * equipo → sus puertos (baja), las conexiones de los puertos de la otra punta (se limpian), sus asignaciones e instalaciones
+ * de licencia vigentes (se cierran hoy) y su posición en el plano (se quita); persona → sus asignaciones vigentes (se cierran);
+ * licencia → sus instalaciones vigentes (se cierran); rack y puesto → su posición en el plano; y en todos los casos las relaciones
+ * donde participa (baja). Devuelve las escrituras listas para `persistir`.
+ * @param {string} coleccion @param {string} id @param {string} usuarioId @param {string} [motivo]
+ * @returns {Array<[string, any]>}
+ */
+function armarBaja(coleccion, id, usuarioId, motivo) {
+  const reg = cache[coleccion] && cache[coleccion].get(id);
+  if (!reg || reg.eliminado_en) throw new Error('El registro no existe o ya está dado de baja.');
+  if (coleccion === 'cambios' || coleccion === 'registro_accesos') throw new Error('Este registro no se da de baja.');
+  const ahora = ahoraISO(), hoy = hoyISO();
+  const entidad = ENTIDAD_DE_COLECCION[coleccion];
+  /** @type {Map<string, [string, any]>} */ const porRegistro = new Map();
+  /** @type {Array<[string, any]>} */ const cambios = [];
+  /** Suma el cambio de un registro (si ya había uno armado en esta operación, parte de ese). @param {string} col @param {any} r @param {any} cambio @param {string} m */
+  const sumar = (col, r, cambio, m) => {
+    const base = porRegistro.get(col + ':' + r.id);
+    const a = armarGuardado(col, { ...publico(col, base ? base[1] : r), ...cambio }, usuarioId, { motivo: m });
+    if (a.sinCambios) return;
+    for (const w of a.escrituras) { if (w[0] === 'cambios') cambios.push(w); else porRegistro.set(col + ':' + r.id, w); }
+  };
+  const m = motivo || 'Baja';
+  const sub = 'Baja de «' + (nombreDe(coleccion, reg) || id) + '»';
+  sumar(coleccion, reg, { eliminado_en: ahora, ...(CON_POSICION_EN_PLANO.includes(coleccion) && (reg.plano_x != null || reg.plano_y != null) ? { plano_x: null, plano_y: null } : {}) }, m);
+  const vivo = (/** @type {any} */ x) => !x.eliminado_en;
+  if (coleccion === 'equipos') {
+    const propios = Array.from(cache.puertos.values()).filter(p => p.equipo_id === id && vivo(p));
+    const ids = new Set(propios.map(p => p.id));
+    for (const p of cache.puertos.values()) {
+      if (p.equipo_id !== id && vivo(p) && (ids.has(p.conectado_a_puerto_id) || p.conectado_a_equipo_id === id)) sumar('puertos', p, { conectado_a_equipo_id: null, conectado_a_puerto_id: null }, sub);
+    }
+    for (const p of propios) sumar('puertos', p, { eliminado_en: ahora }, sub);
+    for (const a of cache.asignaciones.values()) if (a.equipo_id === id && vivo(a) && !a.asignacion_hasta) sumar('asignaciones', a, { asignacion_hasta: hoy }, sub);
+    for (const i of cache.instalaciones_licencia.values()) if (i.equipo_id === id && vivo(i) && !i.instalacion_hasta) sumar('instalaciones_licencia', i, { instalacion_hasta: hoy }, sub);
+  } else if (coleccion === 'personas') {
+    for (const a of cache.asignaciones.values()) if (a.persona_id === id && vivo(a) && !a.asignacion_hasta) sumar('asignaciones', a, { asignacion_hasta: hoy }, sub);
+  } else if (coleccion === 'licencias') {
+    for (const i of cache.instalaciones_licencia.values()) if (i.licencia_id === id && vivo(i) && !i.instalacion_hasta) sumar('instalaciones_licencia', i, { instalacion_hasta: hoy }, sub);
+  }
+  for (const x of cache.relaciones.values()) {
+    if (vivo(x) && ((x.origen_entidad === entidad && x.origen_id === id) || (x.destino_entidad === entidad && x.destino_id === id))) sumar('relaciones', x, { eliminado_en: ahora }, sub);
+  }
+  return [...porRegistro.values(), ...cambios];
+}
+
+/** Nombre corto de un registro para los motivos del historial. @param {string} coleccion @param {any} r */
+function nombreDe(coleccion, r) {
+  const k = { equipos: 'equipo_nombre', personas: 'persona_nombre', licencias: 'licencia_producto', racks: 'rack_nombre', puestos: 'puesto_nombre', organizaciones: 'organizacion_nombre' }[/** @type {'equipos'} */ (coleccion)];
+  return k ? r[k] : '';
+}
+
+/**
+ * Da de baja un registro con todas sus dependencias, en UNA sola operación atómica (D-006; regla 5 del modelo).
+ * Las vistas llaman a esta función; nunca arman la baja a mano. Quien la llama debe haber comprobado el permiso `baja`.
+ * @param {string} coleccion @param {string} id
+ * @param {{usuarioId: string, motivo?: string}} datos
+ */
+export async function darDeBaja(coleccion, id, datos) {
+  await iniciar();
+  await persistir(armarBaja(coleccion, id, datos.usuarioId, (datos.motivo || '').trim() || undefined));
 }
 
 /**
@@ -859,11 +939,7 @@ export async function resolverSolicitud(solicitudId, resultado, usuarioId, alcan
   if (resultado === 'aprobada' && s.solicitud_tipo === 'baja_registro') {
     const col = COLECCION_DE_ENTIDAD[s.solicitud_entidad];
     const reg = col && cache[col] ? cache[col].get(s.solicitud_entidad_id) : null;
-    if (reg && !reg.eliminado_en) {
-      const ahora = ahoraISO();
-      const baja = { ...reg, eliminado_en: ahora, eliminado_por: usuarioId, actualizado_en: ahora, actualizado_por: usuarioId };
-      ops.push([col, baja], ['cambios', nuevoCambio(col, baja, 'baja', 'eliminado_en', null, ahora, usuarioId, 'Baja aprobada: ' + (s.solicitud_motivo || ''))]);
-    }
+    if (reg && !reg.eliminado_en) ops.push(...armarBaja(col, reg.id, usuarioId, 'Baja aprobada: ' + (s.solicitud_motivo || '')));
   }
   await persistir(ops);
   return structuredClone(nueva);
@@ -1727,15 +1803,33 @@ export async function autenticar(identificador, clave) {
 
 /**
  * Lista de usuarios de prueba con su clave ficticia, solo para la pantalla de ingreso (D-008, D-050).
- * @returns {Promise<Array<{id: string, nombre: string, email: string, perfil: string, organizacion: string|null, clave: string}>>}
+ * @returns {Promise<Array<{id: string, nombre: string, email: string, perfil: string, organizacion: string|null, organizacion_baja: boolean, clave: string}>>}
  */
 export async function usuariosDePrueba() {
   await iniciar();
   return Array.from(cache.usuarios.values()).filter(u => u.usuario_estado === 'activo' && !u.eliminado_en).map(u => ({
     id: u.id, nombre: u.usuario_nombre, email: u.usuario_email, perfil: u.usuario_perfil,
     organizacion: u.organizacion_id && cache.organizaciones.get(u.organizacion_id) ? cache.organizaciones.get(u.organizacion_id).organizacion_nombre : null,
+    organizacion_baja: !!(u.organizacion_id && cache.organizaciones.get(u.organizacion_id) && cache.organizaciones.get(u.organizacion_id).eliminado_en),
     clave: u.usuario_clave_prototipo
   }));
+}
+
+/**
+ * Nombre de la organización dada de baja a la que pertenece el usuario, o null si puede trabajar (QC50-A).
+ * El superadmin nunca queda afectado. Lee la organización del almacenamiento y no del cache: si otra pestaña la dio de baja
+ * mientras tanto, se entera acá.
+ * @param {string} usuarioId
+ * @returns {Promise<string|null>}
+ */
+export async function organizacionDeBajaDe(usuarioId) {
+  await iniciar();
+  const u = cache.usuarios.get(usuarioId);
+  if (!u || u.usuario_perfil === 'superadmin' || !u.organizacion_id) return null;
+  const fresca = await pedido(/** @type {IDBDatabase} */ (db).transaction('organizaciones').objectStore('organizaciones').get(u.organizacion_id));
+  if (fresca) cache.organizaciones.set(fresca.id, fresca);
+  const o = fresca || cache.organizaciones.get(u.organizacion_id);
+  return o && o.eliminado_en ? o.organizacion_nombre : null;
 }
 
 /**

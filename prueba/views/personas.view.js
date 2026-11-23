@@ -9,14 +9,13 @@ import { puede } from '../assets/js/permisos.js';
 import { ir } from '../assets/js/marco.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { encabezado, leerRuta, pestanas, chipsEstado } from '../assets/js/red.js';
-import { inyectarEstilosPersonas, cargarContextoPersonas, avisoPersonas, enlaceFila, nombreCuenta, hashDeEquipo, pillPersona, pillCuenta, alertaCuentaDeBaja } from '../assets/js/personas.js';
+import { cargarContextoPersonas, avisoPersonas, enlaceFila, nombreCuenta, hashDeEquipo, pillPersona, pillCuenta, alertaCuentaDeBaja } from '../assets/js/personas.js';
 
 // Filtros que se recuerdan al volver a la pantalla.
 const filtro = { personasTexto: '', sector: '', personasChip: '', cuentasTexto: '', cuentasChip: '' };
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilosPersonas();
   const ctx = await cargarContextoPersonas();
   const tab = leerRuta().partes[0] === 'cuentas' ? 'cuentas' : 'personas';
   await encabezado(contenedor, 'P22', 'Personas', [['Personas', tab === 'cuentas' ? '#/personas' : undefined], ...(tab === 'cuentas' ? /** @type {Array<[string, string?]>} */ ([['Cuentas de dominio']]) : [])]);

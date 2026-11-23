@@ -9,12 +9,11 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, toast, abrirModal, cerrarModal, repintarMarco } from '../assets/js/marco.js';
 import { h, tabla, fmtFecha, fmtFechaHora, hoyISO } from '../assets/js/utiles.js';
 import { ROTULO_FIBRA_TIPO, CONECTORES_FIBRA, ATENUACION_ALTA_DB } from '../assets/js/modelos.js';
-import { cargarContexto, encabezado, avisoVista, fichaCab, campo, pestanas, inyectarEstilos, leerRuta, textoUltimoCambio, seguro, enlace, pedirBaja } from '../assets/js/red.js';
-import { estilosFibra, pelosConAtenuacionAlta, ultimasMediciones, textoDb } from './fibra.view.js';
+import { cargarContexto, encabezado, avisoVista, fichaCab, campo, pestanas, leerRuta, textoUltimoCambio, seguro, enlace, pedirBaja } from '../assets/js/red.js';
+import { pelosConAtenuacionAlta, ultimasMediciones, textoDb } from './fibra.view.js';
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilos(); estilosFibra();
   const ctx = await cargarContexto();
   const { partes } = leerRuta();
   const idHash = partes[0] || '';
@@ -153,7 +152,7 @@ export async function renderVista(contenedor) {
       abrirModal(h('div', { role: 'dialog', 'aria-label': 'Dar de baja' }, [h('h2', { text: '¿Dar de baja «' + t.tramo_nombre + '»?' }),
         h('p', { class: 'mut', text: 'Deja de aparecer en la fibra. Queda en el historial y se puede restaurar.' }),
         h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Sí, dar de baja', onclick: async () => {
-          const ok = await seguro(() => repositorio.guardar('tramos_fibra', { ...t, eliminado_en: new Date().toISOString() }, ctx.u.id, { motivo: 'Baja' }));
+          const ok = await seguro(() => repositorio.darDeBaja('tramos_fibra', t.id, { usuarioId: ctx.u.id, motivo: 'Baja' }));
           if (ok) { cerrarModal(); toast('Dado de baja: ' + t.tramo_nombre); await repintarMarco(); ir('#/fibra'); }
         } }), h('button', { type: 'button', text: 'Cancelar', onclick: cerrarModal })])]));
     } });

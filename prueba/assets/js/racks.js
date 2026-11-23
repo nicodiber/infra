@@ -6,7 +6,7 @@
  */
 
 import * as repositorio from './repositorio.js';
-import { h, icono, indicadorVerificacion, fmtFecha, fmtFechaHora, normalizar, ahoraISO } from './utiles.js';
+import { h, icono, indicadorVerificacion, fmtFecha, fmtFechaHora, normalizar } from './utiles.js';
 import { puede } from './permisos.js';
 import { abrirModal, cerrarModal, toast } from './marco.js';
 import { ROTULO_ESTADO_EQUIPO } from './modelos.js';
@@ -19,49 +19,7 @@ import { ROTULO_ESTADO_EQUIPO } from './modelos.js';
 // Estilos propios (prefijo rk-): lo que el mockup tiene y estilos.css todavía no
 // ---------------------------------------------------------------------------------------------
 
-const CSS = `
-.rk-progreso{height:12px;border-radius:6px;background:var(--borde);overflow:hidden;border:1px solid var(--borde-fuerte)}
-.rk-progreso i{display:block;height:100%;background:var(--ok)}
-.rk-lista{max-height:calc(100vh - 360px);min-height:180px;overflow:auto;border:1px solid var(--borde);border-radius:8px;background:var(--surf)}
-.rk-lista table{border:0;border-radius:0}
-.rk-lista th{position:sticky;top:0;z-index:2}
-.rk-lista tr.rk-hecho td{background:var(--ok-bg)}
-.rk-lista td.rk-edit{background:var(--acc-suave);padding:10px 14px}
-.rk-campos{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
-.rk-campos label,.rk-form label{display:block;font-size:12.5px;color:var(--muted)}
-.rk-tag{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--tc,var(--muted));border:1px solid var(--tc,var(--borde-fuerte));border-radius:4px;padding:0 5px;margin-right:8px}
-.rk-ok{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ok-fg)}
-.rk-barra{display:inline-block;width:70px;height:8px;border-radius:4px;background:var(--borde);vertical-align:middle;overflow:hidden;border:1px solid var(--borde-fuerte);margin-right:6px}
-.rk-barra i{display:block;height:100%;background:var(--c-rack)}
-.rk-modal{width:660px;max-width:92vw;max-height:88vh;overflow:auto;padding:16px 20px}
-.rk-form input,.rk-form select,.rk-form textarea{width:100%}
-.rk-form .rk-dos{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
-.rk-form .rk-tres{display:grid;grid-template-columns:2fr 1fr 1fr;gap:0 14px}
-.rk-form .campo{margin-top:8px}
-.rk-aviso-borde{margin-top:6px}
-.rk-fila-rack{display:flex;gap:16px;align-items:flex-start}
-.rack .eq{min-height:0}
-@media (max-width:760px){.rk-fila-rack{flex-direction:column;align-items:stretch}.rk-fila-rack>.rack{align-self:flex-start}.rk-ed input{width:70px}}
-.rk-der{flex:1;min-width:0}
-.rk-grupo{margin-top:14px}
-.rk-grupo>h3{margin-bottom:6px;display:flex;gap:8px;align-items:center}
-.rk-celda-rotulo{font-size:12px;color:var(--muted)}
-.rk-sel{margin:8px 0;padding:10px 12px;border:1px solid var(--borde-fuerte);border-left:4px solid var(--acc);border-radius:8px;background:var(--acc-suave)}
-.rk-sel .herr{margin-top:6px}
-.rk-ed{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.rk-ed input{width:76px}
-.rk-agregar{margin-top:10px;padding:12px;border:1px solid var(--borde-fuerte);border-radius:8px;background:var(--surf2)}
-.rk-agregar select[size]{width:100%}
-`;
 
-/** Agrega la hoja de estilos propia una sola vez. */
-export function aplicarEstilos() {
-  if (document.getElementById('estilos-racks')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-racks';
-  s.textContent = CSS;
-  document.head.appendChild(s);
-}
 
 // ---------------------------------------------------------------------------------------------
 // Hash
@@ -400,7 +358,7 @@ export async function botonBaja(o) {
     const motivo = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'baja-motivo', placeholder: 'Motivo (opcional)' }));
     const confirmar = async () => {
       try {
-        if (directa) await repositorio.guardar(o.coleccion, { ...o.registro, eliminado_en: ahoraISO() }, o.u.id, { motivo: motivo.value.trim() || undefined });
+        if (directa) await repositorio.darDeBaja(o.coleccion, o.registro.id, { usuarioId: o.u.id, motivo: motivo.value.trim() || undefined });
         else await repositorio.crearSolicitudBaja({ coleccion: o.coleccion, id: o.registro.id, usuarioId: o.u.id, motivo: motivo.value.trim() });
         cerrarModal();
         toast(directa ? '«' + o.nombre + '» dado de baja' : 'Baja pedida, la confirma el superadmin');

@@ -24,38 +24,8 @@ const CATEGORIAS_PUESTO = ['PC de escritorio', 'Notebook'];
 let marcadas = {};
 let conCredenciales = false;
 
+/** Solo el CSS de impresión; el de pantalla está en assets/css/estilos.css (el @page y el @media print se quedan acá para no cambiar la impresión). */
 const ESTILOS = `
-.inf-controles{display:grid;grid-template-columns:minmax(280px,340px) minmax(0,1fr);gap:20px;align-items:start}
-.inf-panel{border:1px solid var(--borde);background:var(--surf);border-radius:8px;padding:12px 14px;position:sticky;top:0}
-.inf-panel h2{font-size:15px;margin:0 0 8px}
-.inf-panel label.inf-op{display:flex;gap:8px;align-items:flex-start;padding:4px 0;cursor:pointer}
-.inf-panel .inf-ayuda{display:block;color:var(--muted);font-size:12px}
-.inf-panel .inf-sep{border-top:1px solid var(--borde);margin:10px 0}
-.inf-acciones{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-.inf-hoja{background:#fff;color:#000;border:1px solid var(--borde-fuerte);border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.15);padding:28px 34px;max-width:900px;font:13px/1.4 Arial,Helvetica,sans-serif}
-.inf-doc h1{font-size:24px;margin:0 0 6px}
-.inf-doc h2{font-size:18px;margin:0 0 8px;border-bottom:2px solid #000;padding-bottom:3px}
-.inf-doc h3{font-size:14px;margin:14px 0 4px}
-.inf-doc p{margin:4px 0}
-.inf-doc table{width:100%;border-collapse:collapse;background:#fff;border:0;border-radius:0;margin:4px 0 2px;font-size:12px;color:#000}
-.inf-doc th,.inf-doc td{border:1px solid #444;padding:3px 5px;text-align:left;vertical-align:top;overflow-wrap:anywhere;color:#000;background:#fff}
-.inf-doc th{background:#e6e6e6;font-weight:700}
-.inf-doc thead{display:table-header-group}
-.inf-doc tr{break-inside:avoid}
-.inf-doc ul{margin:4px 0;padding-left:20px}
-.inf-doc li{margin:2px 0}
-.inf-verif{font-size:11px;color:#333;margin:2px 0 10px;font-style:italic}
-.inf-portada{min-height:230mm;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;border-left:8px solid #000;padding-left:24px;break-after:page}
-.inf-portada .inf-org{font-size:30px;font-weight:700;margin:14px 0}
-.inf-portada .inf-sub{font-size:16px}
-.inf-indice{break-after:page}
-.inf-indice ol{padding-left:22px;font-size:14px;line-height:1.9}
-.inf-seccion{break-before:page}
-.inf-nota{border:1px solid #444;padding:5px 8px;margin:6px 0;break-inside:avoid}
-.inf-nota b{display:block}
-.inf-nota .inf-txt{white-space:pre-wrap}
-.inf-vacio{font-style:italic;color:#333}
-#inf-impresion{display:none}
 @media print{
   @page{size:A4 portrait;margin:16mm 14mm 18mm 14mm;@bottom-center{content:"Documentación de infraestructura · Página " counter(page) " de " counter(pages);font:9pt Arial,sans-serif;color:#000}}
   @page :first{@bottom-center{content:none}}

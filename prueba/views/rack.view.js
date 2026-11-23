@@ -13,7 +13,7 @@ import { h, tabla, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import { confirmarConPasos } from '../assets/js/verificacion.js';
 import {
-  aplicarEstilos, botonBaja, bloqueSinPermiso, estadoVacio, fichaBloque, pieVerificacion, nombresDeUsuarios, partesHash, rangoU, rutaEquipo, moduloEquipo,
+  botonBaja, bloqueSinPermiso, estadoVacio, fichaBloque, pieVerificacion, nombresDeUsuarios, partesHash, rangoU, rutaEquipo, moduloEquipo,
   claseTipoRack, porId, rutaUbicacion, textoUnidadesLibres, unidadesOcupadas, primeraUnidadLibre, validarLugarEnRack
 } from '../assets/js/racks.js';
 
@@ -23,7 +23,6 @@ const ALTO_U = 13;
  * @param {HTMLElement} contenedor
  */
 export async function renderVista(contenedor) {
-  aplicarEstilos();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const { segs, query } = partesHash();
   const id = segs[1] || '';

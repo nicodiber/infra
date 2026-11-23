@@ -15,7 +15,7 @@ import { pintarNotas } from '../assets/js/notas.js';
 import { cargarVinculos, contarVinculos, pintarVinculos } from '../assets/js/vinculos.js';
 import { confirmarConPasos } from '../assets/js/verificacion.js';
 import {
-  aplicarEstilos, bloqueSinPermiso, estadoVacio, estadoPill, botonBaja, miniRack, fichaBloque, pieVerificacion, nombresDeUsuarios, partesHash, rangoU, rutaEquipo,
+  bloqueSinPermiso, estadoVacio, estadoPill, botonBaja, miniRack, fichaBloque, pieVerificacion, nombresDeUsuarios, partesHash, rangoU, rutaEquipo,
   CAMPOS_SERVIDOR, valorCampo, textoCampo, crearCampo, validarServidor, aplicarServidor, validarLugarEnRack, porId, rutaUbicacion
 } from '../assets/js/racks.js';
 
@@ -27,7 +27,6 @@ const ETIQUETAS = { equipo_nombre: 'Nombre', equipo_marca: 'Marca', equipo_model
  * @param {HTMLElement} contenedor
  */
 export async function renderVista(contenedor) {
-  aplicarEstilos();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const { segs } = partesHash();
   const id = segs[1] || '';

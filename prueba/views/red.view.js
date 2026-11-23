@@ -10,7 +10,7 @@ import { ir, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import {
-  TIPOS_RED, CATEGORIAS_PUESTO, ROTULO_SEGURIDAD, ROTULO_ENLACE_TIPO, inyectarEstilos, cargarContexto, leerRuta, encabezado, pestanas,
+  TIPOS_RED, CATEGORIAS_PUESTO, ROTULO_SEGURIDAD, ROTULO_ENLACE_TIPO, cargarContexto, leerRuta, encabezado, pestanas,
   estadoPill, chipsEstado, enlace, avisoVista, textoUbicacion, crearEquipo, hashEquipo, crearPuesto, enlaceFila, cargarPersonas, textoVlan
 } from '../assets/js/red.js';
 
@@ -28,7 +28,6 @@ let filtroEstado = '';
  * @param {HTMLElement} contenedor
  */
 export async function renderVista(contenedor) {
-  inyectarEstilos();
   const ctx = await cargarContexto();
   const { partes } = leerRuta();
   const tab = TABS.some(t => t[0] === partes[0] && !ENLACES_EXTERNOS[t[0]]) ? partes[0] : 'equipos';

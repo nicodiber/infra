@@ -13,21 +13,7 @@ import { h, tabla, fmtFecha, diasHasta, textoVence, indicadorVerificacion, norma
 import { ROTULO_SERVICIO_TIPO } from '../assets/js/modelos.js';
 import { sinPermiso, chips } from '../assets/js/credenciales.js';
 
-const CSS = `
-.srv-venc{font-size:12.5px}
-.srv-venc b{display:inline-block;margin-right:6px;padding:0 6px;border-radius:4px;border:1px solid currentColor;font-size:11px}
-.srv-venc.pasado{color:var(--bad-fg)} .srv-venc.pronto{color:var(--warn-fg)}
-.srv-chips{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
-`;
 
-/** Agrega los estilos propios una sola vez. */
-export function aplicarEstilosServicios() {
-  if (document.getElementById('estilos-servicios')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-servicios';
-  s.textContent = CSS;
-  document.head.appendChild(s);
-}
 
 /**
  * @param {{servicio_vence_en: string|null}} s
@@ -50,7 +36,6 @@ export function textoVencimientoServicio(s) {
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  aplicarEstilosServicios();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const orgId = /** @type {string} */ (sesion.organizacionActiva());
   const migas = await migasRaiz();

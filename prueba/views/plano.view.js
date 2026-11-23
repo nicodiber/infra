@@ -17,25 +17,6 @@ const TIPOS = {
   ap: { rotulo: 'Access points', unico: 'Access point', color: 'var(--c-wifi)', coleccion: 'equipos', modulo: 'red', forma: 'triangulo' }
 };
 
-const CSS = `
-.pl-layout{display:flex;gap:16px;align-items:flex-start}
-.pl-lienzo{position:relative;flex:1;min-width:0;border:1px solid var(--borde-fuerte);border-radius:8px;background:var(--surf);overflow:hidden;line-height:0;user-select:none}
-.pl-lienzo img{width:100%;display:block;pointer-events:none}
-.pl-lienzo.pl-ubicar{cursor:crosshair;outline:2px dashed var(--acc);outline-offset:-2px}
-.pl-m{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;padding:0;border:0;background:none;cursor:pointer;line-height:0;touch-action:none}
-.pl-m svg{width:22px;height:22px;display:block;overflow:visible}
-.pl-m .f{fill:var(--mc);stroke:var(--surf);stroke-width:2}
-.pl-m:hover svg,.pl-m:focus-visible svg,.pl-m.sel svg{transform:scale(1.35);transform-origin:center}
-.pl-m.sel .f{stroke:var(--texto);stroke-width:2.5}
-.pl-ubicar .pl-m{cursor:grab}
-.pl-lado{width:300px;flex:none}
-.pl-lado .bloque{margin-bottom:12px}
-.pl-leyenda{display:flex;flex-wrap:wrap;gap:8px 14px;margin:8px 0}
-.pl-leyenda .chip{display:inline-flex;gap:6px;align-items:center}
-.pl-leyenda svg{width:16px;height:16px}
-.pl-leyenda .f{fill:var(--mc);stroke:var(--texto);stroke-width:1}
-.pl-lado select{width:100%}
-`;
 
 /** @param {string} forma */
 function svgForma(forma) {
@@ -52,7 +33,6 @@ function svgForma(forma) {
  * @param {HTMLElement} contenedor
  */
 export async function renderVista(contenedor) {
-  if (!document.getElementById('estilos-plano')) { const s = document.createElement('style'); s.id = 'estilos-plano'; s.textContent = CSS; document.head.appendChild(s); }
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const org = sesion.organizacionActiva();
   const ubId = partesHash().segs[1] || '';

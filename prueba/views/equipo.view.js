@@ -11,8 +11,8 @@ import { ir, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
 import { h, icono, tabla, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion, estadoVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO, ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, esImpresora } from '../assets/js/modelos.js';
 import {
-  CAMPOS_COMUNES, CAMPOS_POR_TIPO, camposDe, camposDeCategoria, CATEGORIAS_PUESTO, ROTULO_ENLACE_TIPO, ROTULO_ESTADO_PUERTO, ROTULO_SEGURIDAD, inyectarEstilos, cargarContexto, leerRuta, encabezado, pestanas, campo, enlace, avisoVista,
-  formulario, textoValor, fichaCab, miniRack, cadenaDePuerto, textoUltimoCambio, darDeBajaEquipo, pedirBaja, seguro, estadoPill, valorHistorial, nodoCadena, hashEquipo, abrirConectarPuerto, abrirDesconectarPuerto
+  CAMPOS_COMUNES, CAMPOS_POR_TIPO, camposDe, camposDeCategoria, CATEGORIAS_PUESTO, ROTULO_ENLACE_TIPO, ROTULO_ESTADO_PUERTO, ROTULO_SEGURIDAD, cargarContexto, leerRuta, encabezado, pestanas, campo, enlace, avisoVista,
+  formulario, textoValor, fichaCab, miniRack, cadenaDePuerto, textoUltimoCambio, pedirBaja, seguro, estadoPill, valorHistorial, nodoCadena, hashEquipo, abrirConectarPuerto, abrirDesconectarPuerto
 } from '../assets/js/red.js';
 import { bloqueAsignacion } from '../assets/js/personas.js';
 import { cargarVinculos, contarVinculos, pintarVinculos } from '../assets/js/vinculos.js';
@@ -31,7 +31,6 @@ const rangoSel = { desde: 1, hasta: 1, vlan: '', estado: '', verificar: true };
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilos();
   const ctx = await cargarContexto();
   const { partes, consulta } = leerRuta();
   const id = partes[0];
@@ -257,7 +256,7 @@ function confirmarBaja(ctx, e) {
     h('p', { text: 'El equipo y sus puertos dejan de aparecer en listados y búsquedas, y se desconectan los puertos de otros equipos que iban a él. El historial se conserva y la baja se puede revertir desde el historial de cambios.' }),
     h('div', { class: 'herr', style: 'justify-content:flex-end' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }),
       h('button', { type: 'button', class: 'primario', text: 'Sí, dar de baja', onclick: async () => {
-        const ok = await seguro(() => darDeBajaEquipo(ctx, e));
+        const ok = await seguro(() => repositorio.darDeBaja('equipos', e.id, { usuarioId: ctx.u.id }));
         cerrarModal();
         if (ok !== null) { toast('«' + e.equipo_nombre + '» dado de baja.'); ir('#/red/equipos'); }
       } })])]);

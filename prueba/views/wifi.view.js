@@ -9,11 +9,10 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, toast } from '../assets/js/marco.js';
 import { h, tabla, ahoraISO, fmtFecha } from '../assets/js/utiles.js';
 import { ROTULO_CREDENCIAL_TIPO } from '../assets/js/modelos.js';
-import { inyectarEstilos, cargarContexto, leerRuta, encabezado, campo, avisoVista, fichaCab, textoUltimoCambio, seguro, enlace, estadoPill, ROTULO_SEGURIDAD, textoUbicacion } from '../assets/js/red.js';
+import { cargarContexto, leerRuta, encabezado, campo, avisoVista, fichaCab, textoUltimoCambio, seguro, enlace, estadoPill, ROTULO_SEGURIDAD, textoUbicacion } from '../assets/js/red.js';
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilos();
   const ctx = await cargarContexto();
   const id = leerRuta().partes[0];
   const wifi = id ? await repositorio.obtener('redes_wifi', id) : null;

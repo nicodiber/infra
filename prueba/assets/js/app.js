@@ -110,6 +110,8 @@ async function ruta() {
     const mismaPantalla = hash === ultimoHash;
     ultimoHash = hash;
     if (p0 === 'ingreso' && sesion.usuarioActual()) sesion.salir();
+    // QC50-A: si se dio de baja la organización de quien tiene la sesión abierta, vuelve al ingreso con el aviso.
+    if (p0 !== 'ingreso' && await sesion.cerrarSiOrganizacionDeBaja()) { if (id === rutaId) location.replace('#/ingreso'); return; }
     const u = sesion.usuarioActual();
     if (!u && p0 !== 'ingreso') { location.replace('#/ingreso'); return; }
     const def = RUTAS[p0] || RUTAS.inicio;
@@ -119,7 +121,9 @@ async function ruta() {
     const destino = h('div', { class: 'pantalla' });
     await pintarMarco(def.seccion);
     if (id !== rutaId) return;
-    await def.vista(destino, def.info);
+    // El permiso de ver el módulo de la ruta se comprueba acá, antes de cargar la vista (D-006): sin acceso, solo el aviso.
+    if (u && def.info && def.info.modulo && !puede(u, 'ver', def.info.modulo, sesion.organizacionActiva())) await renderVistaPendiente(destino, def.info);
+    else await def.vista(destino, def.info);
     if (id !== rutaId) return;
     const cont = principal();
     const scroll = mismaPantalla ? cont.scrollTop : 0;

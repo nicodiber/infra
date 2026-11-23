@@ -9,14 +9,13 @@ import { puede } from '../assets/js/permisos.js';
 import { ir } from '../assets/js/marco.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
-import { CATEGORIAS_PUESTO, inyectarEstilos, cargarContexto, encabezado, estadoPill, chipsEstado, avisoVista, hashEquipo, enlaceFila, cargarPersonas, abrirMoverEquipo } from '../assets/js/red.js';
+import { CATEGORIAS_PUESTO, cargarContexto, encabezado, estadoPill, chipsEstado, avisoVista, hashEquipo, enlaceFila, cargarPersonas, abrirMoverEquipo } from '../assets/js/red.js';
 
 const ESTADOS = /** @type {Array<[string, string]>} */ ([['en_uso', 'En uso'], ['en_deposito', 'En depósito'], ['baja', 'Baja']]);
 let fTexto = '', fUbic = '', fChip = '';
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilos();
   const ctx = await cargarContexto();
   await encabezado(contenedor, 'P21', 'Equipos de escritorio', [['Equipos de escritorio']]);
   if (!puede(ctx.u, 'ver', 'red', ctx.org)) { avisoVista(contenedor, 'Tu rol no tiene acceso a los equipos de escritorio.'); return; }

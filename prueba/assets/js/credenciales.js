@@ -8,7 +8,7 @@
 import * as repositorio from './repositorio.js';
 import { puede } from './permisos.js';
 import { ir, toast, abrirModal, cerrarModal, repintarMarco } from './marco.js';
-import { h, icono, ahoraISO, fmtFecha, fmtFechaHora, diasHasta, textoVence, indicadorVerificacion } from './utiles.js';
+import { h, icono, fmtFecha, fmtFechaHora, diasHasta, textoVence, indicadorVerificacion } from './utiles.js';
 import { ROTULO_PERFIL } from './modelos.js';
 import { confirmarConPasos } from './verificacion.js';
 
@@ -146,7 +146,7 @@ export async function botonBaja(o) {
       h('div', { class: 'herr' }, [
         h('button', { type: 'button', class: 'primario', text: directa ? 'Sí, dar de baja' : 'Enviar pedido', onclick: async () => {
           try {
-            if (directa) await repositorio.guardar(o.coleccion, { ...o.registro, eliminado_en: ahoraISO() }, o.u.id, { motivo: 'Baja' });
+            if (directa) await repositorio.darDeBaja(o.coleccion, o.registro.id, { usuarioId: o.u.id, motivo: 'Baja' });
             else await repositorio.crearSolicitudBaja({ coleccion: o.coleccion, id: o.registro.id, usuarioId: o.u.id, motivo: motivo.value.trim() });
             cerrarModal();
             toast(directa ? 'Dado de baja: ' + o.nombre : 'Pedido de baja enviado');

@@ -13,7 +13,7 @@ import { ir, pantalla, migasRaiz, toast, abrirModal, cerrarModal, repintarMarco 
 import { h, tabla, fmtFecha, fmtFechaHora, hoyISO } from '../assets/js/utiles.js';
 import { ROTULO_LICENCIA_TIPO, ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import { sinPermiso, enlaceEquipo, pestanas, campo, fichaCab, botonBaja, valorHistorial } from '../assets/js/credenciales.js';
-import { aplicarEstilosLicencias, barraUso, textoVencimientoLicencia } from './licencias.view.js';
+import { barraUso, textoVencimientoLicencia } from './licencias.view.js';
 
 /** @type {Object<string, string>} */
 const ROTULO_CAMPO = { licencia_producto: 'Producto', licencia_tipo: 'Tipo', licencia_cantidad: 'Cantidad comprada', licencia_vence_en: 'Vence el', licencia_proveedor: 'Proveedor',
@@ -21,7 +21,6 @@ const ROTULO_CAMPO = { licencia_producto: 'Producto', licencia_tipo: 'Tipo', lic
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  aplicarEstilosLicencias();
   await sesion.refrescar();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const partes = location.hash.replace(/^#\/?/, '').split('/');

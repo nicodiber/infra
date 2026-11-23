@@ -34,61 +34,6 @@ export const ROTULO_ENLACE_TIPO = { fibra: 'Fibra', radio: 'Radioenlace', cable:
 // Estilos propios (los que el mockup tiene y estilos.css todavía no)
 // ---------------------------------------------------------------------------------------------
 
-/** Agrega una sola vez los estilos de las pantallas de Red. */
-export function inyectarEstilos() {
-  if (document.getElementById('estilos-red')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-red';
-  s.textContent = `
-.cadena.v{flex-direction:column;align-items:stretch;margin:0}
-.cadena.v .nodo{display:grid;grid-template-columns:1fr auto;column-gap:8px;padding:3px 10px;width:100%}
-.cadena.v .nodo .n-tipo{grid-area:1/1}
-.cadena.v .nodo .n-sub{grid-area:1/2;text-align:right}
-.cadena.v .nodo b{grid-area:2/1/3/3}
-.cadena.v .tramo{flex:0 0 11px;width:2px;height:11px;margin-left:24px;align-self:flex-start}
-.cadena.v .tramo::after{right:auto;left:-4px;top:auto;bottom:-1px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--muted);border-bottom:0}
-.rd-cab-det{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.rd-cab-det .esp{flex:1}
-.rd-det{padding:10px 14px}
-.rd-det h2{font-size:16px}
-.rd-det .datos{grid-template-columns:repeat(3,1fr);gap:4px 12px}
-.rd-det .datos .campo label{font-size:11.5px}
-.rd-det .datos .campo div{font-size:13px}
-.rd-det select,.rd-det input{width:100%}
-.rd-compacta .rd-cab{align-items:baseline!important;gap:12px;margin-bottom:6px!important}
-.rd-compacta h1{font-size:18px}
-.rd-compacta .datos{grid-template-columns:repeat(5,1fr);gap:4px 14px}
-.rd-compacta .datos .campo label{font-size:11.5px}
-.rd-compacta .datos .campo div{font-size:13px;min-height:16px}
-.rd-compacta .ficha-pie{margin-top:6px;padding-top:6px}
-.rd-compacta .minirack{padding:3px 6px;gap:2px}
-.rd-compacta .minirack .mr-cuerpo{zoom:.55}
-.rd-compacta .minirack span{display:none}
-.rd-campo-nota{font-size:11.5px;color:var(--muted)}
-.rd-err{color:var(--bad-fg);font-size:12.5px;margin-top:4px}
-.rd-edicion .datos{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
-.rd-isp{overflow:auto}
-.rd-tab-nota{margin-top:6px;color:var(--muted)}
-.rd-sin-cargar{border-style:dotted;opacity:.55}
-.rd-etq{display:flex;align-items:center;gap:5px;font-size:13px;margin-right:8px}
-.puerto.rd-troncal::before{content:"T";position:absolute;top:0;right:2px;font-size:7px;line-height:8px;font-weight:800}
-.cadena.rd-inv .tramo{transform:scaleX(-1)}
-.rd-lista-etq{display:flex;flex-wrap:wrap;gap:4px 12px}
-.rd-ip-grilla{display:grid;grid-template-columns:repeat(16,24px);gap:2px;margin:6px 0}
-.rd-ip{width:24px;height:20px;padding:0;border:1px solid var(--borde-fuerte);border-radius:3px;font:10px/18px var(--mono);text-align:center;background:var(--surf);color:var(--muted);cursor:default}
-.rd-ip.usada{background:var(--c-equipo);color:var(--surf);border-color:var(--c-equipo);cursor:pointer;font-weight:700}
-.rd-ip.dup{background:repeating-linear-gradient(45deg,var(--bad-fg) 0 3px,var(--bad-bg) 3px 6px);color:var(--texto);border-color:var(--bad-fg);cursor:pointer;font-weight:800}
-.rd-ip.gw{background:var(--warn-bg);color:var(--warn-fg);border:2px solid var(--warn-fg);font-weight:800}
-.rd-ip.dhcp{background:var(--surf2);border-style:dashed}
-.rd-ip.destacada{outline:3px solid var(--acc);outline-offset:1px}
-.rd-ip-res{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0}
-.rd-ip-res b{font-size:18px}
-.rd-conx-lista{max-height:240px;overflow:auto;border:1px solid var(--borde);border-radius:6px;margin-top:8px}
-.rd-conx-lista button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--borde);border-radius:0;padding:6px 10px;background:transparent}
-.rd-conx-lista button[aria-selected=true]{background:var(--acc-suave)}
-`;
-  document.head.appendChild(s);
-}
 
 // ---------------------------------------------------------------------------------------------
 // Contexto, rutas y utilidades de pantalla
@@ -490,20 +435,6 @@ export async function crearEquipo(ctx, tipo, nombre) {
     equipo_campos: camposIniciales(tipo)
   }, ctx.u.id);
   return nuevo;
-}
-
-/**
- * Baja lógica de un equipo con la cascada de la regla 5: da de baja sus puertos y desconecta los puertos de otros equipos que apuntaban a él.
- * @param {Contexto} ctx @param {Equipo} e
- */
-export async function darDeBajaEquipo(ctx, e) {
-  const ahora = ahoraISO();
-  const propios = await repositorio.listar('puertos', { equipo_id: e.id });
-  const ids = new Set(propios.map(p => p.id));
-  const apuntan = await repositorio.listar('puertos', p => p.equipo_id !== e.id && (ids.has(p.conectado_a_puerto_id) || p.conectado_a_equipo_id === e.id));
-  for (const p of apuntan) await repositorio.guardar('puertos', { ...p, conectado_a_equipo_id: null, conectado_a_puerto_id: null }, ctx.u.id, { motivo: 'Baja del equipo ' + e.equipo_nombre });
-  for (const p of propios) await repositorio.guardar('puertos', { ...p, eliminado_en: ahora }, ctx.u.id, { motivo: 'Baja del equipo ' + e.equipo_nombre });
-  await repositorio.guardar('equipos', { ...e, eliminado_en: ahora }, ctx.u.id);
 }
 
 /** Texto «Ubicación / rack» de un equipo. @param {Equipo} e @param {Map<string, any>} racks @param {Map<string, any>} ubicaciones */

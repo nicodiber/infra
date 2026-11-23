@@ -3,6 +3,7 @@
 
 import * as repositorio from '../assets/js/repositorio.js';
 import * as sesion from '../assets/js/sesion.js';
+import { textoOrganizacionDeBaja } from '../assets/js/sesion.js';
 import { ir, pantalla, versionVisible } from '../assets/js/marco.js';
 import { leerUltimoPerfil } from '../assets/js/preferencias.js';
 import { h, tabla } from '../assets/js/utiles.js';
@@ -19,12 +20,17 @@ export async function renderVistaIngreso(contenedor) {
 
   const err = h('div', { role: 'alert', 'aria-live': 'assertive' });
   const usr = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'campoUsuario', autocomplete: 'off', placeholder: 'Por ejemplo: admin@infradoc.example', 'aria-label': 'Usuario' }));
+  const avisoPrevio = sesion.tomarAvisoIngreso();
+  if (avisoPrevio) err.appendChild(h('div', { class: 'msg mal', text: avisoPrevio }));
   const pwd = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'campoClave', autocomplete: 'off', placeholder: 'Contraseña de prueba', 'aria-label': 'Contraseña' }));
 
   /** @param {string} usuarioId */
   async function entrar(usuarioId) {
-    const u = await sesion.ingresar(usuarioId);
-    ir(destino(u.usuario_perfil));
+    err.textContent = '';
+    try {
+      const u = await sesion.ingresar(usuarioId);
+      ir(destino(u.usuario_perfil));
+    } catch (e) { err.appendChild(h('div', { class: 'msg mal', text: e instanceof Error ? e.message : 'No se pudo ingresar.' })); }
   }
 
   async function ingresar() {
@@ -40,17 +46,20 @@ export async function renderVistaIngreso(contenedor) {
   const principales = ['superadmin', 'gerente', 'tecnico', 'operario'].map(perfil => usuarios.find(u => u.perfil === perfil)).filter(Boolean);
   const rapidos = principales.map(u => {
     const usuario = /** @type {NonNullable<typeof u>} */ (u);
-    return h('button', { type: 'button', class: 'rol-rapido', 'data-perfil': usuario.perfil, onclick: () => entrar(usuario.id),
-      'aria-label': 'Ingresar como ' + ROTULO_PERFIL[usuario.perfil] + ': ' + usuario.nombre }, [
+    return h('button', { type: 'button', class: 'rol-rapido', 'data-perfil': usuario.perfil, onclick: () => entrar(usuario.id), disabled: usuario.organizacion_baja,
+      title: usuario.organizacion_baja ? textoOrganizacionDeBaja(String(usuario.organizacion)) : null,
+      'aria-label': 'Ingresar como ' + ROTULO_PERFIL[usuario.perfil] + ': ' + usuario.nombre + (usuario.organizacion_baja ? '. ' + textoOrganizacionDeBaja(String(usuario.organizacion)) : '') }, [
       h('span', { class: 'rol', text: ROTULO_PERFIL[usuario.perfil] + (usuario.perfil === ultimo ? ' · último usado' : '') }),
       h('span', { text: usuario.nombre }),
-      h('small', { text: usuario.organizacion || 'Todas las organizaciones' })]);
+      h('small', { text: usuario.organizacion_baja ? usuario.organizacion + ' · dada de baja' : usuario.organizacion || 'Todas las organizaciones' })]);
   });
 
   const orden = ['superadmin', 'gerente', 'tecnico', 'operario'];
   const filas = usuarios.slice().sort((a, b) => (a.organizacion || '').localeCompare(b.organizacion || '') || orden.indexOf(a.perfil) - orden.indexOf(b.perfil))
     .map(u => [ROTULO_PERFIL[u.perfil], u.nombre, h('code', { text: u.email }), h('code', { text: u.clave }), u.organizacion || 'Todas',
-      h('button', { type: 'button', class: 'chico', text: 'Ingresar', onclick: () => entrar(u.id), 'aria-label': 'Ingresar como ' + u.nombre })]);
+      u.organizacion_baja
+        ? h('div', null, [h('button', { type: 'button', class: 'chico', text: 'Ingresar', disabled: true, 'aria-label': 'Ingresar como ' + u.nombre + '. ' + textoOrganizacionDeBaja(String(u.organizacion)) }), h('div', { class: 'mut', text: textoOrganizacionDeBaja(String(u.organizacion)) })])
+        : h('button', { type: 'button', class: 'chico', text: 'Ingresar', onclick: () => entrar(u.id), 'aria-label': 'Ingresar como ' + u.nombre })]);
 
   contenedor.appendChild(h('div', { class: 'login' }, [
     h('div', { class: 'aviso-flujo' }, [h('b', { text: 'Prototipo con datos ficticios. ' }), 'No cargues datos reales: lo que cargues queda solo en este navegador y sin cifrar.']),

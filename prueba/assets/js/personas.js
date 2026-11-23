@@ -12,7 +12,7 @@ import { puede } from './permisos.js';
 import { ir, toast, abrirModal, cerrarModal } from './marco.js';
 import { h, tabla, fmtFecha, normalizar } from './utiles.js';
 import { ROTULO_EQUIPO_TIPO, ROTULO_PERSONA_ESTADO, ROTULO_CUENTA_ESTADO } from './modelos.js';
-import { inyectarEstilos as estilosRed, seguro, CATEGORIAS_PUESTO } from './red.js';
+import { seguro, CATEGORIAS_PUESTO } from './red.js';
 
 /** @typedef {import('./red.js').Contexto} Contexto */
 /** @typedef {import('./modelos.js').Equipo} Equipo */
@@ -23,32 +23,6 @@ import { inyectarEstilos as estilosRed, seguro, CATEGORIAS_PUESTO } from './red.
 /** Categorías de «otro» que son equipos de escritorio (PC y notebooks). */
 const CATEGORIAS_ESCRITORIO = ['PC de escritorio', 'Notebook'];
 
-/** Agrega una sola vez los estilos de las pantallas de Personas (y los de Red que reutilizan). */
-export function inyectarEstilosPersonas() {
-  estilosRed();
-  if (document.getElementById('estilos-personas')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-personas';
-  s.textContent = `
-.pe-alerta{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--bad-fg);background:var(--bad-bg);border:1px solid var(--bad-borde);border-radius:4px;padding:0 6px;margin-left:6px;white-space:nowrap}
-.pe-alerta::before{content:"!";font-weight:800}
-.pe-estado{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap}
-.pe-estado::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
-.pe-estado.off::before{border-radius:0;background:transparent;border:2px solid var(--muted);width:10px;height:10px;transform:rotate(45deg) scale(.8)}
-.pe-lista a,.pe-lista span{display:block}
-.pe-grupos{display:flex;flex-wrap:wrap;gap:4px}
-.pe-grupo{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--borde-fuerte);background:var(--surf2);border-radius:12px;padding:0 9px;height:24px;font-size:12.5px}
-.pe-grupo button{border:0;background:transparent;padding:0 2px;height:20px;line-height:1;color:var(--muted)}
-.pe-modal{padding:18px 20px;width:560px;max-width:92vw}
-.pe-modal select[size]{width:100%;margin-top:6px}
-.pe-modal .campo{margin-top:8px}
-.pe-modal .campo input[type=search],.pe-modal .campo input[type=text]{width:100%}
-.pe-asig{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.pe-asig .quien{font-size:15px;font-weight:700}
-.pe-celda-equipos a{display:block;white-space:nowrap}
-`;
-  document.head.appendChild(s);
-}
 
 /** Usuario, organización activa, umbrales y permisos del módulo Personas (misma forma que el contexto de Red). @returns {Promise<Contexto>} */
 export async function cargarContextoPersonas() {
@@ -243,7 +217,6 @@ export async function bloqueAsignacion(ctx, e, rearmar) {
   if (!puede(ctx.u, 'ver', 'personas', ctx.org)) return null;
   const asigs = await repositorio.listar('asignaciones', { equipo_id: e.id });
   if (!esEquipoDeEscritorio(e) && !asigs.length) return null;
-  inyectarEstilosPersonas();
   const vigentes = asigs.filter(a => !a.asignacion_hasta).sort((a, b) => (a.asignacion_desde < b.asignacion_desde ? 1 : a.asignacion_desde > b.asignacion_desde ? -1 : 0));
   const filas = (await Promise.all(vigentes.map(async a => ({ a, p: await repositorio.obtener('personas', a.persona_id) })))).filter(x => x.p);
   const modifica = puede(ctx.u, 'modificar', 'personas', ctx.org);

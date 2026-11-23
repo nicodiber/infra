@@ -9,7 +9,7 @@ import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, toast } from '../assets/js/marco.js';
 import { h, tabla, ahoraISO, fmtFecha, normalizar } from '../assets/js/utiles.js';
-import { inyectarEstilos, cargarContexto, leerRuta, encabezado, campo, avisoVista, formulario, fichaCab, textoUltimoCambio, seguro, enlace, pestanas, calcularIpsDeVlan, numeroAIp, hashEquipo, ROTULO_SEGURIDAD } from '../assets/js/red.js';
+import { cargarContexto, leerRuta, encabezado, campo, avisoVista, formulario, fichaCab, textoUltimoCambio, seguro, enlace, pestanas, calcularIpsDeVlan, numeroAIp, hashEquipo, ROTULO_SEGURIDAD } from '../assets/js/red.js';
 
 /** @type {import('../assets/js/red.js').Campo[]} */
 const CAMPOS = [
@@ -19,7 +19,6 @@ const CAMPOS = [
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilos();
   const ctx = await cargarContexto();
   const id = leerRuta().partes[0];
   const vlan = id ? await repositorio.obtener('vlans', id) : null;

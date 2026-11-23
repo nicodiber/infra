@@ -13,7 +13,7 @@ import { h, tabla, fmtFechaHora, hoyISO } from '../assets/js/utiles.js';
 import { ROTULO_SERVICIO_TIPO, TIPOS_REGISTRO_DNS } from '../assets/js/modelos.js';
 import { sinPermiso, pestanas, campo, fichaCab, botonBaja, valorHistorial } from '../assets/js/credenciales.js';
 import { pintarNotas } from '../assets/js/notas.js';
-import { aplicarEstilosServicios, textoVencimientoServicio } from './servicios.view.js';
+import { textoVencimientoServicio } from './servicios.view.js';
 
 /** @type {Object<string, string>} */
 const ROTULO_CAMPO = { servicio_tipo: 'Tipo', servicio_nombre: 'Nombre', servicio_proveedor: 'Proveedor', servicio_titular: 'Titular', servicio_vence_en: 'Vence el',
@@ -21,7 +21,6 @@ const ROTULO_CAMPO = { servicio_tipo: 'Tipo', servicio_nombre: 'Nombre', servici
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  aplicarEstilosServicios();
   await sesion.refrescar();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const partes = location.hash.replace(/^#\/?/, '').split('/');

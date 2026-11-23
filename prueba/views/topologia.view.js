@@ -24,30 +24,6 @@ const TIPO = {
   access_point: { rotulo: 'Access point', color: 'var(--c-wifi)' }
 };
 
-const CSS = `
-.tp-svg{width:100%;height:auto;display:block;background:var(--surf);border:1px solid var(--borde-fuerte);border-radius:8px}
-.tp-svg text{font-family:var(--sans);fill:var(--texto)}
-.tp-nodo{cursor:pointer}
-.tp-nodo .f{fill:var(--surf2);stroke:var(--tc);stroke-width:2.2}
-.tp-nodo .t{fill:var(--tc);opacity:.18}
-.tp-nodo:hover .f,.tp-nodo:focus-visible .f{stroke-width:3.6}
-.tp-nodo:focus{outline:none}
-.tp-nodo .n1{font-size:12px;font-weight:700}
-.tp-nodo .n2{font-size:10px;fill:var(--muted)}
-.tp-lin{fill:none;stroke:var(--ctl);stroke-width:1.6}
-.tp-lin.isp{stroke:var(--c-puerto);stroke-width:2.6}
-.tp-lin.resp{stroke-dasharray:7 5}
-.tp-golpe{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}
-.tp-g:hover .tp-lin,.tp-g:focus-visible .tp-lin{stroke:var(--acc);stroke-width:3}
-.tp-g:focus{outline:none}
-.tp-et{font-size:9.5px;paint-order:stroke;stroke:var(--surf);stroke-width:3.5px;stroke-linejoin:round}
-.tp-et.isp{font-size:10.5px;font-weight:600}
-.tp-leyenda{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0;font-size:13px}
-.tp-leyenda span{display:inline-flex;align-items:center;gap:6px}
-.tp-leyenda svg{width:30px;height:22px;overflow:visible}
-.tp-leyenda .f{fill:var(--surf2);stroke:var(--tc);stroke-width:2.2}
-.tp-leyenda .t{fill:var(--tc);opacity:.18}
-`;
 
 /** @param {string} nombre @param {Object<string,string|number>} [attrs] @param {Node[]} [hijos] */
 function s(nombre, attrs, hijos) {
@@ -80,7 +56,6 @@ function marca(tipo, w) {
  * @param {HTMLElement} contenedor
  */
 export async function renderVista(contenedor) {
-  if (!document.getElementById('estilos-topologia')) { const st = document.createElement('style'); st.id = 'estilos-topologia'; st.textContent = CSS; document.head.appendChild(st); }
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const org = sesion.organizacionActiva();
   pantalla(contenedor, { codigo: 'P31', nombre: 'Topología de red', migas: (await migasRaiz()).concat([['Red', '#/red'], ['Topología']]) });

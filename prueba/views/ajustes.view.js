@@ -12,17 +12,9 @@ import { ROTULO_TIPO_VERIFICACION, PLANTILLAS_INICIALES, leerPlantillas, guardar
 const VERIFICABLES = ['equipos', 'credenciales', 'puestos', 'racks', 'configuraciones', 'vlans', 'redes_wifi', 'enlaces_isp'];
 const POR_DEFECTO = { aRevisar: 90, viejo: 365 };
 
-function estilos() {
-  if (document.getElementById('estilos-ajustes')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-ajustes';
-  s.textContent = '.aju-fila{display:flex;align-items:center;gap:10px;margin-top:12px}.aju-fila label{width:130px;font-weight:700}.aju-fila input{width:90px}.aju-ayuda{color:var(--muted);font-size:12.5px;margin:2px 0 0 140px}';
-  document.head.appendChild(s);
-}
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  estilos();
   const u = sesion.usuarioActual();
   const base = await migasRaiz();
   pantalla(contenedor, { codigo: 'P20', nombre: 'Ajustes del sistema', migas: base.concat([['Ajustes del sistema']]) });

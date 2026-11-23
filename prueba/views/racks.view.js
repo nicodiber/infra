@@ -9,13 +9,12 @@ import * as sesion from '../assets/js/sesion.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
-import { aplicarEstilos, bloqueSinPermiso, estadoVacio, porId, rutaUbicacion, unidadesOcupadas } from '../assets/js/racks.js';
+import { bloqueSinPermiso, estadoVacio, porId, rutaUbicacion, unidadesOcupadas } from '../assets/js/racks.js';
 
 /**
  * @param {HTMLElement} contenedor
  */
 export async function renderVista(contenedor) {
-  aplicarEstilos();
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const org = sesion.organizacionActiva();
   pantalla(contenedor, { codigo: 'P05', nombre: 'Listado de Racks', migas: (await migasRaiz()).concat([['Racks']]) });

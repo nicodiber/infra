@@ -11,18 +11,6 @@ import { COLECCION_DE_ENTIDAD, ROTULO_PERFIL, ROTULO_CREDENCIAL_TIPO } from '../
 
 /** @typedef {import('../assets/js/solicitudes.js').SolicitudDetallada} SolicitudDetallada */
 
-/** Crea una sola vez los estilos propios de esta pantalla. */
-function estilos() {
-  if (document.getElementById('estilos-solicitudes')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-solicitudes';
-  s.textContent = '.sol-pill{display:inline-flex;align-items:center;gap:5px;padding:1px 9px 1px 6px;border-radius:12px;border:1px solid var(--borde-fuerte);font-size:12.5px;font-weight:600;white-space:nowrap}'
-    + '.sol-pill .ico{width:14px;height:14px}.sol-ok{background:var(--ok-bg);color:var(--ok-fg);border-color:var(--ok)}.sol-pend{background:var(--warn-bg);color:var(--warn-fg);border-color:var(--warn-borde)}'
-    + '.sol-mal{background:var(--bad-bg);color:var(--bad-fg);border-color:var(--bad-borde)}.sol-nada{background:var(--nunca-bg);color:var(--nunca-fg);border-style:dashed}'
-    + '.sol-tarjeta{border-top:1px solid var(--borde);padding:8px 0;display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap}.sol-tarjeta:first-child{border-top:0}'
-    + '.sol-info{flex:1;min-width:260px}.sol-acc{display:flex;gap:8px;align-items:center;flex-wrap:wrap}';
-  document.head.appendChild(s);
-}
 
 /** @param {string} coleccion @param {any} r */
 function nombreRegistro(coleccion, r) {
@@ -76,7 +64,6 @@ async function describirPedido(d) {
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  estilos();
   const u = sesion.usuarioActual();
   const base = await migasRaiz();
   if (!u) return;

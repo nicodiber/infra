@@ -17,41 +17,6 @@ import { nodoCadena, hashEquipo, ROTULO_ESTADO_PUERTO, ROTULO_ENLACE_TIPO } from
 
 /** @typedef {import('./repositorio.js').VinculosDeEquipo} VinculosDeEquipo */
 
-/** Agrega una sola vez los estilos de la pestaña (clases con prefijo `vn-`). */
-function inyectarEstilos() {
-  if (document.getElementById('estilos-vinculos')) return;
-  const s = document.createElement('style');
-  s.id = 'estilos-vinculos';
-  s.textContent = `
-.vn-pasos{flex-wrap:wrap;row-gap:8px;align-items:stretch}
-.vn-pasos .nodo{max-width:190px;padding:6px 7px}
-.vn-pasos .tramo{flex-basis:12px}
-.vn-pasos .nodo b{overflow-wrap:anywhere}
-.vn-sub{font-size:12px;color:var(--muted);margin:2px 0 0}
-.vn-grupos{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:10px;margin-top:10px;align-items:start}
-.vn-grupo{margin:0;padding:10px 14px;min-width:0}
-.vn-grupo h3{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:6px}
-.vn-grupo h3 .vn-n{font-weight:600;color:var(--muted);font-size:12.5px}
-.vn-lista{list-style:none;margin:0;padding:0}
-.vn-lista li{padding:5px 0;border-top:1px solid var(--borde);min-width:0;overflow-wrap:anywhere}
-.vn-lista li:first-child{border-top:0}
-.vn-lista .mut{display:block;font-size:12.5px}
-.vn-lista a{font-weight:600}
-.vn-ancho{grid-column:1/-1}
-.vn-puertos{width:100%}
-.vn-vacio{margin-top:10px}
-.vn-nota-txt{white-space:pre-wrap;font-size:12.5px;margin:4px 0 0;color:var(--texto)}
-@media (max-width:760px){
-  .vn-grupos{grid-template-columns:1fr}
-  .vn-pasos{flex-direction:column;align-items:stretch;overflow:visible}
-  .vn-pasos .nodo{max-width:none;width:100%}
-  .vn-pasos .tramo{flex:0 0 11px;width:2px;height:11px;margin-left:24px;align-self:flex-start}
-  .vn-pasos .tramo::after{right:auto;left:-4px;top:auto;bottom:-1px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--muted);border-bottom:0}
-}
-`;
-  document.head.appendChild(s);
-}
-
 /** Enlace que navega sin recargar. @param {string} texto @param {string} hash */
 function a(texto, hash) { return h('a', { href: hash, text: texto, onclick: (/** @type {Event} */ e) => { e.preventDefault(); ir(hash); } }); }
 
@@ -83,7 +48,6 @@ export function contarVinculos(v) {
  * @param {VinculosDeEquipo|null} v Resultado de `cargarVinculos`.
  */
 export function pintarVinculos(zona, e, v) {
-  inyectarEstilos();
   zona.textContent = '';
   if (!v) { zona.appendChild(h('div', { class: 'aviso', text: 'No se pudieron cargar los vínculos de este equipo.' })); return; }
   const u = /** @type {import('./modelos.js').UsuarioSesion} */ (sesion.usuarioActual());

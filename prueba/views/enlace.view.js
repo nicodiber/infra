@@ -8,11 +8,10 @@ import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir } from '../assets/js/marco.js';
 import { h, tabla } from '../assets/js/utiles.js';
-import { inyectarEstilos, cargarContexto, leerRuta, encabezado, campo, enlace, avisoVista, fichaCab, textoUltimoCambio, hashEquipo, ROTULO_ENLACE_TIPO, ROTULO_ESTADO_PUERTO } from '../assets/js/red.js';
+import { cargarContexto, leerRuta, encabezado, campo, enlace, avisoVista, fichaCab, textoUltimoCambio, hashEquipo, ROTULO_ENLACE_TIPO, ROTULO_ESTADO_PUERTO } from '../assets/js/red.js';
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
-  inyectarEstilos();
   const ctx = await cargarContexto();
   const id = leerRuta().partes[0];
   const l = id ? await repositorio.obtener('enlaces_isp', id) : null;
