@@ -40,10 +40,18 @@ const CSS = `
 .rk-form .campo{margin-top:8px}
 .rk-aviso-borde{margin-top:6px}
 .rk-fila-rack{display:flex;gap:16px;align-items:flex-start}
+.rack .eq{min-height:0}
+@media (max-width:760px){.rk-fila-rack{flex-direction:column;align-items:stretch}.rk-fila-rack>.rack{align-self:flex-start}.rk-ed input{width:70px}}
 .rk-der{flex:1;min-width:0}
 .rk-grupo{margin-top:14px}
 .rk-grupo>h3{margin-bottom:6px;display:flex;gap:8px;align-items:center}
 .rk-celda-rotulo{font-size:12px;color:var(--muted)}
+.rk-sel{margin:8px 0;padding:10px 12px;border:1px solid var(--borde-fuerte);border-left:4px solid var(--acc);border-radius:8px;background:var(--acc-suave)}
+.rk-sel .herr{margin-top:6px}
+.rk-ed{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rk-ed input{width:76px}
+.rk-agregar{margin-top:10px;padding:12px;border:1px solid var(--borde-fuerte);border-radius:8px;background:var(--surf2)}
+.rk-agregar select[size]{width:100%}
 `;
 
 /** Agrega la hoja de estilos propia una sola vez. */
@@ -350,6 +358,22 @@ export function textoUnidadesLibres(total, equipos) {
     if (!libre && ini) { rangos.push(ini === u - 1 ? String(ini) : ini + '–' + (u - 1)); ini = 0; }
   }
   return rangos.length ? 'U' + rangos.join(', ') : 'ninguna';
+}
+
+/**
+ * Primera U inicial donde entra un equipo de `alto` U sin pisar a otros, o null si no hay lugar.
+ * @param {number} total @param {Array<{id: string, rack_u_inicio: number|null, rack_u_alto: number|null}>} equipos @param {number} alto @param {string|null} [excluirId]
+ * @returns {number|null}
+ */
+export function primeraUnidadLibre(total, equipos, alto, excluirId) {
+  const ocup = new Set();
+  for (const e of equipos) if (e.id !== excluirId && e.rack_u_inicio != null) for (let k = 0; k < (e.rack_u_alto || 1); k++) ocup.add(e.rack_u_inicio + k);
+  for (let ini = 1; ini + alto - 1 <= total; ini++) {
+    let libre = true;
+    for (let k = 0; k < alto; k++) if (ocup.has(ini + k)) { libre = false; break; }
+    if (libre) return ini;
+  }
+  return null;
 }
 
 /** Unidades ocupadas por los equipos. @param {Array<{rack_u_alto: number|null}>} equipos */

@@ -1,7 +1,8 @@
 // @ts-check
 /**
  * P18 · Datos del prototipo (CU11, CU12, H02): exportar, importar (solo superadmin) y restablecer los datos de
- * ejemplo (solo superadmin). Explica dónde viven los datos (D-042).
+ * ejemplo (solo superadmin). Explica dónde viven los datos (D-042). Incluye la planilla de Excel con la estructura de
+ * Infradoc (assets/js/planilla.js, docs/planilla-infradoc.md).
  */
 
 import * as repositorio from '../assets/js/repositorio.js';
@@ -9,6 +10,7 @@ import * as sesion from '../assets/js/sesion.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast, repintarMarco, pintarUltimaExportacion } from '../assets/js/marco.js';
 import { h } from '../assets/js/utiles.js';
+import * as planilla from '../assets/js/planilla.js';
 
 /** @type {Object<string, string>} */
 const ROTULO_COLECCION = {
@@ -124,5 +126,125 @@ export async function renderVistaDatos(contenedor) {
       [bExp], puedeExportar, 'Solo el superadmin puede exportar los datos.'),
     bloque('Importar', 'Reemplaza todos los datos de este navegador por los de un archivo exportado antes. Antes de reemplazar te muestra qué trae.', [archivo], puedeImportar, 'Solo el superadmin puede importar.'),
     bloque('Restablecer', 'Borra lo que cargaste y vuelve a los datos de ejemplo.', [bRes], puedeRestablecer, 'Solo el superadmin puede restablecer los datos de ejemplo.')]));
+  // ---- planilla de Excel (D-075): bajar la planilla vacía, exportar los datos e importar una planilla completada
+  const zonaPlanilla = h('div');
+  const ordenCarga = planilla.ESQUEMA.map(x => x.nombre).join(' → ');
+  const casillaSecretos = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'planilla-secretos', disabled: esSuper ? null : 'disabled' }));
+  const avisoSecretos = h('div', { class: 'msg mal', role: 'alert', style: 'margin:6px 0;display:none', text: 'Atención: el archivo va a llevar las contraseñas de las credenciales y NO queda cifrado. Cualquiera que lo abra las lee. Guardalo en un lugar seguro y no lo envíes ni lo compartas.' });
+  casillaSecretos.addEventListener('change', () => { avisoSecretos.style.display = casillaSecretos.checked ? '' : 'none'; });
+  /** @param {boolean} vacia */
+  const bajarPlanilla = async vacia => {
+    try {
+      const r = await planilla.generarPlanilla({ vacia, usuario: u, incluirContrasenas: casillaSecretos.checked });
+      planilla.descargarArchivo(r.nombre, r.bytes);
+      const filas = r.resumen.reduce((n, x) => n + x[1], 0);
+      toast(vacia ? 'Planilla vacía descargada «' + r.nombre + '».' : 'Planilla descargada «' + r.nombre + '»: ' + filas + ' filas' + (r.contrasenas ? ', con ' + r.contrasenas + ' contraseñas SIN cifrar' : ', sin contraseñas') + '.');
+      if (!vacia && (r.recortadas || r.ambiguas)) {
+        zonaPlanilla.textContent = '';
+        zonaPlanilla.appendChild(h('div', { class: 'msg', role: 'status' }, [
+          r.recortadas ? h('div', { text: r.recortadas + ' texto(s) eran más largos de lo que admite una celda de Excel y se recortaron.' }) : null,
+          r.ambiguas ? h('div', { text: r.ambiguas + ' registro(s) tienen el mismo nombre que otro de su organización: en las hojas que los nombran se escribió su id para no confundirlos.' }) : null]));
+      }
+    } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo generar la planilla.'); }
+  };
+  const archivoPlanilla = /** @type {HTMLInputElement} */ (h('input', { type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'aria-label': 'Planilla a importar', disabled: puedeImportar ? null : 'disabled' }));
+  archivoPlanilla.addEventListener('change', async () => {
+    zonaPlanilla.textContent = '';
+    const f = archivoPlanilla.files && archivoPlanilla.files[0];
+    if (!f) return;
+    zonaPlanilla.appendChild(h('div', { class: 'mut', role: 'status', text: 'Leyendo «' + f.name + '»…' }));
+    try {
+      const plan = await planilla.analizarPlanilla(await f.arrayBuffer(), u);
+      pintarVistaPrevia(plan, f.name);
+    } catch (e) {
+      zonaPlanilla.textContent = '';
+      zonaPlanilla.appendChild(h('div', { class: 'msg mal', role: 'alert', text: e instanceof Error ? e.message : 'No se pudo leer la planilla.' }));
+    }
+  });
+
+  /** Vista previa de lo que haría la importación, con los errores por hoja, fila y columna. @param {import('../assets/js/planilla.js').Plan} plan @param {string} nombreArchivo */
+  function pintarVistaPrevia(plan, nombreArchivo) {
+    zonaPlanilla.textContent = '';
+    const presentes = plan.hojas.filter(x => x.presente);
+    const ausentes = plan.hojas.filter(x => !x.presente);
+    const sinDns = presentes.filter(x => x.nombre !== 'Registros DNS');
+    const dns = presentes.find(x => x.nombre === 'Registros DNS');
+    const totales = sinDns.reduce((t, x) => ({ crear: t.crear + x.crear, actualizar: t.actualizar + x.actualizar, sin: t.sin + x.sinCambios }), { crear: 0, actualizar: 0, sin: 0 });
+    const tabla = h('table', { class: 'tabla-vista-previa' }, [
+      h('thead', null, [h('tr', null, ['Hoja', 'Filas', 'Se crean', 'Se actualizan', 'Sin cambios', 'Con errores'].map(t => h('th', { text: t })))]),
+      h('tbody', null, presentes.filter(x => x.filas > 0 || x.errores.length).map(x => h('tr', null, [x.nombre, String(x.filas), String(x.crear), String(x.actualizar), String(x.sinCambios), String(new Set(x.errores.filter(e => e.n > 1).map(e => e.n)).size)].map((t, i) => h('td', { text: t, ...(i === 5 && x.errores.length ? { style: 'font-weight:700' } : {}) })))))]);
+    const bloqueErrores = plan.hojas.filter(x => x.errores.length || x.avisos.length).map(x => h('details', { open: x.errores.length ? 'open' : null, style: 'margin:6px 0' }, [
+      h('summary', { text: x.nombre + (x.errores.length ? ': ' + x.errores.length + ' error' + (x.errores.length === 1 ? '' : 'es') : ': avisos') }),
+      h('ul', { class: 'resumen-importar' }, [
+        ...x.errores.slice(0, 100).map(e => h('li', { class: 'mal', text: x.nombre + (e.n > 1 ? ', fila ' + e.n : ', encabezado') + (e.col ? ', columna «' + e.col + '»' : '') + ': ' + e.mensaje })),
+        x.errores.length > 100 ? h('li', { text: '… y ' + (x.errores.length - 100) + ' errores más.' }) : null,
+        ...x.avisos.map(a => h('li', { text: x.nombre + ': ' + a }))])]));
+    const hayErrores = plan.errores > 0;
+    const aplicar = async (/** @type {boolean} */ soloValidas) => {
+      zonaPlanilla.textContent = '';
+      zonaPlanilla.appendChild(h('div', { class: 'mut', role: 'status', text: 'Aplicando la planilla…' }));
+      try {
+        const r = await planilla.aplicarPlanilla(u, { soloValidas });
+        archivoPlanilla.value = '';
+        await repintarMarco();
+        zonaPlanilla.textContent = '';
+        zonaPlanilla.appendChild(h('div', { class: r.errores.length ? 'msg mal' : 'msg', role: 'status' }, [
+          h('div', { style: 'font-weight:700', text: 'Planilla importada: ' + r.creados + ' creados, ' + r.actualizados + ' actualizados' + (r.conexiones ? ', ' + r.conexiones + ' conexiones nuevas' : '') + '.' }),
+          r.errores.length ? h('div', { text: 'No se pudieron guardar ' + r.errores.length + ' filas:' }) : null,
+          r.errores.length ? h('ul', { class: 'resumen-importar' }, r.errores.slice(0, 100).map(e => h('li', { text: e }))) : null]));
+        toast('Planilla importada: ' + r.creados + ' creados, ' + r.actualizados + ' actualizados.');
+      } catch (e) {
+        zonaPlanilla.textContent = '';
+        zonaPlanilla.appendChild(h('div', { class: 'msg mal', role: 'alert', text: e instanceof Error ? e.message : 'No se pudo importar la planilla.' }));
+      }
+    };
+    const confirmarValidas = h('div');
+    const bRespaldo = h('button', { type: 'button', text: 'Exportar un respaldo (JSON) antes', onclick: async () => {
+      try {
+        const r = await repositorio.exportar({ organizacionId: null, incluirSecretos: true, usuarioId: u.id });
+        toast('Respaldo «' + r.archivo + '»: ' + r.registros + ' registros.');
+        await pintarUltimaExportacion();
+      } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo exportar.'); }
+    } });
+    zonaPlanilla.appendChild(h('div', { class: 'msg' + (hayErrores ? ' mal' : ''), role: 'status' }, [
+      h('div', { style: 'font-weight:700', text: 'Vista previa de «' + nombreArchivo + '» (todavía no se cambió nada)' }),
+      h('div', { text: totales.crear + ' filas se crean, ' + totales.actualizar + ' se actualizan, ' + totales.sin + ' no cambian' + (dns && dns.crear ? ' (y se agregan ' + dns.crear + ' registros DNS a sus servicios)' : '') + (hayErrores ? ' y ' + plan.errores + ' errores impiden importar todo.' : '. No hay errores.') }),
+      h('div', { class: 'tabla-scroll', style: 'overflow:auto;margin:8px 0' }, [tabla]),
+      ausentes.length ? h('div', { class: 'mut', text: 'No están en el archivo: ' + ausentes.map(x => x.nombre).join(', ') + '.' }) : null,
+      plan.contrasenas ? h('div', { class: 'msg mal', style: 'margin:6px 0', text: plan.contrasenas + ' credenciales traen contraseña: van a quedar sin cifrar en este navegador (D-042).' }) : null,
+      ...bloqueErrores,
+      h('div', { text: 'Importar no borra nada: crea lo nuevo y completa lo que ya existe (una celda vacía nunca pisa un dato). Todo queda en el historial.', style: 'margin-top:6px' }),
+      h('div', { class: 'herr', style: 'margin:8px 0 0' }, [
+        bRespaldo,
+        h('button', { type: 'button', class: 'primario', text: 'Aplicar la planilla', disabled: hayErrores || !plan.validas ? 'disabled' : null, onclick: () => aplicar(false) }),
+        hayErrores && plan.validas ? h('button', { type: 'button', text: 'Aplicar solo las filas válidas (' + plan.validas + ')', onclick: () => {
+          confirmarValidas.textContent = '';
+          confirmarValidas.appendChild(h('div', { class: 'msg mal', role: 'alert' }, [
+            h('div', { style: 'font-weight:700', text: 'Las filas con errores (y las que dependen de ellas) NO se van a importar. ¿Aplicar solo las ' + plan.validas + ' filas válidas?' }),
+            h('div', { class: 'herr', style: 'margin:8px 0 0' }, [
+              h('button', { type: 'button', class: 'primario', text: 'Sí, aplicar las válidas', onclick: () => aplicar(true) }),
+              h('button', { type: 'button', text: 'No', onclick: () => { confirmarValidas.textContent = ''; } })])]));
+        } }) : null,
+        h('button', { type: 'button', text: 'Cancelar', onclick: () => { planilla.cancelarPlanilla(); zonaPlanilla.textContent = ''; archivoPlanilla.value = ''; } })]),
+      confirmarValidas]));
+    if (!plan.validas && !hayErrores) zonaPlanilla.appendChild(h('div', { class: 'mut', style: 'margin-top:6px', text: 'La planilla no trae nada para crear ni actualizar.' }));
+  }
+
+  const bloquePlanilla = h('div', { class: 'bloque', style: 'margin:10px 0' }, [
+    h('h2', { text: 'Planilla de Excel' }),
+    h('p', { class: 'mut', style: 'margin:4px 0 8px', text: 'La estructura de Infradoc en un archivo de Excel (.xlsx): una hoja por tipo de dato y una hoja de instrucciones. Sirve para pasar la documentación del Excel desordenado a datos con estructura, como respaldo y para importar al producto final. Las referencias van por nombre (el rack «RACK-01», la ubicación «Sala de servidores»), así que se pueden completar a mano.' }),
+    h('p', { style: 'margin:4px 0', text: 'Orden recomendado de carga (cada hoja apunta a las anteriores): ' + ordenCarga + '.' }),
+    h('div', { class: 'herr', style: 'margin:8px 0' }, [
+      h('button', { type: 'button', text: 'Descargar planilla vacía', onclick: () => bajarPlanilla(true) }),
+      h('button', { type: 'button', text: 'Exportar mis datos a Excel', onclick: () => bajarPlanilla(false) })]),
+    h('label', { for: 'planilla-secretos', style: 'display:flex;gap:6px;align-items:center;margin:4px 0' }, [casillaSecretos, 'Incluir contraseñas (solo superadmin)']),
+    h('div', { class: 'mut', text: esSuper ? 'Sin la casilla, la planilla NO lleva contraseñas. Con la casilla, el archivo queda sin cifrar.' : 'Tu planilla lleva lo que tu perfil puede ver y nunca contraseñas.' }),
+    avisoSecretos,
+    h('div', { style: 'margin-top:12px;font-weight:700', text: 'Importar planilla' }),
+    h('div', { class: 'mut', style: 'margin:4px 0 8px', text: 'Antes de aplicar nada ves una vista previa con lo que se crea, lo que se actualiza y los errores fila por fila.' }),
+    archivoPlanilla,
+    puedeImportar ? null : h('div', { class: 'mut', style: 'margin-top:8px', text: 'Solo el superadmin puede importar una planilla.' })]);
   contenedor.appendChild(zona);
+  contenedor.appendChild(bloquePlanilla);
+  contenedor.appendChild(zonaPlanilla);
 }

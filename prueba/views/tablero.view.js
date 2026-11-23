@@ -472,7 +472,11 @@ export async function renderVistaTablero(contenedor) {
   const zonaAviso = h('div');
   const zonaCuerpo = h('div');
   contenedor.appendChild(zonaAviso);
-  contenedor.appendChild(h('div', { style: 'margin-bottom:10px' }, [h('h1', { text: org.organizacion_nombre + (org.organizacion_rubro ? ' · ' + org.organizacion_rubro : '') })]));
+  contenedor.appendChild(h('div', { class: 'fila', style: 'margin-bottom:10px;align-items:center;justify-content:space-between' }, [h('h1', { text: org.organizacion_nombre + (org.organizacion_rubro ? ' · ' + org.organizacion_rubro : '') }),
+    puede(u, 'ver_organizaciones') ? h('button', { type: 'button', text: 'Editar organización', onclick: async () => {
+      const { abrirFormularioOrganizacion } = await import('./organizaciones.view.js');
+      abrirFormularioOrganizacion(org, async () => { await repintarMarco(); contenedor.textContent = ''; await renderVistaTablero(contenedor); });
+    } }) : null]));
   contenedor.appendChild(zonaCuerpo);
 
   const pintarAviso = async () => {
@@ -490,10 +494,11 @@ export async function renderVistaTablero(contenedor) {
     ['Configuraciones', 'configuraciones', 'configuracion', 'configuraciones', '#/configuraciones', () => repositorio.contar('configuraciones', { organizacion_id: orgId })],
     ['Credenciales', 'credenciales', 'credencial', 'credenciales', '#/credenciales', () => repositorio.contar('credenciales', { organizacion_id: orgId })]
   ]);
+  let totalDatos = 0;
   const indicadores = h('div', { class: 'fila ind-pend' });
   for (const [nombre, modulo, tipo, unidad, hash, contarFn] of IND) {
     if (!puede(u, 'ver', modulo, orgId)) continue;
-    const n = await contarFn();
+    const n = await contarFn(); totalDatos += n;
     indicadores.appendChild(h('button', { type: 'button', class: 'ind g1 t-' + tipo, onclick: () => ir(hash), 'aria-label': nombre + ': ' + n + ' ' + unidad }, [
       h('span', { class: 'ind-cab' }, [icono(tipo), nombre]), h('b', { text: String(n) }), h('small', { text: unidad })]));
   }
@@ -505,6 +510,8 @@ export async function renderVistaTablero(contenedor) {
       zonaCuerpo.removeChild(indicadores);
       zonaCuerpo.appendChild(h('div', { class: 'aviso', text: 'Tu rol solo ve la ficha básica de ' + org.organizacion_nombre + ' (nombre y rubro). Si necesitás ver más, pedile a tu superior que te dé permisos de lectura.' }));
     }
+    if (indicadores.childElementCount && !totalDatos) zonaCuerpo.appendChild(h('div', { class: 'estado-vacio', role: 'status', style: 'margin:10px 0' }, [h('h2', { text: 'Esta organización todavía no tiene datos' }),
+      h('p', { text: 'Empezá cargando sus ubicaciones y racks, y después los equipos, servidores y credenciales. Los usuarios (gerente, técnico, operario) se asignan desde Usuarios.' })]));
     zonaCuerpo.appendChild(await bloqueParaRevisar(u, orgId));
     const zonaFila = h('div', { class: 'fila', style: 'margin-top:10px;align-items:flex-start' });
     zonaCuerpo.appendChild(zonaFila);
