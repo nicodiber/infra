@@ -14,7 +14,7 @@ import {
   h, icono, tabla, ahoraISO, fmtFecha, fmtFechaHora, diasHasta, textoVence, indicadorVerificacion, estadoVerificacion, diasDesde
 } from '../assets/js/utiles.js';
 import {
-  COLECCION_DE_ENTIDAD, ROTULO_CREDENCIAL_TIPO, ROTULO_EQUIPO_TIPO, ROTULO_PERFIL, moduloDeEntidad
+  COLECCION_DE_ENTIDAD, ROTULO_CREDENCIAL_TIPO, ROTULO_SERVICIO_TIPO, ROTULO_EQUIPO_TIPO, ROTULO_PERFIL, moduloDeEntidad
 } from '../assets/js/modelos.js';
 import { CATEGORIAS_PUESTO } from '../assets/js/red.js';
 import { confirmarConPasos } from '../assets/js/verificacion.js';
@@ -220,6 +220,11 @@ async function bloqueVencimientos(u, orgId) {
       const c = e.equipo_campos || {};
       if (e.equipo_tipo === 'firewall' && verRed && c.firewall_licencia_vence_en) filas.push({ fecha: c.firewall_licencia_vence_en, que: 'Licencia de ' + e.equipo_nombre, hash: '#/equipo/' + e.id });
       if (e.equipo_tipo === 'servidor' && verSrv && c.servidor_garantia_vence_en) filas.push({ fecha: c.servidor_garantia_vence_en, que: 'Garantía de ' + e.equipo_nombre, hash: '#/servidor/' + e.id });
+    }
+  }
+  if (puede(u, 'ver', 'configuraciones', orgId)) {
+    for (const sv of await repositorio.listar('servicios', { organizacion_id: orgId })) {
+      if (sv.servicio_vence_en) filas.push({ fecha: sv.servicio_vence_en, que: sv.servicio_nombre + ' (' + (ROTULO_SERVICIO_TIPO[sv.servicio_tipo] || sv.servicio_tipo) + ')', hash: '#/servicio/' + sv.id });
     }
   }
   // Lo vencido hace poco y lo que vence en los próximos 4 meses.

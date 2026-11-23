@@ -27,7 +27,8 @@ export async function renderVista(contenedor) {
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const { segs, query } = partesHash();
   const id = segs[1] || '';
-  const resaltar = query.get('resaltar') || segs[2] || '';
+  const tabExtra = ['relaciones', 'archivos'].includes(segs[2]) ? segs[2] : '';
+  const resaltar = query.get('resaltar') || (tabExtra ? '' : segs[2]) || '';
   const raiz = await migasRaiz();
   const rack0 = id ? await repositorio.obtener('racks', id) : null;
   if (!rack0) {
@@ -157,7 +158,16 @@ export async function renderVista(contenedor) {
     const migas = raiz.concat([['Racks', '#/racks'], [rack.rack_nombre, enResalt ? '#/rack/' + rack.id : undefined]]);
     if (enResalt) migas.push([enResalt.equipo_nombre]);
     pantalla(contenedor, { codigo: 'P08', nombre: 'Vista de rack', migas });
-    contenedor.appendChild(h('div', { class: 'rk-fila-rack' }, [dibujo, h('div', { class: 'rk-der' }, [cabecera, leyenda, alternativa])]));
+    const barra = h('div', { class: 'pestanas', role: 'tablist' }, [['', 'Vista de rack'], ['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']].map(t => h('button', { type: 'button', role: 'tab', class: t[0] === tabExtra ? 'sel' : '',
+      'aria-selected': String(t[0] === tabExtra), onclick: () => ir('#/rack/' + rack.id + (t[0] ? '/' + t[0] : '')) }, [t[1]])));
+    if (tabExtra) {
+      contenedor.appendChild(cabecera); contenedor.appendChild(barra);
+      const zona = h('div'); contenedor.appendChild(zona);
+      if (tabExtra === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'Rack', entidadId: rack.id, organizacionId: org });
+      else await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'Rack', entidadId: rack.id, organizacionId: org });
+      return;
+    }
+    contenedor.appendChild(h('div', { class: 'rk-fila-rack' }, [dibujo, h('div', { class: 'rk-der' }, [cabecera, barra, leyenda, alternativa])]));
     if (elResaltado) { const el = elResaltado; setTimeout(() => { if (el.isConnected) el.scrollIntoView({ block: 'center' }); }, 60); }
   };
   await pintar();

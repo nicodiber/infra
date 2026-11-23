@@ -27,6 +27,15 @@ export async function renderVista(contenedor) {
     repositorio.umbralesVerificacion()]);
   const ubic = porId(ubicaciones);
   const puedeModificar = puede(u, 'modificar', 'racks', org);
+  const puedeVerPlano = puede(u, 'ver', 'organizacion', org), puedeSubirPlano = puede(u, 'modificar', 'organizacion', org);
+  /** Enlace «Plano»: al plano de la ubicación (o de la más cercana que lo tenga); si no hay ninguno, solo a quien puede subirlo. @param {string} ubicacionId */
+  const enlacePlano = ubicacionId => {
+    if (!puedeVerPlano) return null;
+    let actual = ubic.get(ubicacionId), tope = 0;
+    while (actual && !actual.ubicacion_plano_archivo_id && actual.ubicacion_padre_id && tope++ < 10) actual = ubic.get(actual.ubicacion_padre_id);
+    if (actual && actual.ubicacion_plano_archivo_id) return h('a', { href: '#/plano/' + actual.id, class: 'mut', style: 'font-size:13px;font-weight:400;margin-left:8px', text: 'Plano' });
+    return puedeSubirPlano ? h('a', { href: '#/plano/' + ubicacionId, class: 'mut', style: 'font-size:13px;font-weight:400;margin-left:8px', title: 'Todavía no tiene plano: podés subirlo', text: 'Plano (subir)' }) : null;
+  };
   let texto = '';
   const zona = h('div');
 
@@ -48,7 +57,7 @@ export async function renderVista(contenedor) {
     for (const nombre of Array.from(grupos.keys()).sort((a, b) => a.localeCompare(b, 'es'))) {
       const lista = /** @type {any[]} */ (grupos.get(nombre));
       zona.appendChild(h('div', { class: 'rk-grupo' }, [
-        h('h3', { text: nombre + ' (' + lista.length + (lista.length === 1 ? ' rack)' : ' racks)') }),
+        h('h3', null, [nombre + ' (' + lista.length + (lista.length === 1 ? ' rack)' : ' racks)'), enlacePlano(lista[0].ubicacion_id)]),
         tabla(['Rack', 'Alto (U)', 'U ocupadas / totales', 'Equipos', 'Profundidad', 'Verificado'], lista.map(r => {
           const montados = equipos.filter(e => e.rack_id === r.id);
           const oc = unidadesOcupadas(montados);

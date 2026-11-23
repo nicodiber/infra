@@ -169,27 +169,41 @@ async function dibujar(cont, ctx, p, partes, editando, notas, cambiar, rearmar) 
   const tabs = [['equipos', 'Equipos (' + vigentes.length + ')'], ['cuentas', 'Cuentas de dominio (' + cuentas.length + ')']];
   if (verLic) tabs.push(['licencias', 'Licencias (' + lic.length + ')']);
   if (notas) tabs.push(['notas', 'Notas']);
+  tabs.push(['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']);
   if (ctx.historial) tabs.push(['historial', 'Historial']);
   const tab = tabs.some(t => t[0] === partes[1]) ? partes[1] : 'equipos';
   const barra = pestanas(tabs, tab, k => '#/persona/' + p.id + '/' + k);
   barra.style.margin = '8px 0 8px';
   cont.appendChild(barra);
 
-  if (tab === 'equipos') cont.appendChild(cuerpoEquipos(ctx, p, asigs, me, rearmar));
+  if (tab === 'equipos') cont.appendChild(await cuerpoEquipos(ctx, p, asigs, me, rearmar));
   else if (tab === 'cuentas') cont.appendChild(cuerpoCuentas(ctx, p, cuentas));
   else if (tab === 'licencias') cont.appendChild(cuerpoLicencias(lic));
   else if (tab === 'notas' && notas) {
     const zona = h('div');
     cont.appendChild(zona);
     try { await notas(zona, { entidad: 'Persona', entidadId: p.id, organizacionId: ctx.org }); } catch (e) { console.error(e); zona.appendChild(h('div', { class: 'aviso', text: 'No se pudieron mostrar las notas.' })); }
+  } else if (tab === 'relaciones' || tab === 'archivos') {
+    const zona = h('div'); cont.appendChild(zona);
+    try {
+      if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'Persona', entidadId: p.id, organizacionId: ctx.org });
+      else await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'Persona', entidadId: p.id, organizacionId: ctx.org });
+    } catch (e) { console.error(e); zona.appendChild(h('div', { class: 'aviso', text: 'No se pudo mostrar esta pestaña.' })); }
   } else cont.appendChild(await cuerpoHistorial(ctx, p, puestos));
 }
 
 /**
  * @param {Contexto} ctx @param {Persona} p @param {import('../assets/js/modelos.js').Asignacion[]} asigs @param {Map<string, any>} me @param {() => Promise<void>} rearmar
  */
-function cuerpoEquipos(ctx, p, asigs, me, rearmar) {
+async function cuerpoEquipos(ctx, p, asigs, me, rearmar) {
   const vigentes = asigs.filter(a => !a.asignacion_hasta);
+  // Otras personas que tienen el mismo equipo hoy (equipo compartido, D-072).
+  /** @type {Map<string, any[]>} */
+  const comparte = new Map();
+  for (const a of vigentes) {
+    const otras = (await repositorio.asignacionesVigentes(a.equipo_id)).filter(x => x.persona_id !== p.id);
+    comparte.set(a.equipo_id, (await Promise.all(otras.map(x => repositorio.obtener('personas', x.persona_id)))).filter(Boolean));
+  }
   const cuerpo = h('div');
   const barra = h('div', { class: 'herr' }, [h('h3', { text: 'Asignación vigente', style: 'margin:0' }), h('span', { style: 'flex:1' }),
     ctx.modifica && p.persona_estado === 'activa' ? h('button', { type: 'button', class: 'primario', text: 'Asignar equipo', onclick: () => modalAsignar({ ctx, persona: p, alTerminar: rearmar }) }) : null]);
@@ -197,10 +211,12 @@ function cuerpoEquipos(ctx, p, asigs, me, rearmar) {
   if (!vigentes.length) {
     cuerpo.appendChild(h('div', { class: 'aviso', text: p.persona_estado === 'baja' ? 'No tiene equipos asignados hoy.' : 'No tiene equipos asignados hoy.' + (ctx.modifica ? ' Usá «Asignar equipo» para entregarle uno.' : '') }));
   } else {
-    cuerpo.appendChild(tabla(['Equipo', 'Tipo', 'IP', 'Desde', 'Motivo', ''], vigentes.map(a => {
+    cuerpo.appendChild(tabla(['Equipo', 'Tipo', 'IP', 'Compartido con', 'Desde', 'Motivo', ''], vigentes.map(a => {
       const e = me.get(a.equipo_id);
-      return [e ? enlaceFila(e.equipo_nombre, hashDeEquipo(e)) : '—', e ? tipoEquipo(e) : '—', e && e.equipo_ip_gestion ? e.equipo_ip_gestion : '—', fmtFecha(a.asignacion_desde), a.asignacion_motivo || '—',
-        ctx.modifica && e ? h('button', { type: 'button', class: 'chico', text: 'Devolver', onclick: () => modalDevolver(ctx, e, p.persona_nombre, rearmar) }) : ''];
+      const otras = comparte.get(a.equipo_id) || [];
+      return [e ? enlaceFila(e.equipo_nombre, hashDeEquipo(e)) : '—', e ? tipoEquipo(e) : '—', e && e.equipo_ip_gestion ? e.equipo_ip_gestion : '—',
+        otras.length ? h('span', null, otras.map((x, i) => h('span', null, [i ? ', ' : '', enlaceFila(x.persona_nombre, '#/persona/' + x.id + '/equipos')]))) : '—', fmtFecha(a.asignacion_desde), a.asignacion_motivo || '—',
+        ctx.modifica && e ? h('button', { type: 'button', class: 'chico', text: 'Devolver', onclick: () => modalDevolver(ctx, e, p.persona_nombre, rearmar, p.id) }) : ''];
     })));
   }
   cuerpo.appendChild(h('h3', { text: 'Historial completo de asignaciones', style: 'margin:16px 0 6px' }));
@@ -277,7 +293,7 @@ function confirmarPasarABaja(ctx, p, vigentes, cuentas, equipos, rearmar) {
     h('div', { class: 'herr', style: 'justify-content:flex-end' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }),
       h('button', { type: 'button', class: 'primario', text: 'Sí, pasar a baja', onclick: async () => {
         const ok = await seguro(async () => {
-          for (const a of vigentes) await repositorio.devolverEquipo({ equipoId: a.equipo_id, usuarioId: ctx.u.id, observaciones: 'Baja de la persona.' });
+          for (const a of vigentes) await repositorio.devolverEquipo({ equipoId: a.equipo_id, personaId: p.id, usuarioId: ctx.u.id, observaciones: 'Baja de la persona.' });
           return repositorio.guardar('personas', { ...p, persona_estado: 'baja' }, ctx.u.id, { motivo: 'La persona dejó la organización.' });
         });
         cerrarModal();

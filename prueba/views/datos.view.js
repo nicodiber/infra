@@ -32,6 +32,7 @@ export async function renderVistaDatos(contenedor) {
   const puedeImportar = puede(u, 'importar');
   const puedeRestablecer = puede(u, 'restablecer');
   const esSuper = u.usuario_perfil === 'superadmin';
+  const hayNuevos = await repositorio.hayDatosEjemploNuevos();
 
   // ---- exportar
   const bExp = h('button', { type: 'button', text: 'Exportar a un archivo', disabled: puedeExportar ? null : 'disabled', onclick: async () => {
@@ -53,7 +54,7 @@ export async function renderVistaDatos(contenedor) {
       zona.appendChild(h('div', { class: 'msg' }, [
         h('div', { text: 'El archivo «' + f.name + '» tiene datos de ' + r.alcance + ' (' + r.organizaciones.join(', ') + '):' }),
         h('ul', { class: 'resumen-importar' }, r.filas.map(x => h('li', { text: x[1] + ' ' + (ROTULO_COLECCION[x[0]] || x[0]) }))),
-        ...r.advertencias.map(a => h('div', { class: 'msg mal', text: a })),
+        ...r.advertencias.map(a => h('div', { class: r.migrado && a.startsWith('El archivo se exportó con una versión anterior') ? 'msg' : 'msg mal', text: a })),
         h('div', { text: 'Importar reemplaza TODO lo que hay ahora en este navegador. Si querés conservarlo, exportalo antes.', style: 'font-weight:700' }),
         h('div', { class: 'herr', style: 'margin:8px 0 0' }, [
           h('button', { type: 'button', class: 'primario', text: 'Sí, reemplazar los datos', onclick: async () => {
@@ -83,6 +84,15 @@ export async function renderVistaDatos(contenedor) {
         h('button', { type: 'button', text: 'Cancelar', onclick: () => { zona.textContent = ''; } })])]));
   } });
 
+  // ---- aviso de datos de ejemplo nuevos (D-073, QC43-C): nunca se restablece solo cuando hay datos propios
+  const avisoNuevos = !hayNuevos ? null : h('div', { class: 'msg mal', role: 'status', style: 'margin:10px 0' }, [
+    h('div', { text: 'Hay datos de ejemplo nuevos', style: 'font-weight:700' }),
+    h('div', { text: 'El sitio trae una versión más nueva de los datos de ejemplo. Como en este navegador hay datos que cargaste o cambiaste, no se reemplazaron solos. Restablecer los vuelve a los de ejemplo y se pierde todo lo demás: exportá primero. Después podés importar tu exportación: aunque sea de una versión anterior del programa, se actualiza sola y no se pierde nada.', style: 'margin:4px 0 8px' }),
+    h('div', { class: 'herr', style: 'margin:0' }, [
+      h('button', { type: 'button', text: 'Exportar primero', disabled: puedeExportar ? null : 'disabled', onclick: () => bExp.click() }),
+      h('button', { type: 'button', class: 'primario', text: 'Restablecer', disabled: puedeRestablecer ? null : 'disabled', onclick: () => bRes.click() })]),
+    puedeExportar && puedeRestablecer ? null : h('div', { class: 'mut', style: 'margin-top:6px', text: 'Solo el superadmin puede exportar y restablecer los datos.' })]);
+
   /** Después de reemplazar todos los datos: la sesión puede haber quedado sin usuario. @param {string} mensaje */
   async function terminarCambioDeDatos(mensaje) {
     const vigente = await sesion.refrescar();
@@ -103,9 +113,11 @@ export async function renderVistaDatos(contenedor) {
     : 'Los datos ya estaban en este navegador: abrir la base tardó ' + info.totalMs + ' ms.' + (info.previa ? ' La primera carga de los datos de ejemplo tardó ' + info.previa.totalMs + ' ms (descarga ' + info.previa.descargaMs + ' ms, lectura ' + info.previa.lecturaMs + ' ms, escritura ' + info.previa.escrituraMs + ' ms).' : '');
 
   contenedor.appendChild(h('h1', { text: 'Datos del prototipo' }));
+  if (avisoNuevos) contenedor.appendChild(avisoNuevos);
   contenedor.appendChild(h('div', { class: 'bloque', style: 'margin:10px 0' }, [
     h('p', { style: 'margin-top:0', text: 'Este prototipo guarda todo lo que cargues solo en este navegador (en la base IndexedDB de esta computadora y este usuario de Windows), sin cifrar y sin enviarlo a ningún lado. Cualquiera que use este navegador en esta computadora puede leerlo.' }),
-    h('p', { text: 'Por eso: podés cargar la estructura real (equipos, puertos, VLAN), pero no cargues contraseñas reales. Con los datos de ejemplo podés probar todo sin riesgo.' }),
+    h('p', { text: 'Por eso: podés cargar la estructura real (equipos, puertos, VLAN), pero no cargues contraseñas reales (D-042). Con los datos de ejemplo podés probar todo sin riesgo.' }),
+    h('p', { text: 'Antes de cada prueba, exportá tus datos. Si después se ajusta el programa, importá esa exportación: aunque sea de una versión anterior, se actualiza sola (los campos nuevos quedan con su valor por defecto y no se pierde nada). Si el sitio trae datos de ejemplo nuevos y todavía no cargaste ni cambiaste nada, se restablecen solos; si ya hay datos tuyos, no se toca nada y acá aparece un aviso.' }),
     h('p', { class: 'tiempo-carga', style: 'margin-bottom:0', text: tiempos })]));
   contenedor.appendChild(h('div', { class: 'fila', style: 'align-items:stretch;flex-wrap:wrap' }, [
     bloque('Exportar', 'Descarga un archivo con los datos de todas las organizaciones (incluidas las contraseñas de ejemplo, porque el superadmin las ve). Sirve para guardarlos o llevarlos a otro navegador.',

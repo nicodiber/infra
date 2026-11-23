@@ -605,6 +605,15 @@ const CSS = `
 .as-input{flex:1;height:34px;padding:0 10px;border:1px solid var(--ctl);border-radius:6px;background:var(--surf);color:var(--texto);font:inherit}
 .as-aviso{padding:0 12px 8px;background:var(--surf2);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .as-aviso button{height:26px;font-size:12px}
+@media (max-width:760px){
+.as-fab{right:12px;bottom:calc(36px + env(safe-area-inset-bottom,0px));width:52px;height:52px;z-index:30}
+.as-panel{inset:0;right:0;bottom:0;width:100vw;max-width:100vw;height:100dvh;border-radius:0;border:0;z-index:48}
+.as-cab{padding:10px 12px}
+.as-cerrar{width:44px;height:44px;font-size:24px}
+.as-input{height:44px;font-size:16px}
+.as-enviar{min-height:44px}
+.as-chip{min-height:40px;font-size:13.5px}
+}
 `;
 
 /** @type {HTMLElement|null} */ let fab = null;

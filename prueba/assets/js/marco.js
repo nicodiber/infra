@@ -47,6 +47,7 @@ const MENU = [
   ['Racks', '#/racks', 'racks', { modulo: 'racks' }, 'rack', 'rack', 'ORG'],
   ['Configuraciones', '#/configuraciones', 'configuraciones', { modulo: 'configuraciones' }, 'configuracion', 'configuracion', 'ORG'],
   ['Credenciales', '#/credenciales', 'credenciales', { modulo: 'credenciales' }, 'credencial', 'credencial', 'ORG'],
+  ['Dominios y servicios', '#/servicios', 'servicios', { modulo: 'configuraciones' }, 'red', null, 'ORG'],
   ['Equipos de escritorio', '#/escritorio', 'escritorio', { modulo: 'red' }, 'escritorio', null, 'ORG'],
   ['Personas', '#/personas', 'personas', { modulo: 'personas' }, 'persona', null, 'ORG'],
   ['Licencias', '#/licencias', 'licencias', { modulo: 'licencias' }, 'licencia', null, 'ORG'],
@@ -265,3 +266,48 @@ export function cerrarModal() {
   if (estaba && abridor && /** @type {HTMLElement} */ (abridor).focus && document.contains(abridor)) /** @type {HTMLElement} */ (abridor).focus();
   abridor = null;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Menú desplegable en el celular (D-072)
+// ---------------------------------------------------------------------------------------------
+
+/** Cierra el menú lateral desplegable (solo tiene efecto en pantallas angostas). */
+export function cerrarMenuLateral() {
+  document.body.classList.remove('menu-abierto');
+  const b = document.getElementById('btnMenu');
+  if (b) { b.setAttribute('aria-expanded', 'false'); b.setAttribute('aria-label', 'Abrir el menú'); }
+}
+
+/** Crea el botón de hamburguesa (oculto por CSS en escritorio) y conecta cierre al navegar, con Esc y al tocar afuera. */
+function iniciarMenuCelular() {
+  const cab = document.getElementById('cabecera');
+  if (!cab || document.getElementById('btnMenu')) return;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2'); svg.setAttribute('stroke-linecap', 'round');
+  const trazo = document.createElementNS(ns, 'path');
+  trazo.setAttribute('d', 'M4 7h16M4 12h16M4 17h16');
+  svg.appendChild(trazo);
+  const ico = h('span', { class: 'ico', 'aria-hidden': 'true' });
+  ico.appendChild(svg);
+  const btn = h('button', { type: 'button', id: 'btnMenu', class: 'conSesion', 'aria-label': 'Abrir el menú', 'aria-expanded': 'false', 'aria-controls': 'lateral' }, [ico]);
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const abrir = !document.body.classList.contains('menu-abierto');
+    document.body.classList.toggle('menu-abierto', abrir);
+    btn.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+    btn.setAttribute('aria-label', abrir ? 'Cerrar el menú' : 'Abrir el menú');
+  });
+  cab.insertBefore(btn, cab.firstChild);
+  const lateral = document.getElementById('lateral');
+  if (lateral) lateral.addEventListener('click', e => { if (/** @type {HTMLElement} */ (e.target).closest('a')) cerrarMenuLateral(); });
+  const cuerpo = document.getElementById('cuerpo');
+  if (cuerpo) cuerpo.addEventListener('click', e => { if (e.target === cuerpo) cerrarMenuLateral(); });
+  window.addEventListener('hashchange', cerrarMenuLateral);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.body.classList.contains('menu-abierto')) { cerrarMenuLateral(); btn.focus(); }
+  });
+  window.matchMedia('(min-width: 761px)').addEventListener('change', cerrarMenuLateral);
+}
+iniciarMenuCelular();

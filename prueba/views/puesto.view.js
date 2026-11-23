@@ -10,7 +10,7 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, toast } from '../assets/js/marco.js';
 import { h, tabla, ahoraISO, fmtFecha } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
-import { inyectarEstilos, cargarContexto, leerRuta, encabezado, campo, avisoVista, formulario, fichaCab, cadenaDePuerto, textoUltimoCambio, seguro, pedirBaja, estadoPill, hashEquipo, enlaceFila, cargarPersonas, textoVlan, abrirMoverEquipo } from '../assets/js/red.js';
+import { inyectarEstilos, cargarContexto, leerRuta, encabezado, campo, pestanas, avisoVista, formulario, fichaCab, cadenaDePuerto, textoUltimoCambio, seguro, pedirBaja, estadoPill, hashEquipo, enlaceFila, cargarPersonas, textoVlan, abrirMoverEquipo } from '../assets/js/red.js';
 
 /** @type {import('../assets/js/red.js').Campo[]} */
 const CAMPOS = [
@@ -80,6 +80,15 @@ async function dibujar(cont, ctx, pu, editando, cambiar) {
     ultimoCambio: await textoUltimoCambio(ctx, 'Puesto', pu), alConfirmar: () => cambiar(editando) }));
   if (editando) return;
 
+  const tabP = ['relaciones', 'archivos'].includes(leerRuta().partes[1]) ? leerRuta().partes[1] : '';
+  cont.appendChild(pestanas([['', 'Conexión y equipos'], ['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']], tabP, k => '#/puesto/' + pu.id + (k ? '/' + k : '')));
+  if (tabP) {
+    const zona = h('div'); cont.appendChild(zona);
+    if (tabP === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'Puesto', entidadId: pu.id, organizacionId: ctx.org });
+    else await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'Puesto', entidadId: pu.id, organizacionId: ctx.org });
+    return;
+  }
+
   const rec = h('div', { class: 'bloque', style: 'margin-top:10px' }, [h('h3', { text: 'Recorrido inverso: puesto ← boca de patchera ← puerto del switch' })]);
   if (!bocas.length) rec.appendChild(h('div', { class: 'mut', text: 'Este puesto todavía no tiene una boca de patchera asociada.' + (ctx.modifica ? ' Se vincula desde el puerto de la patchera.' : '') }));
   for (const p of bocas) {
@@ -103,10 +112,10 @@ async function dibujar(cont, ctx, pu, editando, cambiar) {
     const cab = ['Nombre', 'Tipo', 'IP', 'Asignado a', 'Estado'];
     if (ctx.modifica) cab.push('');
     eq.appendChild(tabla(cab, enPuesto.map(e => {
-      const pe = pers.asignadoA.get(e.id);
+      const pes = pers.asignadasA.get(e.id) || [];
       /** @type {Array<Node|string>} */
       const fila = [e.equipo_nombre, ROTULO_EQUIPO_TIPO[e.equipo_tipo] + (e.equipo_campos && e.equipo_campos.otro_categoria ? ' · ' + e.equipo_campos.otro_categoria : ''), e.equipo_ip_gestion || '—',
-        !pers.ver ? '—' : pe ? enlaceFila('#/persona/' + pe.id, pe.persona_nombre) : h('span', { class: 'mut', text: 'Sin asignar' }), estadoPill(e.equipo_estado)];
+        !pers.ver ? '—' : pes.length ? h('div', null, pes.map(pe => h('div', null, [enlaceFila('#/persona/' + pe.id, pe.persona_nombre)]))) : h('span', { class: 'mut', text: 'Sin asignar' }), estadoPill(e.equipo_estado)];
       if (ctx.modifica) fila.push(e.rack_id ? '' : h('button', { type: 'button', text: 'Mover…', title: 'Mover a otro puesto', onclick: (/** @type {Event} */ ev) => { ev.stopPropagation(); abrirMoverEquipo(ctx, e, () => cambiar(false)); } }));
       return fila;
     }), { tipo: 'equipo', onFila: (_, i) => ir(hashEquipo(enPuesto[i])) }));

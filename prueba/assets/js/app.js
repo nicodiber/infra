@@ -73,6 +73,7 @@ const RUTAS = {
   config: pendiente('P10', 'Ficha de configuración', 'configuraciones', { archivo: 'config', modulo: 'configuraciones', icono: 'configuracion' }),
   vlan: pendiente('P11', 'Ficha de VLAN', 'red', { archivo: 'vlan', modulo: 'red', icono: 'vlan' }),
   wifi: pendiente('P11', 'Ficha de red Wi-Fi', 'red', { archivo: 'wifi', modulo: 'red', icono: 'wifi' }),
+  enlace: pendiente('P05', 'Ficha de enlace a Internet', 'red', { archivo: 'enlace', modulo: 'red', icono: 'red' }),
   rack: pendiente('P08', 'Vista de rack', 'racks', { archivo: 'rack', modulo: 'racks', descripcion: 'Acá vas a ver el rack dibujado por unidades, con cada equipo en su lugar.', icono: 'rack' }),
   puesto: pendiente('P06', 'Ficha de puesto de trabajo', 'red', { archivo: 'puesto', modulo: 'red', descripcion: 'Acá vas a ver el recorrido switch → boca de patchera → puesto y qué equipos hay en él.', icono: 'puesto' }),
   recorrido: pendiente('P19', 'Recorrido de verificación', 'racks', { archivo: 'recorrido', modulo: 'racks', icono: 'rack' }),

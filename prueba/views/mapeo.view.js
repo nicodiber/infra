@@ -22,7 +22,7 @@ export async function renderVista(contenedor) {
   const partes = location.hash.replace(/^#\/?/, '').split('/');
   const idHash = decodeURIComponent(partes[1] || '');
   const nuevo = idHash === 'nuevo' || idHash === 'nueva';
-  let tab = partes[2] === 'historial' ? 'historial' : 'resumen';
+  let tab = ['historial', 'relaciones', 'archivos'].includes(partes[2]) ? partes[2] : 'resumen';
   const migas = await migasRaiz();
   migas.push(['Configuraciones', '#/configuraciones'], ['Mapeos de discos', '#/configuraciones/mapeos']);
 
@@ -129,11 +129,17 @@ export async function renderVista(contenedor) {
     if (nuevo) return;
 
     /** @type {Array<[string, string]>} */
-    const tabs = [['resumen', 'Cómo se aplica']];
+    const tabs = [['resumen', 'Cómo se aplica'], ['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']];
     const verHist = puede(u, 'ver_historial', 'configuraciones', orgId);
     if (verHist) tabs.push(['historial', 'Historial']);
     if (tab === 'historial' && !verHist) tab = 'resumen';
     contenedor.appendChild(pestanas(tabs, tab, k => { tab = k; history.replaceState(null, '', '#/mapeo/' + m.id + (k === 'resumen' ? '' : '/' + k)); pintar(); }));
+    if (tab === 'relaciones' || tab === 'archivos') {
+      const zona = h('div'); contenedor.appendChild(zona);
+      if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'MapeoDisco', entidadId: m.id, organizacionId: orgId });
+      else await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'MapeoDisco', entidadId: m.id, organizacionId: orgId });
+      return;
+    }
     if (tab === 'resumen') {
       const sv = m.equipo_id ? equipoPorId.get(m.equipo_id) : null;
       const dest = m.mapeo_aplica_a === 'todos' ? 'a todos los usuarios' : m.mapeo_aplica_a === 'grupo' ? 'a los miembros del grupo ' + m.mapeo_grupo : verPersonas ? 'a ' + ((personaPorId.get(m.persona_id) || {}).persona_nombre || 'una persona que ya no está documentada') : 'a una persona';

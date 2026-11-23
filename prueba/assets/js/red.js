@@ -12,7 +12,7 @@ import * as sesion from './sesion.js';
 import { puede } from './permisos.js';
 import { ir, toast, pantalla, migasRaiz, abrirModal, cerrarModal } from './marco.js';
 import { h, icono, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion, normalizar } from './utiles.js';
-import { ROTULO_EQUIPO_TIPO, ROTULO_ESTADO_EQUIPO, CATEGORIA_RELOJ } from './modelos.js';
+import { ROTULO_EQUIPO_TIPO, ROTULO_ESTADO_EQUIPO, CATEGORIA_RELOJ, CATEGORIA_IMPRESORA } from './modelos.js';
 
 /** @typedef {import('./modelos.js').UsuarioSesion} UsuarioSesion */
 /** @typedef {import('./modelos.js').Equipo} Equipo */
@@ -188,7 +188,7 @@ export async function seguro(fn) {
  * @typedef {Object} Campo
  * @property {string} k Clave.
  * @property {string} r Rótulo.
- * @property {'texto'|'entero'|'bool'|'enum'|'fecha'|'largo'} t
+ * @property {'texto'|'entero'|'bool'|'enum'|'fecha'|'largo'|'equipo'} t `equipo`: guarda el id de un equipo y se edita con un selector (ver `opciones.equipos` de `formulario`).
  * @property {Array<[string, string]>} [op] Opciones de un enum.
  * @property {boolean} [req]
  * @property {boolean} [num] El enum guarda números.
@@ -242,26 +242,42 @@ export const CAMPOS_POR_TIPO = {
     C('otro_garantia_vence_en', 'Garantía vence', 'fecha')]
 };
 
+/** Campos de una impresora (D-072): cómo se conecta y, si es USB / local, a qué computadora. */
+const CAMPOS_IMPRESORA = [
+  C('impresora_conexion', 'Conexión', 'enum', { req: true, op: [['red', 'Red'], ['usb', 'USB / local']] }),
+  C('impresora_pc_id', 'Computadora a la que está conectada (si es USB)', 'equipo')
+];
+
 /**
- * Campos propios de una categoría de equipo `otro` (además de los de `CAMPOS_POR_TIPO.otro`), por `otro_categoria`.
- * Hoy solo el reloj de control de personal (MD10-C, D-066).
+ * Campos propios de una categoría de equipo `otro` (además de los de `CAMPOS_POR_TIPO.otro`), por `otro_categoria`:
+ * el reloj de control de personal (MD10-C, D-066) y las impresoras (D-072; «Impresora de red» e «Impresora» comparten campos).
  * @type {Object<string, Campo[]>}
  */
 export const CAMPOS_POR_CATEGORIA = {
   [CATEGORIA_RELOJ]: [
     C('reloj_software', 'Software que lo lee', 'texto'), C('reloj_empleados', 'Empleados cargados', 'entero'),
     C('reloj_metodo', 'Método de fichada', 'enum', { req: true, op: [['huella', 'Huella'], ['tarjeta', 'Tarjeta'], ['rostro', 'Rostro'], ['pin', 'PIN']] }),
-    C('reloj_pc_descarga_id', 'PC de descarga de fichadas', 'texto')]
+    C('reloj_pc_descarga_id', 'PC de descarga de fichadas', 'equipo')],
+  [CATEGORIA_IMPRESORA]: CAMPOS_IMPRESORA,
+  'Impresora': CAMPOS_IMPRESORA
 };
 
 /**
  * Todos los campos fijos de un equipo: los de su tipo y, si es `otro` con categoría con campos propios, los de la categoría.
- * (`reloj_pc_descarga_id` guarda el id de un equipo: la pantalla lo muestra como selector de equipos.)
+ * (`reloj_pc_descarga_id` e `impresora_pc_id` guardan el id de un equipo: la pantalla los muestra como selector de equipos.)
  * @param {string} tipo @param {string|null} [categoria] `otro_categoria`
  * @returns {Campo[]}
  */
 export function camposDe(tipo, categoria) {
-  return (CAMPOS_POR_TIPO[tipo] || []).concat(tipo === 'otro' && categoria ? CAMPOS_POR_CATEGORIA[categoria] || [] : []);
+  return (CAMPOS_POR_TIPO[tipo] || []).concat(tipo === 'otro' && categoria ? camposDeCategoria(categoria) : []);
+}
+
+/** Campos propios de una categoría de `otro` (sin distinguir mayúsculas). @param {string|null|undefined} categoria @returns {Campo[]} */
+export function camposDeCategoria(categoria) {
+  const c = String(categoria || '').trim().toLowerCase();
+  if (!c) return [];
+  const k = Object.keys(CAMPOS_POR_CATEGORIA).find(x => x.toLowerCase() === c);
+  return k ? CAMPOS_POR_CATEGORIA[k] : [];
 }
 
 /** Texto de un valor según su campo. @param {Campo} c @param {any} v */
@@ -276,8 +292,9 @@ export function textoValor(c, v) {
 /**
  * Formulario de edición para una lista de campos. `leer()` devuelve los valores ya convertidos o los errores.
  * @param {Campo[]} campos @param {Object<string, any>} valores
+ * @param {{equipos?: Array<[string, string]>}} [opciones] `equipos`: pares [id, rótulo] para los campos de tipo `equipo`.
  */
-export function formulario(campos, valores) {
+export function formulario(campos, valores, opciones) {
   /** @type {Object<string, HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>} */
   const ctl = {};
   const cont = h('div', { class: 'datos' });
@@ -288,6 +305,11 @@ export function formulario(campos, valores) {
     if (c.t === 'bool' || c.t === 'enum') {
       const ops = c.t === 'bool' ? [['true', 'Sí'], ['false', 'No']] : (c.op || []);
       e = h('select', { 'aria-label': c.r }, [h('option', { value: '', text: c.req ? '— elegir —' : '—' })].concat(ops.map(o => h('option', { value: o[0], text: o[1] }))));
+      /** @type {HTMLSelectElement} */ (e).value = v == null ? '' : String(v);
+    } else if (c.t === 'equipo') {
+      const ops = (opciones && opciones.equipos) || [];
+      const hay = v == null || v === '' || ops.some(o => o[0] === v);
+      e = h('select', { 'aria-label': c.r }, [h('option', { value: '', text: c.req ? '— elegir —' : '—' })].concat(ops.map(o => h('option', { value: o[0], text: o[1] })), hay ? [] : [h('option', { value: String(v), text: '(equipo que ya no está)' })]));
       /** @type {HTMLSelectElement} */ (e).value = v == null ? '' : String(v);
     } else if (c.t === 'largo') {
       e = h('textarea', { rows: '2', 'aria-label': c.r, style: 'width:100%' });
@@ -301,6 +323,8 @@ export function formulario(campos, valores) {
   }
   return {
     nodo: cont,
+    /** Controles por clave (para mostrar u ocultar según otro campo). */
+    ctl,
     /** @returns {{valores: Object<string, any>, errores: string[]}} */
     leer() {
       /** @type {Object<string, any>} */
@@ -531,22 +555,28 @@ export function enlaceFila(hash, texto) {
 /**
  * Personas (con permiso de verlas) y asignaciones vigentes de la organización, para cruzar con equipos y puestos.
  * @param {Contexto} ctx
- * @returns {Promise<{ver: boolean, personas: Map<string, any>, porPuesto: Map<string, any[]>, asignadoA: Map<string, any>}>}
- *   `asignadoA`: equipo_id → persona de la asignación vigente.
+ * @returns {Promise<{ver: boolean, personas: Map<string, any>, porPuesto: Map<string, any[]>, asignadoA: Map<string, any>, asignadasA: Map<string, any[]>}>}
+ *   `asignadasA`: equipo_id → todas las personas con la asignación vigente (un equipo puede ser compartido, D-072).
+ *   `asignadoA`: equipo_id → la primera de ellas (compatibilidad).
  */
 export async function cargarPersonas(ctx) {
   const ver = puede(ctx.u, 'ver', 'personas', ctx.org);
   /** @type {Map<string, any>} */ const personas = new Map();
   /** @type {Map<string, any[]>} */ const porPuesto = new Map();
   /** @type {Map<string, any>} */ const asignadoA = new Map();
-  if (!ver) return { ver, personas, porPuesto, asignadoA };
+  /** @type {Map<string, any[]>} */ const asignadasA = new Map();
+  if (!ver) return { ver, personas, porPuesto, asignadoA, asignadasA };
   const [lista, asignaciones] = await Promise.all([repositorio.listar('personas', { organizacion_id: ctx.org }), repositorio.listar('asignaciones', { organizacion_id: ctx.org })]);
   for (const p of lista) {
     personas.set(p.id, p);
     if (p.puesto_id && p.persona_estado !== 'baja') { if (!porPuesto.has(p.puesto_id)) porPuesto.set(p.puesto_id, []); /** @type {any[]} */ (porPuesto.get(p.puesto_id)).push(p); }
   }
-  for (const a of asignaciones) if (!a.asignacion_hasta && personas.has(a.persona_id)) asignadoA.set(a.equipo_id, personas.get(a.persona_id));
-  return { ver, personas, porPuesto, asignadoA };
+  for (const a of asignaciones.slice().sort((x, y) => (x.asignacion_desde < y.asignacion_desde ? 1 : x.asignacion_desde > y.asignacion_desde ? -1 : 0))) {
+    if (a.asignacion_hasta || !personas.has(a.persona_id)) continue;
+    if (!asignadasA.has(a.equipo_id)) { asignadasA.set(a.equipo_id, []); asignadoA.set(a.equipo_id, personas.get(a.persona_id)); }
+    /** @type {any[]} */ (asignadasA.get(a.equipo_id)).push(personas.get(a.persona_id));
+  }
+  return { ver, personas, porPuesto, asignadoA, asignadasA };
 }
 
 /**

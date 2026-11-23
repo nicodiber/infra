@@ -20,7 +20,7 @@ export async function renderVista(contenedor) {
   const partes = location.hash.replace(/^#\/?/, '').split('/');
   const idHash = decodeURIComponent(partes[1] || '');
   const nuevo = idHash === 'nuevo';
-  let tab = ['contenido', 'reglas', 'credenciales', 'historial'].includes(partes[2]) ? partes[2] : 'contenido';
+  let tab = ['contenido', 'reglas', 'credenciales', 'relaciones', 'archivos', 'historial'].includes(partes[2]) ? partes[2] : 'contenido';
   const migas = await migasRaiz();
   migas.push(['Configuraciones', '#/configuraciones']);
 
@@ -122,6 +122,7 @@ export async function renderVista(contenedor) {
     const verHist = puede(u, 'ver_historial', 'configuraciones', orgId);
     const tabs = /** @type {Array<[string, string]>} */ ([['contenido', 'Contenido'], ['reglas', 'Reglas (' + nReglas + ')']]);
     if (puede(u, 'ver', 'credenciales', orgId)) tabs.push(['credenciales', 'Credenciales vinculadas (' + credsVinc.length + ')']);
+    if (!nuevo) tabs.push(['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']);
     if (verHist && !nuevo) tabs.push(['historial', 'Historial']);
     if (!tabs.some(t => t[0] === tab)) tab = 'contenido';
     contenedor.appendChild(pestanas(tabs, tab, k => { tab = k; if (!nuevo) history.replaceState(null, '', '#/config/' + c.id + '/' + k); pintar(); }));
@@ -130,6 +131,11 @@ export async function renderVista(contenedor) {
     if (tab === 'contenido') cuerpo.appendChild(await bloqueContenido());
     else if (tab === 'reglas') cuerpo.appendChild(bloqueReglas());
     else if (tab === 'credenciales') cuerpo.appendChild(bloqueCredenciales(credsVinc));
+    else if (tab === 'relaciones' || tab === 'archivos') {
+      const zona = h('div'); cuerpo.appendChild(zona);
+      if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'Configuracion', entidadId: c.id, organizacionId: orgId });
+      else await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'Configuracion', entidadId: c.id, organizacionId: orgId });
+    }
     else cuerpo.appendChild(await bloqueHistorial());
   }
 

@@ -52,7 +52,9 @@ export function tabla(cabeceras, filas, opciones) {
   filas.forEach((f, i) => {
     const onFila = o.onFila;
     const attrs = onFila ? { class: 'clic', tabindex: '0', onclick: () => onFila(f, i), onkeydown: (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Enter') onFila(f, i); } } : null;
-    tb.appendChild(h('tr', attrs, f.map(c => (c instanceof Node) ? h('td', null, [c]) : h('td', { text: String(c) }))));
+    // data-label: en el celular la tabla se ve como tarjetas (estilos.css)
+    const rotulo = (/** @type {number} */ j) => (typeof cabeceras[j] === 'string' && cabeceras[j]) ? cabeceras[j] : null;
+    tb.appendChild(h('tr', attrs, f.map((c, j) => (c instanceof Node) ? h('td', { 'data-label': rotulo(j) }, [c]) : h('td', { text: String(c), 'data-label': rotulo(j) }))));
   });
   t.appendChild(tb);
   return t;

@@ -9,12 +9,13 @@ import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
 import { h, icono, tabla, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion, estadoVerificacion, normalizar } from '../assets/js/utiles.js';
-import { ROTULO_EQUIPO_TIPO, ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO } from '../assets/js/modelos.js';
+import { ROTULO_EQUIPO_TIPO, ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, esImpresora } from '../assets/js/modelos.js';
 import {
-  CAMPOS_COMUNES, CAMPOS_POR_TIPO, ROTULO_ESTADO_PUERTO, ROTULO_SEGURIDAD, inyectarEstilos, cargarContexto, leerRuta, encabezado, pestanas, campo, enlace, avisoVista,
-  formulario, textoValor, fichaCab, miniRack, cadenaDePuerto, textoUltimoCambio, darDeBajaEquipo, pedirBaja, seguro, estadoPill, valorHistorial, abrirConectarPuerto, abrirDesconectarPuerto
+  CAMPOS_COMUNES, CAMPOS_POR_TIPO, camposDe, camposDeCategoria, CATEGORIAS_PUESTO, ROTULO_ENLACE_TIPO, ROTULO_ESTADO_PUERTO, ROTULO_SEGURIDAD, inyectarEstilos, cargarContexto, leerRuta, encabezado, pestanas, campo, enlace, avisoVista,
+  formulario, textoValor, fichaCab, miniRack, cadenaDePuerto, textoUltimoCambio, darDeBajaEquipo, pedirBaja, seguro, estadoPill, valorHistorial, nodoCadena, hashEquipo, abrirConectarPuerto, abrirDesconectarPuerto
 } from '../assets/js/red.js';
 import { bloqueAsignacion } from '../assets/js/personas.js';
+import { cargarVinculos, contarVinculos, pintarVinculos } from '../assets/js/vinculos.js';
 
 /** @typedef {import('../assets/js/modelos.js').Puerto} Puerto */
 /** @typedef {import('../assets/js/modelos.js').Equipo} Equipo */
@@ -62,22 +63,30 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
   const tipo = e.equipo_tipo;
   const conPuertos = TIPOS_CON_PUERTOS.includes(tipo);
   const puedeCred = puede(ctx.u, 'ver', 'credenciales', ctx.org), puedeConf = puede(ctx.u, 'ver', 'configuraciones', ctx.org);
-  const [racks, ubicaciones, creds, confs, wifis, enlaces] = await Promise.all([
+  const [racks, ubicaciones, creds, confs, wifis, enlaces, equiposOrg, vinc] = await Promise.all([
     repositorio.listar('racks', { organizacion_id: ctx.org }), repositorio.listar('ubicaciones', { organizacion_id: ctx.org }),
     puedeCred ? repositorio.listar('credenciales', { equipo_id: e.id }) : Promise.resolve([]), puedeConf ? repositorio.listar('configuraciones', { equipo_id: e.id }) : Promise.resolve([]),
     tipo === 'access_point' ? repositorio.listar('redes_wifi', { organizacion_id: ctx.org }) : Promise.resolve([]),
-    tipo === 'router' || tipo === 'firewall' ? repositorio.listar('enlaces_isp', { organizacion_id: ctx.org, equipo_id: e.id }) : Promise.resolve([])]);
+    tipo === 'router' || tipo === 'firewall' ? repositorio.listar('enlaces_isp', { organizacion_id: ctx.org, equipo_id: e.id }) : Promise.resolve([]),
+    repositorio.listar('equipos', { organizacion_id: ctx.org }), cargarVinculos(e.id)]);
+  const mapaEq = new Map(equiposOrg.map(x => [x.id, x]));
+  // Computadoras (y servidores) a las que se puede conectar una impresora USB o de las que un reloj descarga las fichadas.
+  /** @type {Array<[string, string]>} */
+  const pcOpciones = equiposOrg.filter(x => x.id !== e.id && !esImpresora(x) && (x.equipo_tipo === 'servidor' || (x.equipo_tipo === 'otro' && CATEGORIAS_PUESTO.includes(String((x.equipo_campos || {}).otro_categoria)))))
+    .sort((a, b) => a.equipo_nombre.localeCompare(b.equipo_nombre, 'es', { numeric: true })).map(x => [x.id, x.equipo_nombre + (x.equipo_ip_gestion ? ' · ' + x.equipo_ip_gestion : '')]);
   const mapaRacks = new Map(racks.map(r => [r.id, r])), mapaUbic = new Map(ubicaciones.map(x => [x.id, x]));
-  const tabs = /** @type {Array<[string, string, string?]>} */ ([]);
+  const tabs = /** @type {Array<[string, string, string?]>} */ ([['vinculos', 'Vínculos (' + contarVinculos(vinc) + ')']]);
   if (conPuertos) tabs.push(['puertos', 'Puertos']);
   tabs.push(['credenciales', 'Credenciales (' + creds.length + ')'], ['configuraciones', 'Configuraciones (' + confs.length + ')']);
+  tabs.push(['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']);
   if (ctx.historial) tabs.push(['historial', 'Historial']);
   const tab = tabs.some(t => t[0] === partes[1]) ? partes[1] : tabs[0][0];
   const hashBase = '#/equipo/' + e.id;
-  const compacta = tab === 'puertos' && !estado.editando;
+  const compacta = (tab === 'puertos' || tab === 'vinculos') && !estado.editando;
 
   // ---- datos del resumen
-  const campos = CAMPOS_POR_TIPO[tipo] || [];
+  const camposTipo = CAMPOS_POR_TIPO[tipo] || [];
+  const campos = camposDe(tipo, (e.equipo_campos || {}).otro_categoria);
   const rack = e.rack_id ? mapaRacks.get(e.rack_id) : null;
   const ub = e.ubicacion_id ? mapaUbic.get(e.ubicacion_id) : null;
   const uTexto = rack ? rack.rack_nombre + ' · ' + (e.rack_u_alto && e.rack_u_alto > 1 ? 'U' + e.rack_u_inicio + '–U' + (Number(e.rack_u_inicio) + e.rack_u_alto - 1) : 'U' + e.rack_u_inicio) : '—';
@@ -88,7 +97,29 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
   /** @type {HTMLElement|null} */
   let errorBox = null;
   if (estado.editando) {
-    const fc = formulario(CAMPOS_COMUNES, e), ft = formulario(campos, e.equipo_campos || {});
+    const fc = formulario(CAMPOS_COMUNES, e), ft = formulario(camposTipo, e.equipo_campos || {}, { equipos: pcOpciones });
+    // Campos de la categoría (impresora, reloj…): se arman al cambiar la categoría de un equipo «otro».
+    /** @type {null|ReturnType<typeof formulario>} */
+    let fCat = null;
+    const zonaCat = h('div');
+    const pintarCat = () => {
+      const cat = tipo === 'otro' && ft.ctl.otro_categoria ? ft.ctl.otro_categoria.value : '';
+      const cs = camposDeCategoria(cat);
+      zonaCat.textContent = '';
+      if (!cs.length) { fCat = null; return; }
+      const vals = { ...(e.equipo_campos || {}) };
+      if (esImpresora({ equipo_tipo: 'otro', equipo_campos: { otro_categoria: cat } }) && !vals.impresora_conexion) vals.impresora_conexion = 'red';
+      fCat = formulario(cs, vals, { equipos: pcOpciones });
+      zonaCat.appendChild(h('h3', { text: 'Datos propios de «' + cat.trim() + '»', style: 'margin:10px 0 6px' }));
+      zonaCat.appendChild(fCat.nodo);
+      const con = fCat.ctl.impresora_conexion, pc = fCat.ctl.impresora_pc_id;
+      if (con && pc) {
+        const sync = () => { const usb = con.value === 'usb'; /** @type {HTMLSelectElement} */ (pc).disabled = !usb; if (!usb) /** @type {HTMLSelectElement} */ (pc).value = ''; };
+        con.addEventListener('change', sync); sync();
+      }
+    };
+    if (tipo === 'otro' && ft.ctl.otro_categoria) ft.ctl.otro_categoria.addEventListener('change', pintarCat);
+    pintarCat();
     const selUb = h('select', { 'aria-label': 'Ubicación' }, [h('option', { value: '', text: '—' })].concat(ubicaciones.map(x => h('option', { value: x.id, text: x.ubicacion_nombre }))));
     const selRack = h('select', { 'aria-label': 'Rack' }, [h('option', { value: '', text: 'Sin rack' })].concat(racks.map(x => h('option', { value: x.id, text: x.rack_nombre }))));
     const uIni = h('input', { type: 'number', min: '1', 'aria-label': 'U inicial' }), uAlto = h('input', { type: 'number', min: '1', 'aria-label': 'Alto en U' });
@@ -103,11 +134,12 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
       h('div', { class: 'campo' }, [h('label', { text: 'Alto (U)' }), uAlto]), h('div', { class: 'campo' }, [h('label', { text: 'Ubicación' }), selUb])]);
     errorBox = h('div', { class: 'rd-err', role: 'alert', 'aria-live': 'polite' });
     datos = h('div', { class: 'rd-edicion' }, [h('div', { class: 'mut', text: 'Tipo: ' + ROTULO_EQUIPO_TIPO[tipo] + ' (no se puede cambiar; si está mal cargado, dalo de baja y creá uno nuevo).' }), fc.nodo, ubic,
-      campos.length ? h('h3', { text: 'Datos propios de ' + (ROTULO_EQUIPO_TIPO[tipo] || tipo).toLowerCase(), style: 'margin:10px 0 6px' }) : null, ft.nodo, errorBox]);
+      camposTipo.length ? h('h3', { text: 'Datos propios de ' + (ROTULO_EQUIPO_TIPO[tipo] || tipo).toLowerCase(), style: 'margin:10px 0 6px' }) : null, ft.nodo, zonaCat, errorBox]);
     leerForm = () => {
-      const a = fc.leer(), b = ft.leer();
+      const a = fc.leer(), b = ft.leer(), cc = fCat ? fCat.leer() : { valores: /** @type {Object<string, any>} */ ({}), errores: /** @type {string[]} */ ([]) };
       /** @type {string[]} */
-      const errores = a.errores.concat(b.errores);
+      const errores = a.errores.concat(b.errores, cc.errores);
+      if (cc.valores.impresora_conexion === 'usb' && !cc.valores.impresora_pc_id) errores.push('Una impresora USB / local necesita indicar la computadora a la que está conectada.');
       const rk = racks.find(x => x.id === /** @type {HTMLSelectElement} */ (selRack).value) || null;
       const ini = parseInt(/** @type {HTMLInputElement} */ (uIni).value, 10), alto = parseInt(/** @type {HTMLInputElement} */ (uAlto).value, 10);
       if (rk) {
@@ -115,15 +147,22 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
         else if (ini + alto - 1 > rk.rack_unidades_total) errores.push('El equipo no entra: el rack ' + rk.rack_nombre + ' tiene ' + rk.rack_unidades_total + ' U.');
       }
       if (tipo === 'access_point' && b.valores.access_point_modo === 'controlado' && !b.valores.access_point_controladora) errores.push('Un access point controlado necesita indicar la controladora.');
-      return { valores: { ...a.valores, __ubicacion: rk ? rk.ubicacion_id : /** @type {HTMLSelectElement} */ (selUb).value || null, __rack: rk ? rk.id : null, __ini: rk ? ini : null, __alto: rk ? alto : null, __tipo: b.valores }, errores };
+      return { valores: { ...a.valores, __ubicacion: rk ? rk.ubicacion_id : /** @type {HTMLSelectElement} */ (selUb).value || null, __rack: rk ? rk.id : null, __ini: rk ? ini : null, __alto: rk ? alto : null, __tipo: { ...b.valores, ...cc.valores } }, errores };
     };
   } else {
     /** @type {Array<[string, Node|string|null|undefined]>} */
     const pares = [['Nombre', e.equipo_nombre], ['Tipo', ROTULO_EQUIPO_TIPO[tipo]], ['Marca', e.equipo_marca], ['Modelo', e.equipo_modelo], ['IP de gestión', e.equipo_ip_gestion],
       ['MAC', e.equipo_mac], ['Número de serie', e.equipo_numero_serie], ['Estado', estadoPill(e.equipo_estado)], ['Rack / unidad', uTexto], ['Ubicación', ub ? ub.ubicacion_nombre : null]];
-    for (const c of campos) pares.push([c.r, textoValor(c, (e.equipo_campos || {})[c.k])]);
+    for (const c of campos) {
+      const val = (e.equipo_campos || {})[c.k];
+      if (c.k === 'impresora_pc_id' && (e.equipo_campos || {}).impresora_conexion !== 'usb') continue;
+      if (c.t === 'equipo') { const pc = val ? mapaEq.get(val) : null; pares.push([c.k === 'impresora_pc_id' ? 'Conectada a' : c.r, pc ? enlace(pc.equipo_nombre, hashEquipo(pc)) : val ? '(equipo que ya no está)' : '—']); }
+      else pares.push([c.r, textoValor(c, val)]);
+    }
     if (e.equipo_notas) pares.push(['Notas', e.equipo_notas]);
-    const visibles = compacta ? pares.filter(p => ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'Rack / unidad', 'Estado'].includes(p[0])) : pares;
+    const compactos = tab === 'vinculos' ? ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'MAC', 'Número de serie', 'Estado', 'Rack / unidad', 'Ubicación', 'Categoría', 'Conexión', 'Conectada a']
+      : ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'Rack / unidad', 'Estado'];
+    const visibles = compacta ? pares.filter(p => compactos.includes(p[0])) : pares;
     datos = h('div', { class: 'datos' }, visibles.map(p => campo(p[0], p[1])));
   }
 
@@ -176,7 +215,7 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
       emite.forEach((w, i) => { if (i) hijos.push(', '); hijos.push(enlace(w.wifi_ssid + ' (' + (ROTULO_SEGURIDAD[w.wifi_seguridad] || w.wifi_seguridad) + ')', '#/wifi/' + w.id)); });
     } else {
       hijos.push(h('b', { text: 'Enlaces a Internet que terminan acá: ' }));
-      enlaces.forEach((x, i) => { if (i) hijos.push(', '); hijos.push(enlace(x.enlace_proveedor + (x.enlace_es_principal ? ' (principal)' : ' (respaldo)'), '#/red/isp')); });
+      enlaces.forEach((x, i) => { if (i) hijos.push(', '); hijos.push(enlace(x.enlace_proveedor + (x.enlace_es_principal ? ' (principal)' : ' (respaldo)'), '#/enlace/' + x.id)); });
     }
     if (tipo === 'access_point' || enlaces.length) cont.appendChild(h('div', { class: 'msg', style: 'margin-top:8px' }, hijos));
   }
@@ -187,7 +226,8 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
   barra.style.margin = '8px 0 8px';
   cont.appendChild(barra);
 
-  if (tab === 'puertos') cont.appendChild(await cuerpoPuertos(ctx, e, partes, rearmar));
+  if (tab === 'vinculos') { const zona = h('div'); cont.appendChild(zona); pintarVinculos(zona, e, vinc); }
+  else if (tab === 'puertos') cont.appendChild(await cuerpoPuertos(ctx, e, partes, rearmar));
   else if (tab === 'credenciales') {
     cont.appendChild(!puedeCred ? h('div', { class: 'aviso' }, ['Tu rol no ve el módulo Credenciales.'])
       : !creds.length ? h('div', { class: 'aviso' }, ['Este equipo no tiene credenciales vinculadas.'])
@@ -198,6 +238,12 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
       : !confs.length ? h('div', { class: 'aviso' }, ['Este equipo no tiene configuraciones vinculadas.'])
         : tabla(['Título', 'Tipo', 'Fecha', 'Verificado'], confs.map(c => [c.configuracion_titulo, ROTULO_CONFIGURACION_TIPO[c.configuracion_tipo] || c.configuracion_tipo, fmtFecha(c.configuracion_version_fecha), indicadorVerificacion(c.verificado_en, ctx.umbrales, true)]),
           { tipo: 'configuracion', onFila: (_, i) => ir('#/config/' + confs[i].id) }));
+  } else if (tab === 'relaciones') {
+    const zona = h('div'); cont.appendChild(zona);
+    try { await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'Equipo', entidadId: e.id, organizacionId: ctx.org }); } catch (err) { console.error(err); zona.appendChild(h('div', { class: 'aviso', text: 'No se pudieron mostrar las relaciones.' })); }
+  } else if (tab === 'archivos') {
+    const zona = h('div'); cont.appendChild(zona);
+    try { await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'Equipo', entidadId: e.id, organizacionId: ctx.org }); } catch (err) { console.error(err); zona.appendChild(h('div', { class: 'aviso', text: 'No se pudieron mostrar los archivos.' })); }
   } else cont.appendChild(await cuerpoHistorial(ctx, e));
 }
 
@@ -241,9 +287,11 @@ async function cuerpoHistorial(ctx, e) {
  */
 async function cuerpoPuertos(ctx, e, partes, rearmar) {
   const tipo = e.equipo_tipo, ec = e.equipo_campos || {};
-  const [equiposOrg, todosPuertos, puestos, vlans] = await Promise.all([repositorio.listar('equipos', { organizacion_id: ctx.org }), repositorio.listar('puertos'),
-    repositorio.listar('puestos', { organizacion_id: ctx.org }), repositorio.listar('vlans', { organizacion_id: ctx.org })]);
+  const [equiposOrg, todosPuertos, puestos, vlans, enlacesIsp] = await Promise.all([repositorio.listar('equipos', { organizacion_id: ctx.org }), repositorio.listar('puertos'),
+    repositorio.listar('puestos', { organizacion_id: ctx.org }), repositorio.listar('vlans', { organizacion_id: ctx.org }), repositorio.listar('enlaces_isp', { organizacion_id: ctx.org })]);
   const mapas = { equipos: new Map(equiposOrg.map(x => [x.id, x])), puertos: new Map(todosPuertos.map(p => [p.id, p])), puestos: new Map(puestos.map(p => [p.id, p])) };
+  const mapaIsp = new Map(enlacesIsp.map(l => [l.id, l]));
+  const puedeIsp = tipo === 'router' || tipo === 'firewall';
   const mv = new Map(vlans.map(v => [v.id, v]));
   /** @type {Map<number, Puerto>} */
   const reg = new Map(todosPuertos.filter(p => p.equipo_id === e.id).map(p => [p.puerto_numero, p]));
@@ -266,7 +314,8 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
     if (!p) return '';
     const o = p.conectado_a_puerto_id ? mapas.puertos.get(p.conectado_a_puerto_id) : null, oe = o ? mapas.equipos.get(o.equipo_id) : null;
     const pu = (p.puesto_id || (o && o.puesto_id)) ? mapas.puestos.get(/** @type {string} */ (p.puesto_id || (o && o.puesto_id))) : null;
-    return [oe ? oe.equipo_nombre + ' ' + (o ? (o.puerto_nombre || o.puerto_numero) : '') : '', p.conectado_a_descripcion, pu ? pu.puesto_nombre + ' ' + (pu.puesto_boca_pared || '') : '', p.puerto_nombre, p.puerto_notas].filter(Boolean).join(' ');
+    const isp = p.enlace_isp_id ? mapaIsp.get(p.enlace_isp_id) : null;
+    return [oe ? oe.equipo_nombre + ' ' + (o ? (o.puerto_nombre || o.puerto_numero) : '') : '', isp ? 'Internet ' + isp.enlace_proveedor + ' ' + (isp.enlace_ip_publica || '') : '', p.conectado_a_descripcion, pu ? pu.puesto_nombre + ' ' + (pu.puesto_boca_pared || '') : '', p.puerto_nombre, p.puerto_notas].filter(Boolean).join(' ');
   };
 
   let sel = /^\d+$/.test(partes[2] || '') ? parseInt(partes[2], 10) : null;
@@ -432,10 +481,19 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
           if (await seguro(() => repositorio.confirmarVigente('puertos', p.id, ctx.u.id))) { toast('Puerto ' + n + ' confirmado como vigente · verificado hoy (' + fmtFecha(ahoraISO()) + ')'); await rearmar(); }
         } }) : null]),
       h('div', { class: 'verif-det', style: 'font-size:12px;margin-top:2px', text: 'Confirmó ' + (ctx.nombresUsuario.get(p.verificado_por) || '—') + ' el ' + fmtFecha(p.verificado_en) })]));
+    const isp = p.enlace_isp_id ? mapaIsp.get(p.enlace_isp_id) : null;
+    if (isp) {
+      detalle.appendChild(h('label', { class: 'mut', text: '¿A qué va? · sale a Internet por', style: 'display:block;font-size:12px' }));
+      detalle.appendChild(h('div', { class: 'cadena v' }, [nodoCadena('equipo', 'red', 'Enlace a Internet', isp.enlace_proveedor + (isp.enlace_es_principal ? ' (principal)' : ' (respaldo)'), isp.enlace_ip_publica || '', '#/enlace/' + isp.id)]));
+      detalle.appendChild(h('div', { class: 'datos', style: 'margin-top:6px;grid-template-columns:repeat(2,1fr)' }, [
+        campo('Servicio', (ROTULO_ENLACE_TIPO[isp.enlace_tipo] || isp.enlace_tipo) + ' · ' + (isp.enlace_velocidad_bajada_mbps ?? '—') + '/' + (isp.enlace_velocidad_subida_mbps ?? '—') + ' Mbps'),
+        campo('IP pública', isp.enlace_ip_publica ? isp.enlace_ip_publica + (isp.enlace_tipo_ip ? ' (' + (isp.enlace_tipo_ip === 'fija' ? 'fija' : 'dinámica') + ')' : '') : null),
+        campo('Teléfono de soporte', isp.enlace_telefono_soporte), campo('N.º de cliente', isp.enlace_numero_cliente)]));
+    }
     if (p.conectado_a_puerto_id || p.conectado_a_descripcion || p.puesto_id) {
       detalle.appendChild(h('label', { class: 'mut', text: 'Recorrido (cada tramo es un enlace)', style: 'display:block;font-size:12px' }));
       detalle.appendChild(cadenaDePuerto(p, e, mapas, true));
-    } else detalle.appendChild(h('div', { class: 'mut', style: 'border-top:1px solid var(--borde);padding-top:6px', text: 'Sin destino cargado.' }));
+    } else if (!isp) detalle.appendChild(h('div', { class: 'mut', style: 'border-top:1px solid var(--borde);padding-top:6px', text: 'Sin destino cargado.' }));
   }
 
   /** @param {number} n */
@@ -447,6 +505,8 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
     const vel = h('input', { type: 'text', 'aria-label': 'Velocidad' });
     const nativa = h('select', { 'aria-label': 'VLAN nativa' }, [h('option', { value: '', text: '—' })].concat(vlans.map(v => h('option', { value: v.id, text: v.vlan_numero + ' · ' + v.vlan_nombre }))));
     const desc = h('input', { type: 'text', 'aria-label': 'Destino en texto libre' });
+    const selIsp = h('select', { 'aria-label': 'Enlace a Internet' }, [h('option', { value: '', text: '—' })].concat(enlacesIsp.map(l => h('option', { value: l.id, text: l.enlace_proveedor + (l.enlace_ip_publica ? ' · ' + l.enlace_ip_publica : '') + (l.enlace_es_principal ? ' (principal)' : ' (respaldo)') }))));
+    /** @type {HTMLSelectElement} */ (selIsp).value = p.enlace_isp_id || '';
     const notas = h('input', { type: 'text', 'aria-label': 'Notas' });
     /** @type {HTMLSelectElement} */ (modo).value = p.puerto_modo || ''; /** @type {HTMLSelectElement} */ (estadoS).value = p.puerto_estado; /** @type {HTMLInputElement} */ (vel).value = p.puerto_velocidad || '';
     /** @type {HTMLSelectElement} */ (nativa).value = p.vlan_nativa_id || ''; /** @type {HTMLInputElement} */ (desc).value = p.conectado_a_descripcion || ''; /** @type {HTMLInputElement} */ (notas).value = p.puerto_notas || '';
@@ -464,13 +524,14 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
       if (tipo === 'switch' && !m) { err.textContent = 'Indicá el modo del puerto (acceso o troncal).'; return; }
       const reg2 = { ...p, puerto_modo: m || null, puerto_estado: /** @type {HTMLSelectElement} */ (estadoS).value, puerto_velocidad: /** @type {HTMLInputElement} */ (vel).value.trim() || null,
         vlan_nativa_id: /** @type {HTMLSelectElement} */ (nativa).value || null, vlans_etiquetadas: m === 'troncal' ? Array.from(chks).filter(x => x[1].checked).map(x => x[0]) : [],
-        conectado_a_descripcion: p.conectado_a_puerto_id ? null : /** @type {HTMLInputElement} */ (desc).value.trim() || null, puerto_notas: /** @type {HTMLInputElement} */ (notas).value.trim() || null };
+        conectado_a_descripcion: p.conectado_a_puerto_id ? null : /** @type {HTMLInputElement} */ (desc).value.trim() || null, puerto_notas: /** @type {HTMLInputElement} */ (notas).value.trim() || null,
+        ...(puedeIsp ? { enlace_isp_id: /** @type {HTMLSelectElement} */ (selIsp).value || null } : {}) };
       if (await seguro(() => repositorio.guardar('puertos', reg2, ctx.u.id))) { toast('Puerto ' + n + ' guardado · verificado hoy (' + fmtFecha(ahoraISO()) + ')'); await rearmar(); }
     });
     const campoE = (/** @type {string} */ t, /** @type {Node} */ c) => h('div', { class: 'campo' }, [h('label', { text: t }), c]);
     detalle.appendChild(h('div', { class: 'rd-cab-det' }, [h('h2', { text: 'Editar puerto ' + n }), h('span', { class: 'esp' }), guardar, h('button', { type: 'button', class: 'chico', text: 'Cancelar', onclick: () => pintarDetalle() })]));
     detalle.appendChild(h('div', { class: 'datos', style: 'grid-template-columns:repeat(2,1fr)' }, [campoE('Estado', estadoS), tipo === 'switch' ? campoE('Modo', modo) : null, campoE('Velocidad', vel), campoE('VLAN nativa', nativa),
-      campoE('Destino (texto libre)', desc), campoE('Notas', notas)]));
+      puedeIsp ? campoE('Sale a Internet por (enlace)', selIsp) : null, campoE('Destino (texto libre)', desc), campoE('Notas', notas)]));
     detalle.appendChild(h('div', { class: 'campo', style: 'margin-top:6px' }, [h('label', { text: 'VLAN etiquetadas (solo en troncal)' }), lista]));
     detalle.appendChild(err);
     detalle.appendChild(h('div', { class: 'rd-campo-nota', text: p.conectado_a_puerto_id ? 'Para cambiar la conexión con otro puerto usá «Conectar a…» o «Desconectar» en el detalle del puerto.' : '' }));
@@ -499,5 +560,5 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
 function nuevoPuerto(e, n, vlanId, estado, nSfp, nRj) {
   const sfp = e.equipo_tipo === 'switch' && n > nRj && nSfp > 0;
   return { equipo_id: e.id, puerto_numero: n, puerto_nombre: null, puerto_tipo: sfp ? 'sfp_plus' : 'rj45', puerto_velocidad: null, puerto_modo: e.equipo_tipo === 'switch' ? (sfp ? 'troncal' : 'acceso') : null,
-    vlan_nativa_id: vlanId || null, vlans_etiquetadas: [], conectado_a_equipo_id: null, conectado_a_puerto_id: null, conectado_a_descripcion: null, puesto_id: null, puerto_estado: estado, puerto_notas: null };
+    vlan_nativa_id: vlanId || null, vlans_etiquetadas: [], conectado_a_equipo_id: null, conectado_a_puerto_id: null, conectado_a_descripcion: null, enlace_isp_id: null, puesto_id: null, puerto_estado: estado, puerto_notas: null };
 }

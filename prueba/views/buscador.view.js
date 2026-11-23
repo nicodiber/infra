@@ -115,8 +115,13 @@ export async function renderVistaBuscador(contenedor) {
   }
   btnQuitar.addEventListener('click', () => { busq.tiposOff.clear(); busq.org = null; refrescar(true); });
 
+  // Celular (D-072): filtros plegados, vista previa a pantalla completa al tocar un resultado y botón para cerrar.
+  const btnFiltros = h('button', { type: 'button', class: 'solo-cel chico', 'aria-expanded': 'false', text: 'Filtros' });
+  const btnCerrarCel = h('button', { type: 'button', class: 'solo-cel chico', 'aria-label': 'Cerrar el buscador', text: '✕', onclick: () => cerrarModal() });
+  const enCelular = () => window.matchMedia('(max-width: 760px)').matches;
+
   const panel = h('div', { class: 'panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Buscador de Infradoc' }, [
-    h('div', { class: 'barra' }, [icono('buscar'), campoQ, chipOrgCont, h('kbd', { text: 'Esc' })]),
+    h('div', { class: 'barra' }, [icono('buscar'), campoQ, chipOrgCont, h('kbd', { text: 'Esc' }), btnFiltros, btnCerrarCel]),
     ejemplos,
     h('div', { class: 'cuerpo-b' }, [
       h('aside', { class: 'col-b col-filtros', 'aria-label': 'Filtros' }, [h('div', { class: 'f-grupo' }, [h('div', { class: 'f-tit', text: 'Tipo' }), fTipos]),
@@ -126,6 +131,12 @@ export async function renderVistaBuscador(contenedor) {
       h('span', null, [h('kbd', { text: '↑' }), h('kbd', { text: '↓' }), ' moverse']), h('span', null, [h('kbd', { text: 'Enter' }), ' abrir']), h('span', null, [h('kbd', { text: 'Esc' }), ' cerrar']),
       h('span', { class: 'der', text: 'Las contraseñas nunca se buscan ni se muestran en la lista' })])]);
   contenedor.appendChild(panel);
+  btnFiltros.addEventListener('click', () => {
+    const ver = panel.classList.toggle('ver-filtros');
+    panel.classList.remove('ver-prev');
+    btnFiltros.setAttribute('aria-expanded', ver ? 'true' : 'false');
+    btnFiltros.textContent = ver ? 'Ver resultados' : 'Filtros';
+  });
 
   /** @param {ResultadoBusqueda} r */
   const abrirFicha = r => { cerrarModal(); ir(rutaDe(r)); };
@@ -135,6 +146,7 @@ export async function renderVistaBuscador(contenedor) {
   function renderPreview(r) {
     clearTimeout(temporizador);
     preview.textContent = '';
+    preview.appendChild(h('button', { type: 'button', class: 'solo-cel pv-volver', onclick: () => panel.classList.remove('ver-prev') }, ['← Volver a los resultados']));
     if (!r) { preview.appendChild(h('div', { class: 'pv-vacio', text: 'Seleccioná un resultado para ver sus datos acá.' })); return; }
     const dl = h('dl');
     for (const x of r.previa) { dl.appendChild(h('dt', { text: x[0] })); dl.appendChild(h('dd', null, [resaltar(x[1], palabras)])); }
@@ -269,7 +281,7 @@ export async function renderVistaBuscador(contenedor) {
             h('div', { class: 'res-tit' }, [resaltar(r.titulo, palabras)]), h('div', { class: 'res-sub' }, [resaltar(r.subtitulo, palabras)]),
             h('div', { class: 'res-meta' }, [h('span', { class: 'badge', text: r.organizacion_nombre }), h('span', { text: 'Cambió el ' + fmtFechaHora(r.actualizado_en) }), indicadorVerificacion(r.verificado_en, umbrales, true)])])]);
         el.addEventListener('mousedown', e => e.preventDefault());
-        el.addEventListener('click', () => seleccionar(i, false));
+        el.addEventListener('click', () => { seleccionar(i, false); if (enCelular()) panel.classList.add('ver-prev'); });
         el.addEventListener('dblclick', () => abrirFicha(r));
         els.push(el);
         grupo.appendChild(el);
@@ -282,7 +294,7 @@ export async function renderVistaBuscador(contenedor) {
     seleccionar(k, false);
   }
 
-  campoQ.addEventListener('input', () => { busq.q = campoQ.value; busq.idx = 0; refrescar(false); });
+  campoQ.addEventListener('input', () => { panel.classList.remove('ver-prev'); busq.q = campoQ.value; busq.idx = 0; refrescar(false); });
   campoQ.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); if (plano.length) seleccionar((busq.idx + 1) % plano.length, true); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (plano.length) seleccionar((busq.idx - 1 + plano.length) % plano.length, true); }

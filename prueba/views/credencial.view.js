@@ -22,7 +22,7 @@ export async function renderVista(contenedor) {
   const partes = location.hash.replace(/^#\/?/, '').split('/');
   const idHash = decodeURIComponent(partes[1] || '');
   const nuevo = idHash === 'nuevo';
-  let tab = ['quien', 'historial', 'accesos'].includes(partes[2]) ? partes[2] : 'quien';
+  let tab = ['quien', 'relaciones', 'historial', 'accesos'].includes(partes[2]) ? partes[2] : 'quien';
   const migas = await migasRaiz();
   migas.push(['Credenciales', '#/credenciales']);
 
@@ -191,7 +191,7 @@ export async function renderVista(contenedor) {
     contenedor.appendChild(h('div', { style: 'margin-top:10px' }, [caja]));
 
     // ---- pestañas
-    const tabs = /** @type {Array<[string, string]>} */ ([['quien', 'Quién puede ver']]);
+    const tabs = /** @type {Array<[string, string]>} */ ([['quien', 'Quién puede ver'], ['relaciones', 'Relacionado con']]);
     const verHist = puede(u, 'ver_historial', 'credenciales', orgId), verAcc = puede(u, 'ver_registro_accesos', null, orgId);
     if (verHist) tabs.push(['historial', 'Historial']);
     if (verAcc) tabs.push(['accesos', 'Registro de accesos']);
@@ -200,6 +200,10 @@ export async function renderVista(contenedor) {
     const cuerpo = h('div');
     contenedor.appendChild(cuerpo);
     if (tab === 'quien') cuerpo.appendChild(await bloqueQuien());
+    else if (tab === 'relaciones') {
+      const zona = h('div'); cuerpo.appendChild(zona);
+      if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'Credencial', entidadId: c.id, organizacionId: orgId });
+    }
     else if (tab === 'historial') cuerpo.appendChild(await bloqueHistorial());
     else cuerpo.appendChild(await bloqueAccesos());
   }

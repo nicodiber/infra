@@ -27,7 +27,7 @@ export async function renderVista(contenedor) {
   const partes = location.hash.replace(/^#\/?/, '').split('/');
   const idHash = decodeURIComponent(partes[1] || '');
   const nuevo = idHash === 'nueva' || idHash === 'nuevo';
-  let tab = ['instalaciones', 'historial'].includes(partes[2]) ? partes[2] : 'instalaciones';
+  let tab = ['instalaciones', 'relaciones', 'archivos', 'historial'].includes(partes[2]) ? partes[2] : 'instalaciones';
   const migas = await migasRaiz();
   migas.push(['Licencias', '#/licencias']);
 
@@ -149,7 +149,7 @@ export async function renderVista(contenedor) {
 
     // ---- pestañas
     /** @type {Array<[string, string]>} */
-    const tabs = [['instalaciones', 'Instalaciones']];
+    const tabs = [['instalaciones', 'Instalaciones'], ['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']];
     const verHist = puede(u, 'ver_historial', 'licencias', orgId);
     if (verHist) tabs.push(['historial', 'Historial']);
     if (tab === 'historial' && !verHist) tab = 'instalaciones';
@@ -157,6 +157,11 @@ export async function renderVista(contenedor) {
     const cuerpo = h('div');
     contenedor.appendChild(cuerpo);
     if (tab === 'instalaciones') await pestanaInstalaciones(cuerpo, equipos, equipoPorId, personas, cuentas, personaPorId, cuentaPorId);
+    else if (tab === 'relaciones' || tab === 'archivos') {
+      const zona = h('div'); cuerpo.appendChild(zona);
+      if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'Licencia', entidadId: l.id, organizacionId: orgId });
+      else await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'Licencia', entidadId: l.id, organizacionId: orgId });
+    }
     else await pestanaHistorial(cuerpo, nombreUsuario, equipoPorId);
   }
 

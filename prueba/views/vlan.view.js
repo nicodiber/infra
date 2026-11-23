@@ -67,11 +67,17 @@ async function dibujar(cont, ctx, v, editando, cambiar) {
     ultimoCambio: await textoUltimoCambio(ctx, 'Vlan', v), alConfirmar: () => cambiar(editando) }));
   if (editando) return;
 
-  const tab = leerRuta().partes[1] === 'ip' ? 'ip' : 'puertos';
-  const barra = pestanas([['puertos', 'Puertos y Wi-Fi'], ['ip', 'Direcciones IP']], tab, k => '#/vlan/' + v.id + (k === 'puertos' ? '' : '/' + k));
+  const tab = ['ip', 'relaciones', 'archivos'].includes(leerRuta().partes[1]) ? leerRuta().partes[1] : 'puertos';
+  const barra = pestanas([['puertos', 'Puertos y Wi-Fi'], ['ip', 'Direcciones IP'], ['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']], tab, k => '#/vlan/' + v.id + (k === 'puertos' ? '' : '/' + k));
   barra.style.margin = '8px 0 8px';
   cont.appendChild(barra);
   if (tab === 'ip') { cont.appendChild(await cuerpoIp(ctx, v)); return; }
+  if (tab === 'relaciones' || tab === 'archivos') {
+    const zona = h('div'); cont.appendChild(zona);
+    if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'Vlan', entidadId: v.id, organizacionId: ctx.org });
+    else await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'Vlan', entidadId: v.id, organizacionId: ctx.org });
+    return;
+  }
 
   // ---- switches con sus puertos en la VLAN
   const [switches, puertos, wifis] = await Promise.all([repositorio.listar('equipos', { organizacion_id: ctx.org, equipo_tipo: 'switch' }), repositorio.listar('puertos'), repositorio.listar('redes_wifi', { organizacion_id: ctx.org, vlan_id: v.id })]);

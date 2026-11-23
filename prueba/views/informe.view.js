@@ -155,7 +155,9 @@ export async function renderVista(contenedor) {
   const eqRed = ordenar(vigentes.filter(e => e.equipo_tipo !== 'servidor' && !esEscritorio(e)), 'equipo_codigo');
   const eqServ = ordenar(vigentes.filter(e => e.equipo_tipo === 'servidor'), 'equipo_codigo');
   const eqEscr = ordenar(vigentes.filter(esEscritorio), 'equipo_codigo');
-  const asigVigentes = new Map(asignaciones.filter(a => !a.asignacion_hasta).map(a => [a.equipo_id, a]));
+  /** @type {Map<string, any[]>} Un equipo puede estar compartido por varias personas (D-072). */
+  const asigVigentes = new Map();
+  for (const a of asignaciones.filter(x => !x.asignacion_hasta)) asigVigentes.set(a.equipo_id, (asigVigentes.get(a.equipo_id) || []).concat([a]));
   const usoLic = new Map();
   for (const i of instalaciones) if (!i.instalacion_hasta) usoLic.set(i.licencia_id, (usoLic.get(i.licencia_id) || 0) + 1);
 
@@ -193,8 +195,8 @@ export async function renderVista(contenedor) {
       { titulo: 'Mapeos de disco', cab: ['Letra', 'Ruta', 'Aplica a', 'Método', 'Servidor'], filas: ordenar(mapeos, 'mapeo_letra').map(m => [m.mapeo_letra, m.mapeo_ruta, (ROTULO_MAPEO_APLICA_A[m.mapeo_aplica_a] || texto(m.mapeo_aplica_a)) + (m.mapeo_grupo ? ': ' + m.mapeo_grupo : ''), ROTULO_MAPEO_METODO[m.mapeo_metodo] || texto(m.mapeo_metodo), nombreEq(m.equipo_id)]), verificados: mapeos.map(m => m.verificado_en) }
     ] }) },
     { id: 'escritorio', titulo: 'Equipos de escritorio y asignaciones', modulo: 'red', cargar: () => ({ tablas: [{ cab: ['Código', 'Equipo', 'Categoría', 'Puesto', 'IP', 'Asignado a', 'Desde'],
-      filas: eqEscr.map(e => { const a = asigVigentes.get(e.id), p = a ? /** @type {any} */ (mapaPers.get(a.persona_id)) : null, pu = e.puesto_id ? /** @type {any} */ (mapaPuesto.get(e.puesto_id)) : null;
-        return [e.equipo_codigo, e.equipo_nombre, texto(e.equipo_campos && e.equipo_campos.otro_categoria), pu ? pu.puesto_nombre : '—', texto(e.equipo_ip_gestion), !verPersonas ? '—' : p ? p.persona_nombre : 'Sin asignar', !verPersonas || !a ? '—' : fmtFecha(a.asignacion_desde)]; }), verificados: eqEscr.map(e => e.verificado_en) }] }) },
+      filas: eqEscr.map(e => { const as = asigVigentes.get(e.id) || [], a = as[0], pn = as.map(x => /** @type {any} */ (mapaPers.get(x.persona_id))).filter(Boolean).map(x => x.persona_nombre).join(', '), pu = e.puesto_id ? /** @type {any} */ (mapaPuesto.get(e.puesto_id)) : null;
+        return [e.equipo_codigo, e.equipo_nombre, texto(e.equipo_campos && e.equipo_campos.otro_categoria), pu ? pu.puesto_nombre : '—', texto(e.equipo_ip_gestion), !verPersonas ? '—' : pn || 'Sin asignar', !verPersonas || !a ? '—' : fmtFecha(a.asignacion_desde)]; }), verificados: eqEscr.map(e => e.verificado_en) }] }) },
     { id: 'licencias', titulo: 'Licencias (sin claves)', modulo: 'licencias', cargar: () => ({ tablas: [{ cab: ['Producto', 'Tipo', 'Cantidad', 'En uso', 'Vence', 'Proveedor'],
       filas: ordenar(licencias, 'licencia_producto').map(l => [l.licencia_producto, ROTULO_LICENCIA_TIPO[l.licencia_tipo] || texto(l.licencia_tipo), texto(l.licencia_cantidad), usoLic.get(l.id) || 0, fmtFecha(l.licencia_vence_en), texto(l.licencia_proveedor)]), verificados: licencias.map(l => l.verificado_en) }] }) }
   ];

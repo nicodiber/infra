@@ -12,6 +12,7 @@ import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { h, tabla, fmtFechaHora, indicadorVerificacion, icono } from '../assets/js/utiles.js';
 import { ROTULO_CREDENCIAL_TIPO } from '../assets/js/modelos.js';
 import { pintarNotas } from '../assets/js/notas.js';
+import { cargarVinculos, contarVinculos, pintarVinculos } from '../assets/js/vinculos.js';
 import { confirmarConPasos } from '../assets/js/verificacion.js';
 import {
   aplicarEstilos, bloqueSinPermiso, estadoVacio, estadoPill, botonBaja, miniRack, fichaBloque, pieVerificacion, nombresDeUsuarios, partesHash, rangoU, rutaEquipo,
@@ -30,7 +31,7 @@ export async function renderVista(contenedor) {
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   const { segs } = partesHash();
   const id = segs[1] || '';
-  const tabPedida = segs[2] || 'red';
+  const tabPedida = segs[2] || 'vinculos';
   const raiz = await migasRaiz();
   const eq0 = id ? await repositorio.obtener('equipos', id) : null;
   if (!eq0 || eq0.equipo_tipo !== 'servidor') {
@@ -55,12 +56,12 @@ export async function renderVista(contenedor) {
     if (!eq) { ir('#/servidores'); return; }
     const c = eq.equipo_campos || {};
     const esVM = !!c.host_id;
-    const [umbrales, nombres, racks, ubicaciones, todosServidores, cantNotas] = await Promise.all([
+    const [umbrales, nombres, racks, ubicaciones, todosServidores, cantNotas, vinc] = await Promise.all([
       repositorio.umbralesVerificacion(), nombresDeUsuarios(),
       repositorio.listar('racks', { organizacion_id: org }, { ordenarPor: 'rack_nombre' }),
       repositorio.listar('ubicaciones', { organizacion_id: org }),
       repositorio.listar('equipos', e => e.organizacion_id === org && e.equipo_tipo === 'servidor', { ordenarPor: 'equipo_nombre' }),
-      repositorio.contar('notas', n => n.entidad === 'Equipo' && n.entidad_id === id)]);
+      repositorio.contar('notas', n => n.entidad === 'Equipo' && n.entidad_id === id), cargarVinculos(id)]);
     const host = esVM ? todosServidores.find(s => s.id === c.host_id) || null : null;
     const vms = todosServidores.filter(s => s.equipo_campos && s.equipo_campos.host_id === id);
     const rack = eq.rack_id ? racks.find(r => r.id === eq.rack_id) || null : null;
@@ -70,12 +71,12 @@ export async function renderVista(contenedor) {
 
     // ---- pestañas disponibles
     /** @type {Array<[string, string]>} */
-    const tabs = [['red', 'Red'], ['credenciales', 'Credenciales vinculadas']];
+    const tabs = [['vinculos', 'Vínculos (' + contarVinculos(vinc) + ')'], ['red', 'Red'], ['credenciales', 'Credenciales vinculadas']];
     if (esVM) tabs.push(['host', 'Host']);
     else if (vms.length || c.servidor_virtualizacion !== 'ninguna') tabs.push(['vms', 'Máquinas virtuales (' + vms.length + ')']);
-    tabs.push(['notas', 'Notas (' + cantNotas + ')']);
+    tabs.push(['notas', 'Notas (' + cantNotas + ')'], ['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']);
     if (puede(u, 'ver_historial', 'servidores', org)) tabs.push(['historial', 'Historial']);
-    const tab = tabs.some(t => t[0] === tabPedida) ? tabPedida : 'red';
+    const tab = tabs.some(t => t[0] === tabPedida) ? tabPedida : 'vinculos';
 
     // ---- datos (lectura o edición)
     const datos = h('div', { class: 'datos' });
@@ -153,20 +154,23 @@ export async function renderVista(contenedor) {
       alConfirmar: async () => { if (!(await confirmarConPasos('equipos', eq.id, u))) return; toast('«' + eq.equipo_nombre + '» confirmado como vigente hoy'); await pintar(); },
       error: toast });
 
-    pantalla(contenedor, { codigo: 'P06', nombre: 'Ficha de servidor', migas: raiz.concat([['Servidores', '#/servidores'], [eq.equipo_nombre, tab !== 'red' ? '#/servidor/' + eq.id : undefined]]).concat(tab !== 'red' ? [[(tabs.find(t => t[0] === tab) || ['', ''])[1].replace(/ \(\d+\)$/, '')]] : []) });
+    pantalla(contenedor, { codigo: 'P06', nombre: 'Ficha de servidor', migas: raiz.concat([['Servidores', '#/servidores'], [eq.equipo_nombre, tab !== 'vinculos' ? '#/servidor/' + eq.id : undefined]]).concat(tab !== 'vinculos' ? [[(tabs.find(t => t[0] === tab) || ['', ''])[1].replace(/ \(\d+\)$/, '')]] : []) });
     contenedor.appendChild(fichaBloque({ tipo: 'servidor', etiqueta: esVM ? 'máquina virtual' : 'servidor', titulo: eq.equipo_nombre, datos: h('div', null, [datos, errorCaja]),
       botones: botones.concat([estadoPill(eq.equipo_estado)]), mini: rack && !editando ? miniRack(rack, eq) : null, modoEdicion: editando, pie }));
 
     // ---- pestañas
     contenedor.appendChild(h('div', { class: 'pestanas', role: 'tablist' }, tabs.map(t => h('button', { type: 'button', role: 'tab', class: t[0] === tab ? 'sel' : '', 'aria-selected': String(t[0] === tab),
-      onclick: () => ir('#/servidor/' + eq.id + (t[0] === 'red' ? '' : '/' + t[0])) }, [t[1]]))));
+      onclick: () => ir('#/servidor/' + eq.id + (t[0] === 'vinculos' ? '' : '/' + t[0])) }, [t[1]]))));
     const cuerpo = h('div');
     contenedor.appendChild(cuerpo);
-    if (tab === 'red') await pestanaRed(cuerpo, eq, host, org);
+    if (tab === 'vinculos') pintarVinculos(cuerpo, eq, vinc);
+    else if (tab === 'red') await pestanaRed(cuerpo, eq, host, org);
     else if (tab === 'credenciales') await pestanaCredenciales(cuerpo, eq, u, org);
     else if (tab === 'vms') pestanaVMs(cuerpo, eq, vms, umbrales);
     else if (tab === 'host') pestanaHost(cuerpo, host);
     else if (tab === 'notas') await pintarNotas(cuerpo, { entidad: 'Equipo', entidadId: eq.id, organizacionId: org });
+    else if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(cuerpo, { entidad: 'Equipo', entidadId: eq.id, organizacionId: org });
+    else if (tab === 'archivos') await (await import('../assets/js/archivos.js')).pintarArchivos(cuerpo, { entidad: 'Equipo', entidadId: eq.id, organizacionId: org });
     else await pestanaHistorial(cuerpo, eq, nombres);
   };
   await pintar();

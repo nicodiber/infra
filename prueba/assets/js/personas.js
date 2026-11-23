@@ -106,7 +106,8 @@ export function alertaCuentaDeBaja() {
 
 /**
  * Ventana para asignar un equipo a una persona. Con `equipo` fijo se elige la persona; con `persona` fija, el equipo.
- * Avisa si el equipo ya tiene otra persona (se le cierra la asignación al confirmar).
+ * Si el equipo ya tiene otras personas, ofrece «Reemplazar a …» (se les cierra la asignación hoy) o «Compartir con …»
+ * (el equipo queda con varias personas a la vez, D-072).
  * @param {Object} o
  * @param {Contexto} o.ctx
  * @param {Equipo} [o.equipo] @param {Persona} [o.persona]
@@ -119,24 +120,34 @@ export async function modalAsignar(o) {
     repositorio.listar('equipos', { organizacion_id: ctx.org }, { ordenarPor: 'equipo_nombre' }),
     repositorio.listar('asignaciones', { organizacion_id: ctx.org })]);
   const nombrePersona = new Map(personas.map(p => [p.id, p.persona_nombre]));
-  const vigentePorEquipo = new Map(asignaciones.filter(a => !a.asignacion_hasta).map(a => [a.equipo_id, a]));
+  /** @type {Map<string, string[]>} equipo_id → ids de las personas con el equipo hoy */
+  const titulares = new Map();
+  for (const a of asignaciones) if (!a.asignacion_hasta) titulares.set(a.equipo_id, (titulares.get(a.equipo_id) || []).concat([a.persona_id]));
+  const nombres = (/** @type {string[]} */ ids) => ids.map(id => nombrePersona.get(id) || 'otra persona').join(', ');
   const porEquipo = !!o.equipo;
-  /** @type {Array<{id: string, rotulo: string, busca: string, avisa: string|null}>} */
+  /** @type {Array<{id: string, rotulo: string, busca: string}>} */
   const items = porEquipo
-    ? personas.filter(p => p.persona_estado !== 'baja').map(p => ({ id: p.id, rotulo: p.persona_nombre + (p.persona_sector ? ' · ' + p.persona_sector : ''), busca: normalizar(p.persona_nombre + ' ' + (p.persona_sector || '')), avisa: null }))
+    ? personas.filter(p => p.persona_estado !== 'baja').map(p => ({ id: p.id, rotulo: p.persona_nombre + (p.persona_sector ? ' · ' + p.persona_sector : ''), busca: normalizar(p.persona_nombre + ' ' + (p.persona_sector || '')) }))
     : equipos.filter(e => e.equipo_estado !== 'baja').sort((a, b) => Number(esEquipoDeEscritorio(b)) - Number(esEquipoDeEscritorio(a))).map(e => {
-      const v = vigentePorEquipo.get(e.id);
-      const dueno = v ? nombrePersona.get(v.persona_id) || 'otra persona' : null;
-      return { id: e.id, rotulo: e.equipo_nombre + ' · ' + tipoEquipo(e) + (dueno ? ' · asignado a ' + dueno : ''), busca: normalizar(e.equipo_nombre + ' ' + tipoEquipo(e) + ' ' + (e.equipo_ip_gestion || '') + ' ' + (dueno || '')),
-        avisa: v && v.persona_id !== (o.persona && o.persona.id) ? 'Este equipo está asignado hoy a ' + dueno + '. Al confirmar se le cierra esa asignación (queda en el historial).' : v ? 'Este equipo ya está asignado a esta persona.' : null };
+      const dueños = titulares.get(e.id) || [];
+      const dueno = dueños.length ? nombres(dueños) : null;
+      return { id: e.id, rotulo: e.equipo_nombre + ' · ' + tipoEquipo(e) + (dueno ? ' · asignado a ' + dueno : ''), busca: normalizar(e.equipo_nombre + ' ' + tipoEquipo(e) + ' ' + (e.equipo_ip_gestion || '') + ' ' + (dueno || '')) };
     });
-  const actualEquipo = o.equipo ? vigentePorEquipo.get(o.equipo.id) : null;
   const titulo = o.equipo ? 'Asignar «' + o.equipo.equipo_nombre + '» a una persona' : 'Asignar un equipo a ' + (o.persona ? o.persona.persona_nombre : '');
   const buscador = /** @type {HTMLInputElement} */ (h('input', { type: 'search', placeholder: porEquipo ? 'Buscar persona por nombre o sector…' : 'Buscar equipo por nombre, tipo, IP o persona…', 'aria-label': 'Buscar' }));
   const lista = /** @type {HTMLSelectElement} */ (h('select', { size: '8', 'aria-label': porEquipo ? 'Personas' : 'Equipos' }));
   const motivo = /** @type {HTMLInputElement} */ (h('input', { type: 'text', placeholder: 'Por ejemplo: ingreso, reemplazo, mudanza (opcional)', 'aria-label': 'Motivo' }));
   const aviso = h('div', { class: 'msg', role: 'status', hidden: 'hidden' });
   const error = h('div', { class: 'rd-err', role: 'alert' });
+  // Reemplazar o compartir: solo aparece cuando el equipo elegido ya lo tienen otras personas.
+  const rReemplazar = /** @type {HTMLInputElement} */ (h('input', { type: 'radio', name: 'asigModo', value: 'reemplazar', id: 'asigReemplazar' }));
+  const rCompartir = /** @type {HTMLInputElement} */ (h('input', { type: 'radio', name: 'asigModo', value: 'compartir', id: 'asigCompartir' }));
+  rReemplazar.checked = true;
+  const txtReemplazar = h('span'), txtCompartir = h('span');
+  const modo = h('fieldset', { class: 'bloque', style: 'margin-top:8px', hidden: 'hidden' }, [
+    h('legend', { text: 'El equipo ya lo tiene alguien más' }),
+    h('label', { for: 'asigReemplazar', style: 'display:flex;gap:8px;align-items:flex-start;cursor:pointer' }, [rReemplazar, txtReemplazar]),
+    h('label', { for: 'asigCompartir', style: 'display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-top:6px' }, [rCompartir, txtCompartir])]);
   const pintar = () => {
     const pal = normalizar(buscador.value).split(/\s+/).filter(Boolean);
     lista.textContent = '';
@@ -145,25 +156,35 @@ export async function modalAsignar(o) {
     if (!vis.length) lista.appendChild(h('option', { value: '', disabled: 'disabled', text: 'Nada coincide con la búsqueda.' }));
     alElegir();
   };
-  const alElegir = () => {
-    const it = items.find(i => i.id === lista.value);
-    const textoAviso = it && it.avisa ? it.avisa : (porEquipo && actualEquipo && lista.value && lista.value !== actualEquipo.persona_id ? 'Este equipo está asignado hoy a ' + (nombrePersona.get(actualEquipo.persona_id) || 'otra persona') + '. Al confirmar se le cierra esa asignación (queda en el historial).' : '');
+  function alElegir() {
+    const equipoId = o.equipo ? o.equipo.id : lista.value, personaId = o.persona ? o.persona.id : lista.value;
+    const actuales = equipoId ? titulares.get(equipoId) || [] : [];
+    const ya = !!personaId && actuales.includes(personaId);
+    const otros = actuales.filter(id => id !== personaId);
+    modo.hidden = !(equipoId && personaId && !ya && otros.length);
+    if (!modo.hidden) {
+      txtReemplazar.textContent = 'Reemplazar a ' + nombres(otros) + ': se cierra su asignación hoy y queda en el historial.';
+      txtCompartir.textContent = 'Compartir con ' + nombres(otros) + ': el equipo queda asignado a varias personas a la vez.';
+    }
+    const textoAviso = ya ? (porEquipo ? 'Esta persona ya tiene el equipo asignado.' : 'Este equipo ya está asignado a esta persona.') : '';
     aviso.textContent = textoAviso; aviso.hidden = !textoAviso;
-  };
+  }
   lista.addEventListener('change', alElegir);
   buscador.addEventListener('input', pintar);
   const confirmar = async () => {
     error.textContent = '';
     if (!lista.value) { error.textContent = porEquipo ? 'Elegí la persona.' : 'Elegí el equipo.'; return; }
-    const r = await seguro(() => repositorio.asignarEquipo({ equipoId: o.equipo ? o.equipo.id : lista.value, personaId: o.persona ? o.persona.id : lista.value, motivo: motivo.value, usuarioId: ctx.u.id }));
+    const compartir = !modo.hidden && rCompartir.checked;
+    const r = await seguro(() => repositorio.asignarEquipo({ equipoId: o.equipo ? o.equipo.id : lista.value, personaId: o.persona ? o.persona.id : lista.value, motivo: motivo.value, usuarioId: ctx.u.id, compartir }));
     if (!r) return;
     cerrarModal();
-    toast('Equipo asignado · queda en el historial de asignaciones');
+    toast(compartir ? 'Equipo compartido · queda en el historial de asignaciones' : 'Equipo asignado · queda en el historial de asignaciones');
     await o.alTerminar();
   };
   abrirModal(h('div', { class: 'pe-modal', role: 'dialog', 'aria-label': titulo }, [
     h('h2', { text: titulo }),
     !items.length ? h('div', { class: 'aviso', text: porEquipo ? 'No hay personas activas en esta organización. Cargá una desde «Nueva persona».' : 'No hay equipos cargados en esta organización.' }) : h('div', null, [buscador, lista]),
+    modo,
     h('div', { class: 'campo' }, [h('label', { text: 'Motivo' }), motivo]),
     aviso, error,
     h('div', { class: 'herr', style: 'justify-content:flex-end' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }),
@@ -173,19 +194,20 @@ export async function modalAsignar(o) {
 }
 
 /**
- * Ventana para registrar la devolución de un equipo (cierra la asignación vigente desde hoy).
+ * Ventana para registrar la devolución de un equipo por una persona (cierra su asignación vigente desde hoy). Si el equipo está
+ * compartido, las demás personas lo siguen teniendo.
  * @param {Contexto} ctx @param {{id: string, equipo_nombre: string}} equipo @param {string} quien Nombre de la persona.
- * @param {() => (void|Promise<void>)} alTerminar
+ * @param {() => (void|Promise<void>)} alTerminar @param {string|null} [personaId] Id de la persona que devuelve (si falta, se devuelve a todas).
  */
-export function modalDevolver(ctx, equipo, quien, alTerminar) {
+export function modalDevolver(ctx, equipo, quien, alTerminar, personaId) {
   const obs = /** @type {HTMLInputElement} */ (h('input', { type: 'text', placeholder: 'Por ejemplo: devuelto con cargador, sin la funda (opcional)', 'aria-label': 'Observaciones' }));
   abrirModal(h('div', { class: 'pe-modal', role: 'dialog', 'aria-label': 'Devolver equipo' }, [
     h('h2', { text: 'Devolver «' + equipo.equipo_nombre + '»' }),
-    h('p', { text: quien + ' devuelve el equipo. La asignación se cierra hoy y el equipo queda sin asignar; el historial se conserva.' }),
+    h('p', { text: personaId ? quien + ' devuelve el equipo. Su asignación se cierra hoy; si el equipo lo comparten otras personas, lo siguen teniendo. El historial se conserva.' : 'Se cierra hoy la asignación del equipo y queda sin asignar; el historial se conserva.' }),
     h('div', { class: 'campo' }, [h('label', { text: 'Observaciones' }), obs]),
     h('div', { class: 'herr', style: 'justify-content:flex-end' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }),
       h('button', { type: 'button', class: 'primario', text: 'Registrar devolución', onclick: async () => {
-        const r = await seguro(() => repositorio.devolverEquipo({ equipoId: equipo.id, usuarioId: ctx.u.id, observaciones: obs.value }));
+        const r = await seguro(() => repositorio.devolverEquipo({ equipoId: equipo.id, personaId: personaId || null, usuarioId: ctx.u.id, observaciones: obs.value }));
         if (!r) return;
         cerrarModal(); toast('Devolución registrada'); await alTerminar();
       } })])]));
@@ -211,7 +233,8 @@ export async function modalHistorialAsignaciones(ctx, equipo) {
 }
 
 /**
- * Bloque «Asignado a» de la ficha de equipo: persona vigente, Asignar / Devolver e historial.
+ * Bloque «Asignado a» de la ficha de equipo: todas las personas que lo tienen hoy (puede ser compartido, D-072), con «Devolver» por
+ * persona, «Asignar» (reemplazar o compartir) e historial.
  * Devuelve null si el equipo no es de escritorio ni tiene asignaciones, o si el rol no ve el módulo Personas.
  * @param {Contexto} ctx @param {Equipo} e @param {() => (void|Promise<void>)} rearmar
  * @returns {Promise<HTMLElement|null>}
@@ -221,21 +244,26 @@ export async function bloqueAsignacion(ctx, e, rearmar) {
   const asigs = await repositorio.listar('asignaciones', { equipo_id: e.id });
   if (!esEquipoDeEscritorio(e) && !asigs.length) return null;
   inyectarEstilosPersonas();
-  const vigente = asigs.find(a => !a.asignacion_hasta) || null;
-  const persona = vigente ? await repositorio.obtener('personas', vigente.persona_id) : null;
+  const vigentes = asigs.filter(a => !a.asignacion_hasta).sort((a, b) => (a.asignacion_desde < b.asignacion_desde ? 1 : a.asignacion_desde > b.asignacion_desde ? -1 : 0));
+  const filas = (await Promise.all(vigentes.map(async a => ({ a, p: await repositorio.obtener('personas', a.persona_id) })))).filter(x => x.p);
   const modifica = puede(ctx.u, 'modificar', 'personas', ctx.org);
   const botones = /** @type {Node[]} */ ([]);
-  if (modifica) botones.push(h('button', { type: 'button', class: 'chico', text: vigente ? 'Asignar a otra persona' : 'Asignar', onclick: () => modalAsignar({ ctx, equipo: e, alTerminar: rearmar }) }));
-  if (modifica && vigente) botones.push(h('button', { type: 'button', class: 'chico', text: 'Devolver', onclick: () => modalDevolver(ctx, e, persona ? persona.persona_nombre : 'La persona', rearmar) }));
+  if (modifica) botones.push(h('button', { type: 'button', class: 'chico', text: filas.length ? 'Asignar a otra persona' : 'Asignar', title: filas.length ? 'Reemplazar a la persona actual o compartir el equipo' : '', onclick: () => modalAsignar({ ctx, equipo: e, alTerminar: rearmar }) }));
   botones.push(h('button', { type: 'button', class: 'chico', text: 'Historial de asignaciones (' + asigs.length + ')', onclick: () => modalHistorialAsignaciones(ctx, e) }));
+  /** @type {Node[]} */
+  const cuerpo = filas.length
+    ? filas.map(({ a, p }) => {
+      const per = /** @type {Persona} */ (p);
+      return h('div', { class: 'pe-asig', style: 'margin-bottom:6px' }, [
+        h('div', null, [h('a', { class: 'quien', href: '#/persona/' + per.id + '/equipos', text: per.persona_nombre, onclick: (/** @type {Event} */ ev) => { ev.preventDefault(); ir('#/persona/' + per.id + '/equipos'); } }),
+          h('div', { class: 'mut', text: 'Desde el ' + fmtFecha(a.asignacion_desde) + (a.asignacion_motivo ? ' · ' + a.asignacion_motivo : '') })]),
+        h('span', { style: 'flex:1' }),
+        modifica ? h('button', { type: 'button', class: 'chico', text: 'Devolver', 'aria-label': 'Devolver el equipo (' + per.persona_nombre + ')', onclick: () => modalDevolver(ctx, e, per.persona_nombre, rearmar, per.id) }) : null]);
+    })
+    : [h('div', null, [h('span', { class: 'quien', text: 'Sin asignar' }), h('div', { class: 'mut', text: modifica ? 'Nadie tiene este equipo hoy. Tocá «Asignar» para entregarlo.' : 'Nadie tiene este equipo hoy.' })])];
   return h('div', { class: 'bloque', style: 'margin-top:10px' }, [
-    h('h3', { text: 'Asignado a' }),
-    h('div', { class: 'pe-asig' }, [
-      vigente
-        ? h('div', null, [persona ? h('a', { class: 'quien', href: '#/persona/' + persona.id + '/equipos', text: persona.persona_nombre, onclick: (/** @type {Event} */ ev) => { ev.preventDefault(); ir('#/persona/' + persona.id + '/equipos'); } }) : h('span', { class: 'quien', text: '—' }),
-          h('div', { class: 'mut', text: 'Desde el ' + fmtFecha(vigente.asignacion_desde) + (vigente.asignacion_motivo ? ' · ' + vigente.asignacion_motivo : '') })])
-        : h('div', null, [h('span', { class: 'quien', text: 'Sin asignar' }), h('div', { class: 'mut', text: modifica ? 'Nadie tiene este equipo hoy. Tocá «Asignar» para entregarlo.' : 'Nadie tiene este equipo hoy.' })]),
-      h('span', { style: 'flex:1' }), ...botones])]);
+    h('div', { class: 'herr', style: 'margin:0 0 6px' }, [h('h3', { text: filas.length > 1 ? 'Asignado a (compartido por ' + filas.length + ' personas)' : 'Asignado a', style: 'margin:0' }), h('span', { style: 'flex:1' }), ...botones]),
+    ...cuerpo]);
 }
 
 /**
@@ -260,7 +288,7 @@ export async function mudarPersona(datos) {
       r.vlanNueva = m.vlanNueva; r.cambiaVlan = r.cambiaVlan || m.cambiaVlan;
     }
   } else {
-    for (const e of plan.suyos) { await repositorio.devolverEquipo({ equipoId: e.id, usuarioId: datos.usuarioId, observaciones: 'Mudanza a otro puesto.' }); r.equiposDevueltos.push(e.equipo_nombre); }
+    for (const e of plan.suyos) { await repositorio.devolverEquipo({ equipoId: e.id, personaId: p.id, usuarioId: datos.usuarioId, observaciones: 'Mudanza a otro puesto.' }); r.equiposDevueltos.push(e.equipo_nombre); }
     for (const e of plan.libresDestino) { await repositorio.asignarEquipo({ equipoId: e.id, personaId: p.id, motivo: 'Mudanza al puesto ' + plan.puesto.puesto_nombre + '.', usuarioId: datos.usuarioId }); r.equiposAsignados.push(e.equipo_nombre); }
     r.sinEquipoLibre = !plan.libresDestino.length;
   }

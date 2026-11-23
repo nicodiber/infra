@@ -74,8 +74,8 @@
  *   equipo_id: string, puerto_numero: number, puerto_nombre: string|null, puerto_tipo: 'rj45'|'sfp'|'sfp_plus',
  *   puerto_velocidad: string|null, puerto_modo: 'acceso'|'troncal'|null, vlan_nativa_id: string|null,
  *   vlans_etiquetadas: string[], conectado_a_equipo_id: string|null, conectado_a_puerto_id: string|null,
- *   conectado_a_descripcion: string|null, puesto_id: string|null, puerto_estado: 'activo'|'libre'|'deshabilitado',
- *   puerto_notas: string|null
+ *   conectado_a_descripcion: string|null, enlace_isp_id: string|null, puesto_id: string|null,
+ *   puerto_estado: 'activo'|'libre'|'deshabilitado', puerto_notas: string|null
  * }} Puerto
  */
 
@@ -145,7 +145,8 @@
  */
 
 /**
- * Entrega de un equipo a una persona. `asignacion_hasta` null = la tiene hoy. A lo sumo una vigente por equipo.
+ * Entrega de un equipo a una persona. `asignacion_hasta` null = la tiene hoy. Un equipo puede tener varias vigentes a la vez
+ * (equipo compartido, D-072); `asignarEquipo` con `compartir` suma una sin cerrar las otras.
  * @typedef {Comunes & {
  *   organizacion_id: string, equipo_id: string, persona_id: string, asignacion_desde: string,
  *   asignacion_hasta: string|null, asignacion_motivo: string|null, asignacion_observaciones: string|null
@@ -365,6 +366,22 @@ export const ROTULO_CREDENCIAL_TIPO = {
 /** Categoría de `equipo_tipo = otro` con campos propios `reloj_*` (MD10-C, D-066). */
 export const CATEGORIA_RELOJ = 'Reloj de control de personal';
 
+/** Categoría de `equipo_tipo = otro` para las impresoras (campos propios `impresora_*`, D-072). Se reconoce también «Impresora». */
+export const CATEGORIA_IMPRESORA = 'Impresora de red';
+
+/** @type {Object<string, string>} */
+export const ROTULO_IMPRESORA_CONEXION = { red: 'Red', usb: 'USB / local' };
+
+/**
+ * ¿Es una impresora? Un equipo `otro` cuya categoría es «Impresora de red» o «Impresora» (sin distinguir mayúsculas).
+ * @param {{equipo_tipo: string, equipo_campos?: Object<string, any>}} e
+ */
+export function esImpresora(e) {
+  if (!e || e.equipo_tipo !== 'otro') return false;
+  const c = String((e.equipo_campos || {}).otro_categoria || '').trim().toLowerCase();
+  return c === 'impresora de red' || c === 'impresora';
+}
+
 /** @type {Object<string, string>} */
 export const ROTULO_RELOJ_METODO = { huella: 'Huella', tarjeta: 'Tarjeta', rostro: 'Rostro', pin: 'PIN' };
 
@@ -434,6 +451,8 @@ export function rutaDeEntidad(entidad, registro) {
     case 'Ubicacion': return '#/plano/' + id;
     case 'Puesto': return '#/puesto/' + id;
     case 'Vlan': return '#/vlan/' + id;
+    case 'EnlaceIsp': return '#/enlace/' + id;
+    case 'EnlaceIsp': return '#/enlace/' + id;
     case 'RedWifi': return '#/wifi/' + id;
     case 'Configuracion': return '#/config/' + id;
     case 'Credencial': return '#/credencial/' + id;
@@ -472,4 +491,48 @@ export function moduloDeEntidad(entidad, registro) {
     case 'TramoFibra': return 'red';
     default: return 'organizacion';
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Versión del modelo de datos y migraciones (D-073)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Versión del modelo de datos. Cada exportación la lleva en `version_modelo`; una exportación sin ella es la versión 1.
+ * Al cambiar el modelo (campo nuevo, campo renombrado) se sube en 1 y se agrega `MIGRACIONES[versión anterior]`.
+ * 1: hasta la v0.5.x. 2: varias personas por equipo, impresoras con conexión (`impresora_conexion`, `impresora_pc_id`) y `puertos.enlace_isp_id` (v0.6).
+ */
+export const VERSION_MODELO = 2;
+
+/**
+ * Migraciones ordenadas: `MIGRACIONES[n]` lleva los datos de la versión n a la n+1, completando los campos nuevos con su valor
+ * por defecto. Modifican `datos` (colecciones → registros) en el lugar, no borran nada y conservan los campos que no conocen.
+ * @type {Object<number, (datos: Object<string, any[]>) => void>}
+ */
+export const MIGRACIONES = {
+  1: datos => {
+    for (const p of datos.puertos || []) if (!('enlace_isp_id' in p)) p.enlace_isp_id = null;
+    for (const e of datos.equipos || []) {
+      if (!esImpresora(e)) continue;
+      if (!e.equipo_campos || typeof e.equipo_campos !== 'object') e.equipo_campos = {};
+      if (!e.equipo_campos.impresora_conexion) e.equipo_campos.impresora_conexion = 'red';
+      if (!('impresora_pc_id' in e.equipo_campos)) e.equipo_campos.impresora_pc_id = null;
+    }
+  }
+};
+
+/**
+ * Lleva `datos` de la versión `desde` a la actual.
+ * @param {Object<string, any[]>} datos @param {number} desde
+ * @returns {number} Cuántas migraciones se aplicaron.
+ */
+export function migrarDatos(datos, desde) {
+  let n = 0;
+  for (let v = desde; v < VERSION_MODELO; v++) {
+    const m = MIGRACIONES[v];
+    if (!m) throw new Error('Falta la migración del modelo de datos ' + v + ' a ' + (v + 1) + '.');
+    m(datos);
+    n++;
+  }
+  return n;
 }

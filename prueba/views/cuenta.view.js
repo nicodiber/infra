@@ -183,12 +183,17 @@ async function dibujar(cont, ctx, c, partes, editando, cambiar, rearmar) {
   if (editando) return;
   if (deBaja) cont.appendChild(h('div', { class: 'msg mal', role: 'status', style: 'margin-top:8px', text: dueno.persona_nombre + ' está en baja pero esta cuenta sigue habilitada. Revisala: si ya no se usa, deshabilitala en el dominio y cambiá su estado acá.' }));
   if (!c.persona_id) cont.appendChild(h('div', { class: 'msg', style: 'margin-top:8px', text: 'Es una cuenta de servicio: no pertenece a una persona.' }));
-  if (!ctx.historial) return;
-  const barra = pestanas([['historial', 'Historial']], 'historial', () => '#/cuenta/' + c.id);
+  /** @type {Array<[string, string]>} */
+  const tabs = [['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']];
+  if (ctx.historial) tabs.push(['historial', 'Historial']);
+  const tab = tabs.some(t => t[0] === partes[1]) ? partes[1] : 'relaciones';
+  const barra = pestanas(tabs, tab, k => '#/cuenta/' + c.id + '/' + k);
   barra.style.margin = '8px 0 8px';
   cont.appendChild(barra);
-  cont.appendChild(await cuerpoHistorial(ctx, c, personas));
-  void partes;
+  if (tab === 'historial') { cont.appendChild(await cuerpoHistorial(ctx, c, personas)); return; }
+  const zona = h('div'); cont.appendChild(zona);
+  if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(zona, { entidad: 'CuentaDominio', entidadId: c.id, organizacionId: ctx.org });
+  else await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'CuentaDominio', entidadId: c.id, organizacionId: ctx.org });
 }
 
 /** @param {Contexto} ctx @param {CuentaDominio} c @param {any[]} personas */

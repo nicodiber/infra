@@ -14,7 +14,9 @@ import {
   estadoPill, chipsEstado, enlace, avisoVista, textoUbicacion, crearEquipo, hashEquipo, crearPuesto, enlaceFila, cargarPersonas, textoVlan
 } from '../assets/js/red.js';
 
-const TABS = /** @type {Array<[string, string, string]>} */ ([['equipos', 'Equipos de red', 'equipo'], ['vlan', 'VLAN', 'vlan'], ['wifi', 'Redes Wi-Fi', 'wifi'], ['isp', 'Enlaces ISP', 'equipo'], ['puestos', 'Puestos de trabajo', 'puesto']]);
+const TABS = /** @type {Array<[string, string, string]>} */ ([['equipos', 'Equipos de red', 'equipo'], ['vlan', 'VLAN', 'vlan'], ['wifi', 'Redes Wi-Fi', 'wifi'], ['isp', 'Enlaces ISP', 'equipo'], ['puestos', 'Puestos de trabajo', 'puesto'], ['fibra', 'Fibra', 'vlan'], ['topologia', 'Topología', 'vlan']]);
+/** Pestañas que no son de esta pantalla: enlazan a su propia ruta. */
+const ENLACES_EXTERNOS = /** @type {Object<string, string>} */ ({ fibra: '#/fibra', topologia: '#/topologia' });
 const ESTADOS = /** @type {Array<[string, string]>} */ ([['en_uso', 'En uso'], ['en_deposito', 'En depósito'], ['baja', 'Baja']]);
 
 // Filtros que se recuerdan mientras se navega entre pantallas.
@@ -29,11 +31,11 @@ export async function renderVista(contenedor) {
   inyectarEstilos();
   const ctx = await cargarContexto();
   const { partes } = leerRuta();
-  const tab = TABS.some(t => t[0] === partes[0]) ? partes[0] : 'equipos';
+  const tab = TABS.some(t => t[0] === partes[0] && !ENLACES_EXTERNOS[t[0]]) ? partes[0] : 'equipos';
   await encabezado(contenedor, 'P05', 'Listado de Red', [['Red', '#/red/equipos'], [TABS.find(t => t[0] === tab)?.[1] || '']]);
   if (!puede(ctx.u, 'ver', 'red', ctx.org)) { avisoVista(contenedor, 'Tu rol no tiene acceso al módulo Red.'); return; }
   contenedor.appendChild(h('h1', { text: 'Red' }));
-  contenedor.appendChild(pestanas(TABS, tab, k => '#/red/' + k));
+  contenedor.appendChild(pestanas(TABS, tab, k => ENLACES_EXTERNOS[k] || '#/red/' + k));
   const org = ctx.org;
   const [racks, ubicaciones] = await Promise.all([repositorio.listar('racks', { organizacion_id: org }), repositorio.listar('ubicaciones', { organizacion_id: org })]);
   const mapaRacks = new Map(racks.map(r => [r.id, r]));
@@ -152,13 +154,14 @@ async function tabIsp(ctx) {
     return [e.enlace_proveedor, e.enlace_es_principal ? 'Principal' : 'Respaldo',
       (ROTULO_ENLACE_TIPO[e.enlace_tipo] || e.enlace_tipo) + ' · ' + (e.enlace_velocidad_bajada_mbps ?? '—') + '/' + (e.enlace_velocidad_subida_mbps ?? '—') + ' Mbps',
       (e.enlace_ip_publica || '—') + (e.enlace_tipo_ip ? ' (' + e.enlace_tipo_ip + ')' : ''),
-      eq ? enlace(eq.equipo_nombre, hashEquipo(eq)) : '—',
+      eq ? enlaceFila(hashEquipo(eq), eq.equipo_nombre) : '—',
       [e.enlace_telefono_soporte, e.enlace_numero_cliente ? 'cliente ' + e.enlace_numero_cliente : ''].filter(Boolean).join(' · ') || '—'];
   });
   return h('div', null, [
     h('div', { class: 'bloque rd-isp', style: 'margin-bottom:10px' }, [h('h3', { text: 'Esquema de ISP' }), svg,
       h('div', { class: 'mut', text: 'Línea continua: enlace principal. Línea de trazos: respaldo. Se arma con los enlaces y las conexiones de puertos cargados; el detalle completo está en la tabla.' })]),
-    tabla(['Proveedor', 'Rol', 'Servicio', 'IP pública', 'Termina en', 'Soporte'], filas, { tipo: 'equipo' })]);
+    tabla(['Proveedor', 'Rol', 'Servicio', 'IP pública', 'Termina en', 'Soporte'], filas, { tipo: 'equipo', onFila: (_, i) => ir('#/enlace/' + enlaces[i].id) }),
+    h('div', { class: 'mut', style: 'margin-top:6px', text: 'Tocá un enlace para abrir su ficha y ver a qué puerto llega.' })]);
 }
 
 /**

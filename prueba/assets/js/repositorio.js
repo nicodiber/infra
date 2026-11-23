@@ -18,7 +18,7 @@ import {
   ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, ROTULO_ESTADO_EQUIPO, ROTULO_LICENCIA_TIPO, ROTULO_PERSONA_ESTADO,
   ROTULO_CUENTA_ESTADO, ROTULO_MAPEO_APLICA_A, ROTULO_MAPEO_METODO, ROTULO_RELOJ_METODO, CATEGORIA_RELOJ,
   moduloDeEntidad as moduloDeEntidadModelo, ROTULO_SERVICIO_TIPO, TIPOS_REGISTRO_DNS, ROTULO_FIBRA_TIPO, CONECTORES_FIBRA,
-  ROTULO_ARCHIVO_TIPO, LIMITE_ARCHIVO_BYTES, ROTULO_ENTIDAD, rutaDeEntidad
+  ROTULO_ARCHIVO_TIPO, LIMITE_ARCHIVO_BYTES, ROTULO_ENTIDAD, rutaDeEntidad, VERSION_MODELO, migrarDatos, esImpresora
 } from './modelos.js';
 import { normalizar, ahoraISO, descargarTexto, hoyISO } from './utiles.js';
 
@@ -39,6 +39,8 @@ const NOMBRE_DB = 'infradoc';
 const VERSION_DB = 3; // 2: personas, cuentas de dominio, asignaciones, licencias, instalaciones, mapeos y notas. 3: servicios, tramos de fibra, archivos y relaciones (el upgrade solo agrega stores)
 const STORE_META = 'meta';
 const URL_DATOS_EJEMPLO = new URL('../../datos-demo/infradoc-demo.json', import.meta.url).href;
+/** Archivo chico con la versión de los datos de ejemplo del sitio: se consulta al iniciar sin bajar todos los datos (D-073). */
+const URL_VERSION_EJEMPLO = new URL('../../datos-demo/version.json', import.meta.url).href;
 const CLAVES_ESTANDAR = ['id', 'creado_en', 'creado_por', 'actualizado_en', 'actualizado_por', 'verificado_en', 'verificado_por'];
 
 /** @type {IDBDatabase|null} */
@@ -133,8 +135,9 @@ async function reemplazarTodo(datos) {
  * Escribe y borra registros sueltos en una sola transacción.
  * @param {Array<[string, any]>} escrituras pares [colección, registro]
  * @param {Array<[string, string]>} [borrados] pares [colección, id]
+ * @param {boolean} [interno] true: cambio hecho por el sistema (migración), no por un usuario.
  */
-async function persistir(escrituras, borrados) {
+async function persistir(escrituras, borrados, interno) {
   const base = /** @type {IDBDatabase} */ (db);
   const nombres = Array.from(new Set(escrituras.map(e => e[0]).concat((borrados || []).map(b => b[0]))));
   if (!nombres.length) return;
@@ -143,6 +146,22 @@ async function persistir(escrituras, borrados) {
   for (const [c, id] of borrados || []) { tx.objectStore(c).delete(id); cache[c].delete(id); }
   indiceBusqueda = null;
   await terminar(tx);
+  // Cualquier cambio de un usuario vuelve «propios» a los datos (D-073); marcar un cambio como leído o ver un secreto no cuenta.
+  if (!interno && nombres.some(n => !COLECCIONES_SIN_MARCA.includes(n))) await marcarDatosPropios();
+}
+
+/** Colecciones cuya escritura no vuelve «propios» a los datos: son del uso, no de lo cargado. */
+const COLECCIONES_SIN_MARCA = ['lecturas_cambio', 'registro_accesos'];
+/** @type {boolean|null} Copia en memoria de la marca `datos_propios`. */
+let datosPropios = null;
+/** @type {string|null} Versión de los datos de ejemplo del sitio cuando es distinta de la cargada. */
+let ejemploNuevo = null;
+
+/** Marca que alguien cargó o cambió datos en este navegador: el restablecer automático ya no los toca. */
+async function marcarDatosPropios() {
+  if (datosPropios === true) return;
+  datosPropios = true;
+  await metaSet('datos_propios', true);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -152,7 +171,7 @@ async function persistir(escrituras, borrados) {
 /** Abreviatura por categoría de `otro` (el resto de las categorías usa `OTR`). @type {Object<string, string>} */
 const ABREVIATURA_CATEGORIA = {
   'pc de escritorio': 'PC', 'notebook': 'NB', 'impresora de red': 'IMP', 'reloj de control de personal': 'REL',
-  'hmi / terminal de planta': 'HMI', 'terminal de balanza': 'BAL', 'nvr de camaras': 'NVR', 'nas': 'NAS'
+  'impresora': 'IMP', 'hmi / terminal de planta': 'HMI', 'terminal de balanza': 'BAL', 'nvr de camaras': 'NVR', 'nas': 'NAS'
 };
 /** @type {Object<string, string>} */
 const ABREVIATURA_TIPO = { router: 'RTR', firewall: 'FW', switch: 'SW', access_point: 'AP', servidor: 'SRV', patchera: 'PAT', ups: 'UPS', otro: 'OTR' };
@@ -201,7 +220,7 @@ async function completarCodigosDeEquipo() {
     cache.equipos.set(nuevo.id, nuevo); // para que el siguiente no repita
     ops.push(['equipos', nuevo]);
   }
-  await persistir(ops);
+  await persistir(ops, undefined, true);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -253,7 +272,7 @@ function desplazarFechas(nodo, base) {
 
 /**
  * Descarga y valida `datos-demo/infradoc-demo.json` (fetch del propio sitio, sin enviar nada).
- * @returns {Promise<{datos: Object<string, any[]>, descargaMs: number, lecturaMs: number, bytes: number}>}
+ * @returns {Promise<{datos: Object<string, any[]>, descargaMs: number, lecturaMs: number, bytes: number, version: string|null}>}
  */
 async function leerDatosEjemplo() {
   const t0 = performance.now();
@@ -264,8 +283,21 @@ async function leerDatosEjemplo() {
   const crudo = JSON.parse(texto);
   const t2 = performance.now();
   const datos = validarEstructura(crudo);
+  migrarDatos(datos, versionModeloDe(crudo));
   desplazarFechas(datos, typeof crudo.generado_en === 'string' ? crudo.generado_en.slice(0, 10) : FECHA_BASE_EJEMPLO);
-  return { datos, descargaMs: Math.round(t1 - t0), lecturaMs: Math.round(t2 - t1), bytes: texto.length };
+  return { datos, descargaMs: Math.round(t1 - t0), lecturaMs: Math.round(t2 - t1), bytes: texto.length, version: typeof crudo.version_datos_ejemplo === 'string' ? crudo.version_datos_ejemplo : null };
+}
+
+/**
+ * Versión del modelo de datos de un archivo exportado: `version_modelo`, o 1 si no la trae (D-073).
+ * Rechaza una versión más nueva que la de esta app: no se sabría qué hacer con los campos que no conoce.
+ * @param {any} crudo @returns {number}
+ */
+function versionModeloDe(crudo) {
+  const v = crudo.version_modelo == null ? 1 : crudo.version_modelo;
+  if (!Number.isInteger(v) || v < 1) throw new Error('El archivo trae una versión del modelo de datos inválida («' + String(crudo.version_modelo) + '»).');
+  if (v > VERSION_MODELO) throw new Error('Este archivo se exportó con una versión más nueva de Infradoc (modelo de datos ' + v + '; esta versión llega hasta la ' + VERSION_MODELO + '). Actualizá la aplicación antes de importarlo: así no se pierde ni se rompe nada.');
+  return v;
 }
 
 /**
@@ -298,22 +330,96 @@ export function iniciar() {
       const t0 = performance.now();
       db = await abrirDB();
       if (!(await metaGet('cargado'))) {
-        const { datos, descargaMs, lecturaMs, bytes } = await leerDatosEjemplo();
+        const { datos, descargaMs, lecturaMs, bytes, version } = await leerDatosEjemplo();
         const t1 = performance.now();
         await reemplazarTodo(datos);
         const escrituraMs = Math.round(performance.now() - t1);
         await metaSet('cargado', true);
+        await anotarDatosDeEjemplo(version || await versionEjemploDelSitio());
         infoCargaInicial = { primeraCarga: true, totalMs: Math.round(performance.now() - t0), descargaMs, lecturaMs, escrituraMs, bytes, en: ahoraISO() };
         await metaSet('primera_carga', infoCargaInicial);
       } else {
         await leerTodo();
+        const marca = await metaGet('datos_propios');
+        datosPropios = marca === true ? true : marca === false ? false : null;
+        await migrarBaseGuardada();
         await completarCodigosDeEquipo();
-        infoCargaInicial = { primeraCarga: false, totalMs: Math.round(performance.now() - t0), previa: await metaGet('primera_carga') };
+        const restablecido = await revisarDatosDeEjemplo();
+        infoCargaInicial = { primeraCarga: false, totalMs: Math.round(performance.now() - t0), previa: await metaGet('primera_carga'), restablecidoAutomatico: restablecido };
       }
     })().catch(e => { iniciando = null; throw e; });
   }
   return iniciando;
 }
+
+/**
+ * Deja anotado que los datos son los de ejemplo, de qué versión y a qué versión del modelo corresponden.
+ * @param {string|null} version
+ */
+async function anotarDatosDeEjemplo(version) {
+  datosPropios = false;
+  ejemploNuevo = null;
+  await metaSet('datos_propios', false);
+  await metaSet('version_datos_ejemplo', version);
+  await metaSet('version_modelo', VERSION_MODELO);
+}
+
+/** Si la base guardada es de un modelo anterior, la migra (campos nuevos con su valor por defecto) y la vuelve a guardar. */
+async function migrarBaseGuardada() {
+  const guardada = (await metaGet('version_modelo')) || 1;
+  if (guardada >= VERSION_MODELO) return;
+  /** @type {Object<string, any[]>} */
+  const datos = {};
+  for (const c of COLECCIONES) datos[c] = Array.from(cache[c].values());
+  migrarDatos(datos, guardada);
+  const base = /** @type {IDBDatabase} */ (db);
+  const tx = base.transaction(COLECCIONES, 'readwrite');
+  for (const c of COLECCIONES) for (const r of datos[c]) { tx.objectStore(c).put(r); cache[c].set(r.id, r); }
+  await terminar(tx);
+  await metaSet('version_modelo', VERSION_MODELO);
+}
+
+/** Versión de los datos de ejemplo que publica el sitio, o null si no se puede consultar (sin conexión, archivo ausente). @returns {Promise<string|null>} */
+async function versionEjemploDelSitio() {
+  try {
+    const resp = await fetch(URL_VERSION_EJEMPLO, { cache: 'no-cache' });
+    if (!resp.ok) return null;
+    const j = await resp.json();
+    return j && typeof j.version_datos_ejemplo === 'string' ? j.version_datos_ejemplo : null;
+  } catch { return null; }
+}
+
+/**
+ * QC43-C con protección (D-073): si el sitio trae datos de ejemplo nuevos y nadie cargó ni cambió nada, los restablece solo;
+ * si hay datos propios (o no se puede saber), no toca nada y deja el aviso para `hayDatosEjemploNuevos`.
+ * @returns {Promise<boolean>} true si restableció.
+ */
+async function revisarDatosDeEjemplo() {
+  const sitio = await versionEjemploDelSitio();
+  const cargada = await metaGet('version_datos_ejemplo');
+  if (!sitio || sitio === cargada) { ejemploNuevo = null; return false; }
+  // Una base anterior a esta versión no sabe si tiene datos propios: por las dudas se la trata como propia.
+  if (datosPropios === null) await marcarDatosPropios();
+  if (datosPropios === false) {
+    const { datos, version } = await leerDatosEjemplo();
+    await reemplazarTodo(datos);
+    await anotarDatosDeEjemplo(version || sitio);
+    await metaSet('restablecido_en', ahoraISO());
+    return true;
+  }
+  ejemploNuevo = sitio;
+  return false;
+}
+
+/**
+ * ¿El sitio trae datos de ejemplo nuevos que no se cargaron porque este navegador tiene datos propios? La pantalla de Datos
+ * muestra entonces el aviso con «Exportar primero» y «Restablecer». Nunca restablece nada.
+ * @returns {Promise<boolean>}
+ */
+export async function hayDatosEjemploNuevos() { await iniciar(); return !!ejemploNuevo; }
+
+/** ¿Hay datos cargados o cambiados por un usuario en este navegador (no solo los de ejemplo)? @returns {Promise<boolean>} */
+export async function hayDatosPropios() { await iniciar(); return datosPropios === true; }
 
 /** Fecha-hora (ISO) de la última exportación hecha en este navegador, o null si nunca se exportó. @returns {Promise<string|null>} */
 export async function ultimaExportacion() { await iniciar(); return metaGet('ultima_exportacion'); }
@@ -331,8 +437,9 @@ export async function infoCarga() {
 export async function restablecerDatosEjemplo() {
   await iniciar();
   const t0 = performance.now();
-  const { datos } = await leerDatosEjemplo();
+  const { datos, version } = await leerDatosEjemplo();
   await reemplazarTodo(datos);
+  await anotarDatosDeEjemplo(version);
   await metaSet('restablecido_en', ahoraISO());
   return { totalMs: Math.round(performance.now() - t0) };
 }
@@ -514,8 +621,10 @@ export async function guardar(coleccion, registro, usuarioId, opciones) {
  */
 function validarEscritura(coleccion, r) {
   if (coleccion === 'equipos' || coleccion === 'racks' || coleccion === 'puestos') validarPlano(r);
+  if (coleccion === 'puertos') validarPuerto(r);
   if (coleccion === 'equipos') {
     if (!r.equipo_codigo) throw new Error('El equipo necesita un código.');
+    if (esImpresora(r)) validarImpresora(r);
     const repetido = Array.from(cache.equipos.values()).find(x => x.id !== r.id && x.organizacion_id === r.organizacion_id && x.equipo_codigo === r.equipo_codigo);
     if (repetido) throw new Error('Ya hay un equipo con el código «' + r.equipo_codigo + '» en esta organización.');
   } else if (coleccion === 'asignaciones') {
@@ -524,8 +633,9 @@ function validarEscritura(coleccion, r) {
     if (e.organizacion_id !== r.organizacion_id || p.organizacion_id !== r.organizacion_id) throw new Error('El equipo y la persona tienen que ser de la misma organización.');
     if (r.asignacion_hasta && r.asignacion_hasta < r.asignacion_desde) throw new Error('La asignación no puede terminar antes de empezar.');
     if (!r.asignacion_hasta && !r.eliminado_en) {
-      const otra = Array.from(cache.asignaciones.values()).find(x => x.id !== r.id && x.equipo_id === r.equipo_id && !x.asignacion_hasta && !x.eliminado_en);
-      if (otra) throw new Error('El equipo ya está asignado a otra persona: primero hay que devolverlo.');
+      // Un equipo puede tener varias personas a la vez (D-072), pero no la misma persona dos veces.
+      const repetida = Array.from(cache.asignaciones.values()).find(x => x.id !== r.id && x.equipo_id === r.equipo_id && x.persona_id === r.persona_id && !x.asignacion_hasta && !x.eliminado_en);
+      if (repetida) throw new Error('El equipo ya está asignado a esa persona.');
     }
   } else if (coleccion === 'mapeos_disco') {
     if (r.mapeo_aplica_a === 'grupo' && !r.mapeo_grupo) throw new Error('Falta indicar el grupo al que aplica el mapeo.');
@@ -551,6 +661,37 @@ function validarPlano(r) {
   if (vacio(x) && vacio(y)) return;
   const ok = (/** @type {any} */ v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
   if (!ok(x) || !ok(y)) throw new Error('La posición en el plano tiene que tener X e Y entre 0 y 1.');
+}
+
+/**
+ * Reglas de una impresora (D-072): `impresora_conexion` es `red` o `usb`; `impresora_pc_id` solo tiene sentido con `usb` y apunta
+ * a otro equipo de la misma organización (si la conexión no es USB se deja en null).
+ * @param {any} r
+ */
+function validarImpresora(r) {
+  const c = r.equipo_campos || (r.equipo_campos = {});
+  if (c.impresora_conexion != null && c.impresora_conexion !== '' && !['red', 'usb'].includes(c.impresora_conexion)) throw new Error('La conexión de la impresora tiene que ser «Red» o «USB / local».');
+  if (!c.impresora_conexion) c.impresora_conexion = 'red';
+  if (c.impresora_conexion !== 'usb') { c.impresora_pc_id = null; return; }
+  if (!c.impresora_pc_id) { c.impresora_pc_id = null; return; }
+  const pc = cache.equipos.get(c.impresora_pc_id);
+  if (!pc || pc.eliminado_en) throw new Error('La computadora a la que está conectada la impresora no existe.');
+  if (pc.id === r.id) throw new Error('Una impresora no puede estar conectada a sí misma.');
+  if (pc.organizacion_id !== r.organizacion_id) throw new Error('La computadora y la impresora tienen que ser de la misma organización.');
+  if (esImpresora(pc)) throw new Error('Una impresora USB se conecta a una computadora, no a otra impresora.');
+}
+
+/**
+ * Un puerto de router o firewall puede salir a un enlace de Internet (`enlace_isp_id`, D-072): el enlace tiene que existir y ser
+ * de la misma organización que el equipo. En otros equipos el campo queda en null.
+ * @param {any} r
+ */
+function validarPuerto(r) {
+  if (!r.enlace_isp_id) { r.enlace_isp_id = null; return; }
+  const e = cache.equipos.get(r.equipo_id), l = cache.enlaces_isp.get(r.enlace_isp_id);
+  if (!l || l.eliminado_en) throw new Error('El enlace a Internet del puerto no existe.');
+  if (!e || !['router', 'firewall'].includes(e.equipo_tipo)) throw new Error('Solo un puerto de router o firewall puede ir a un enlace a Internet.');
+  if (e.organizacion_id !== l.organizacion_id) throw new Error('El enlace y el equipo tienen que ser de la misma organización.');
 }
 
 /** @param {any} r */
@@ -839,21 +980,41 @@ export async function moduloDeNota(nota) { await iniciar(); return moduloNota(no
 export async function moduloDeEntidad(entidad, entidadId) { await iniciar(); return moduloDeFicha(entidad, entidadId || null); }
 
 /**
- * La asignación vigente de un equipo (la que no tiene fecha de fin), o null si nadie lo tiene hoy.
+ * Las asignaciones vigentes de un equipo (las que no tienen fecha de fin), de la más reciente a la más antigua. Un equipo
+ * puede estar compartido por varias personas a la vez (D-072).
+ * @param {string} equipoId
+ * @returns {Promise<Asignacion[]>}
+ */
+export async function asignacionesVigentes(equipoId) {
+  await iniciar();
+  return vigentesSync(equipoId).map(a => publico('asignaciones', a));
+}
+
+/** @param {string} equipoId @returns {any[]} Sin copiar: solo para uso interno. */
+function vigentesSync(equipoId) {
+  const lista = [];
+  for (const a of cache.asignaciones.values()) if (a.equipo_id === equipoId && !a.asignacion_hasta && !a.eliminado_en) lista.push(a);
+  return lista.sort((a, b) => (a.asignacion_desde < b.asignacion_desde ? 1 : a.asignacion_desde > b.asignacion_desde ? -1 : a.creado_en < b.creado_en ? 1 : a.creado_en > b.creado_en ? -1 : 0));
+}
+
+/**
+ * La asignación vigente más reciente de un equipo, o null si nadie lo tiene hoy. Se mantiene por compatibilidad: con un equipo
+ * compartido hay más de una vigente (usar `asignacionesVigentes`).
  * @param {string} equipoId
  * @returns {Promise<Asignacion|null>}
  */
 export async function asignacionVigente(equipoId) {
-  await iniciar();
-  for (const a of cache.asignaciones.values()) if (a.equipo_id === equipoId && !a.asignacion_hasta && !a.eliminado_en) return publico('asignaciones', a);
-  return null;
+  const lista = await asignacionesVigentes(equipoId);
+  return lista[0] || null;
 }
 
 /**
- * Entrega un equipo a una persona desde hoy. Si el equipo ya estaba asignado a otra persona, cierra esa asignación
- * (hasta hoy) en la misma operación; si ya era de esta persona, no cambia nada. Todo queda en el historial.
- * @param {{equipoId: string, personaId: string, motivo?: string|null, usuarioId: string}} datos
- * @returns {Promise<Asignacion>} La asignación vigente.
+ * Entrega un equipo a una persona desde hoy.
+ * - Sin `compartir`: si el equipo ya estaba asignado a otras personas, cierra esas asignaciones (hasta hoy) en la misma operación.
+ * - Con `compartir`: suma la asignación y deja las otras vigentes (equipo compartido, D-072).
+ * Si ya era de esta persona, no cambia nada. Todo queda en el historial.
+ * @param {{equipoId: string, personaId: string, motivo?: string|null, usuarioId: string, compartir?: boolean}} datos
+ * @returns {Promise<Asignacion>} La asignación vigente de esa persona.
  */
 export async function asignarEquipo(datos) {
   await iniciar();
@@ -863,9 +1024,12 @@ export async function asignarEquipo(datos) {
   if (p.persona_estado === 'baja') throw new Error('La persona está dada de baja: no se le puede asignar un equipo.');
   if (e.organizacion_id !== p.organizacion_id) throw new Error('El equipo y la persona son de organizaciones distintas.');
   const hoy = hoyISO();
-  const vigente = await asignacionVigente(datos.equipoId);
-  if (vigente && vigente.persona_id === datos.personaId) return vigente;
-  if (vigente) await guardar('asignaciones', { ...vigente, asignacion_hasta: hoy }, datos.usuarioId, { motivo: 'Se asignó a otra persona.' });
+  const vigentes = vigentesSync(datos.equipoId);
+  const propia = vigentes.find(a => a.persona_id === datos.personaId);
+  if (propia) return publico('asignaciones', propia);
+  if (!datos.compartir) {
+    for (const v of vigentes) await guardar('asignaciones', { ...publico('asignaciones', v), asignacion_hasta: hoy }, datos.usuarioId, { motivo: 'Se asignó a otra persona.' });
+  }
   return guardar('asignaciones', {
     organizacion_id: e.organizacion_id, equipo_id: e.id, persona_id: p.id, asignacion_desde: hoy, asignacion_hasta: null,
     asignacion_motivo: (datos.motivo || '').trim() || null, asignacion_observaciones: null
@@ -873,19 +1037,31 @@ export async function asignarEquipo(datos) {
 }
 
 /**
- * Cierra la asignación vigente de un equipo (hasta hoy): la persona lo devolvió y el equipo queda sin asignar.
- * @param {{equipoId: string, usuarioId: string, observaciones?: string|null}} datos
- * @returns {Promise<Asignacion>} La asignación cerrada.
+ * Cierra asignaciones vigentes de un equipo (hasta hoy): la persona lo devolvió.
+ * - Con `personaId`: cierra solo la de esa persona (el equipo sigue con las demás, si las hay).
+ * - Sin `personaId`: cierra todas las vigentes y el equipo queda sin asignar.
+ * @param {{equipoId: string, personaId?: string|null, usuarioId: string, observaciones?: string|null}} datos
+ * @returns {Promise<Asignacion>} La asignación cerrada (si fueron varias, la más reciente).
  */
 export async function devolverEquipo(datos) {
   await iniciar();
-  const vigente = await asignacionVigente(datos.equipoId);
-  if (!vigente) throw new Error('El equipo no está asignado a nadie.');
+  let vigentes = vigentesSync(datos.equipoId);
+  if (datos.personaId) {
+    vigentes = vigentes.filter(a => a.persona_id === datos.personaId);
+    if (!vigentes.length) throw new Error('Esa persona no tiene el equipo asignado.');
+  }
+  if (!vigentes.length) throw new Error('El equipo no está asignado a nadie.');
   const obs = (datos.observaciones || '').trim();
-  return guardar('asignaciones', {
-    ...vigente, asignacion_hasta: hoyISO(),
-    asignacion_observaciones: obs ? (vigente.asignacion_observaciones ? vigente.asignacion_observaciones + ' ' + obs : obs) : vigente.asignacion_observaciones
-  }, datos.usuarioId, { motivo: 'Devolución del equipo.' });
+  /** @type {Asignacion|null} */
+  let cerrada = null;
+  for (const v of vigentes) {
+    const c = await guardar('asignaciones', {
+      ...publico('asignaciones', v), asignacion_hasta: hoyISO(),
+      asignacion_observaciones: obs ? (v.asignacion_observaciones ? v.asignacion_observaciones + ' ' + obs : obs) : v.asignacion_observaciones
+    }, datos.usuarioId, { motivo: 'Devolución del equipo.' });
+    if (!cerrada) cerrada = c;
+  }
+  return /** @type {Asignacion} */ (cerrada);
 }
 
 /**
@@ -1062,6 +1238,151 @@ export async function relacionesDe(entidad, id, opciones) {
       titulo: d.titulo, subtitulo: d.subtitulo, ruta: rutaDeEntidad(e, reg), modulo, descripcion: x.relacion_descripcion || '' });
   }
   return salida.sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'es') || a.titulo.localeCompare(b.titulo, 'es', { numeric: true }));
+}
+
+// ---- Cadena y vínculos de un equipo (D-072) ----
+
+/**
+ * Impresoras conectadas por USB / local a una computadora (`impresora_conexion = usb` e `impresora_pc_id` = esa computadora).
+ * @param {string} equipoId
+ * @returns {Promise<Equipo[]>}
+ */
+export async function impresorasDePc(equipoId) {
+  await iniciar();
+  return impresorasDePcSync(equipoId).map(e => publico('equipos', e));
+}
+
+/** @param {string} equipoId @returns {any[]} */
+function impresorasDePcSync(equipoId) {
+  return Array.from(cache.equipos.values())
+    .filter(e => !e.eliminado_en && esImpresora(e) && (e.equipo_campos || {}).impresora_conexion === 'usb' && (e.equipo_campos || {}).impresora_pc_id === equipoId)
+    .sort((a, b) => a.equipo_nombre.localeCompare(b.equipo_nombre, 'es', { numeric: true }));
+}
+
+/**
+ * @typedef {Object} VinculosDeEquipo
+ * @property {Array<{puerto: any, conectadoA: {equipo: Equipo, puerto: any}|null, enlaceIsp: any|null, vlan: Vlan|null, descripcion: string|null}>} puertos
+ *   Los puertos del equipo (por número): a qué puerto de qué equipo llegan, el enlace a Internet si salen a uno, y la VLAN nativa.
+ *   `descripcion`: «¿A qué va?» en texto libre cuando no está conectado a un puerto.
+ * @property {any|null} puesto Puesto de trabajo del equipo (equipos de escritorio).
+ * @property {{patchera: Equipo, puerto: any}|null} bocaPatchera Boca de la patchera a la que llega el puesto (o el equipo, si se conecta a una patchera).
+ * @property {{equipo: Equipo, puerto: any}|null} switch Switch y puerto al que llega el equipo (por la boca de patchera o directo).
+ * @property {Vlan|null} vlan VLAN nativa del puerto de switch (o, si no hay, de un puerto propio).
+ * @property {{rack: any, unidad: number|null, alto: number|null, de: 'equipo'|'switch'|'patchera'}|null} rack Rack del equipo o, si no está en uno, el del switch o la patchera a la que llega (`de`).
+ * @property {any|null} ubicacion Ubicación del equipo (o la de su puesto).
+ * @property {any[]} personas Personas con el equipo asignado hoy (puede ser más de una).
+ * @property {Asignacion[]} asignaciones Las asignaciones vigentes (una por persona).
+ * @property {Array<{licencia: any, instalacion: any}>} licencias Licencias instaladas hoy.
+ * @property {any[]} mapeos Mapeos de unidad de este equipo o de las personas que lo tienen.
+ * @property {Array<{id: string, nombre: string, tipo: string}>} credenciales Credenciales de este equipo, SIN secretos.
+ * @property {any[]} configuraciones Configuraciones del equipo.
+ * @property {any[]} enlacesIsp Enlaces a Internet que terminan en este equipo.
+ * @property {any[]} notas Notas colgadas del equipo.
+ * @property {Equipo[]} impresoras Impresoras USB conectadas a este equipo (si es una PC).
+ * @property {Equipo|null} pc Computadora a la que está conectada esta impresora (si es una impresora USB).
+ * @property {RelacionDe[]} relaciones «Relacionado con».
+ */
+
+/**
+ * Todo lo que se puede alcanzar desde un equipo: la cadena de cableado (puerto o boca de pared → puesto → boca de patchera →
+ * patchera → switch y puerto → VLAN → rack → ubicación) y lo que se relaciona con él (personas, licencias, mapeos, credenciales,
+ * impresoras, relaciones…). Como `relacionesDe`, no decide permisos: la vista pasa `permitido` (con `puede(…, 'ver', modulo,
+ * organizacion_id)`) y lo que no se puede ver no aparece. Nunca devuelve secretos.
+ * @param {string} equipoId
+ * @param {{permitido?: (otro: {entidad: string, id: string, modulo: import('./modelos.js').Modulo, organizacion_id: string|null}) => boolean}} [opciones]
+ * @returns {Promise<VinculosDeEquipo|null>} null si el equipo no existe.
+ */
+export async function vinculosDeEquipo(equipoId, opciones) {
+  await iniciar();
+  const e = cache.equipos.get(equipoId);
+  if (!e || e.eliminado_en) return null;
+  const permitidoFn = (opciones && opciones.permitido) || (() => true);
+  /** @param {string} entidad @param {any} reg */
+  const ok = (entidad, reg) => { const col = COLECCION_DE_ENTIDAD[entidad]; return permitidoFn({ entidad, id: reg.id, modulo: moduloDeFicha(entidad, reg.id), organizacion_id: orgDe(col, reg) }); };
+  /** @param {string|null|undefined} id @returns {any|null} */
+  const viva = (/** @type {string|null|undefined} */ id, /** @type {string} */ col) => { const r = id ? cache[col].get(id) : null; return r && !r.eliminado_en ? r : null; };
+
+  // Puertos propios
+  const propios = Array.from(cache.puertos.values()).filter(p => p.equipo_id === e.id && !p.eliminado_en).sort((a, b) => a.puerto_numero - b.puerto_numero);
+  const vlanDe = (/** @type {any} */ p) => { const v = viva(p && p.vlan_nativa_id, 'vlans'); return v ? publico('vlans', v) : null; };
+  const puertos = propios.map(p => {
+    const otro = viva(p.conectado_a_puerto_id, 'puertos');
+    const eo = otro ? viva(otro.equipo_id, 'equipos') : null;
+    const isp = viva(p.enlace_isp_id, 'enlaces_isp');
+    return {
+      puerto: publico('puertos', p),
+      conectadoA: otro && eo && ok('Equipo', eo) ? { equipo: publico('equipos', eo), puerto: publico('puertos', otro) } : null,
+      enlaceIsp: isp && ok('EnlaceIsp', isp) ? publico('enlaces_isp', isp) : null,
+      vlan: vlanDe(p), descripcion: p.conectado_a_descripcion || null
+    };
+  });
+
+  // Cadena hacia la red: por el puesto (boca de pared → boca de patchera → puerto de switch) o por un puerto propio.
+  const puesto = viva(e.puesto_id, 'puestos');
+  /** @type {any|null} */ let boca = null;
+  /** @type {any|null} */ let pSwitch = null;
+  if (puesto) {
+    boca = Array.from(cache.puertos.values()).find(b => b.puesto_id === puesto.id && !b.eliminado_en && viva(b.equipo_id, 'equipos') && cache.equipos.get(b.equipo_id).equipo_tipo === 'patchera') || null;
+    pSwitch = boca ? viva(boca.conectado_a_puerto_id, 'puertos') : null;
+  }
+  if (!pSwitch) {
+    for (const p of propios) {
+      const otro = viva(p.conectado_a_puerto_id, 'puertos');
+      const eo = otro ? viva(otro.equipo_id, 'equipos') : null;
+      if (!eo) continue;
+      if (eo.equipo_tipo === 'switch') { pSwitch = otro; break; }
+      if (eo.equipo_tipo === 'patchera' && !boca) {
+        boca = otro;
+        const sw = viva(otro.conectado_a_puerto_id, 'puertos');
+        if (sw && viva(sw.equipo_id, 'equipos') && cache.equipos.get(sw.equipo_id).equipo_tipo === 'switch') { pSwitch = sw; break; }
+      }
+    }
+  }
+  const eSwitch = pSwitch ? viva(pSwitch.equipo_id, 'equipos') : null;
+  const ePatch = boca ? viva(boca.equipo_id, 'equipos') : null;
+  const vlan = vlanDe(pSwitch) || puertos.map(x => x.vlan).find(v => v) || null;
+
+  /** @type {VinculosDeEquipo['rack']} */
+  let rack = null;
+  for (const [de, x] of /** @type {Array<['equipo'|'switch'|'patchera', any]>} */ ([['equipo', e], ['switch', eSwitch], ['patchera', ePatch]])) {
+    const r = x ? viva(x.rack_id, 'racks') : null;
+    if (r && ok('Rack', r)) { rack = { rack: publico('racks', r), unidad: x.rack_u_inicio ?? null, alto: x.rack_u_alto ?? null, de }; break; }
+  }
+  const ub = viva(e.ubicacion_id, 'ubicaciones') || viva(puesto && puesto.ubicacion_id, 'ubicaciones');
+
+  // Personas y lo que depende de ellas
+  const asignaciones = vigentesSync(e.id).filter(a => viva(a.persona_id, 'personas'));
+  const personasTodas = asignaciones.map(a => cache.personas.get(a.persona_id));
+  const personas = personasTodas.filter(x => ok('Persona', x)).map(x => publico('personas', x));
+  const idsPersonas = new Set(personasTodas.map(x => x.id));
+  const licencias = Array.from(cache.instalaciones_licencia.values())
+    .filter(i => i.equipo_id === e.id && !i.instalacion_hasta && !i.eliminado_en && viva(i.licencia_id, 'licencias'))
+    .map(i => ({ licencia: cache.licencias.get(i.licencia_id), instalacion: i })).filter(x => ok('Licencia', x.licencia))
+    .sort((a, b) => a.licencia.licencia_producto.localeCompare(b.licencia.licencia_producto, 'es'))
+    .map(x => ({ licencia: publico('licencias', x.licencia), instalacion: publico('instalaciones_licencia', x.instalacion) }));
+  const mapeos = Array.from(cache.mapeos_disco.values())
+    .filter(m => !m.eliminado_en && (m.equipo_id === e.id || (m.mapeo_aplica_a === 'persona' && idsPersonas.has(m.persona_id))) && ok('MapeoDisco', m))
+    .sort((a, b) => a.mapeo_letra.localeCompare(b.mapeo_letra, 'es')).map(m => publico('mapeos_disco', m));
+  const credenciales = Array.from(cache.credenciales.values())
+    .filter(c => c.equipo_id === e.id && !c.eliminado_en && ok('Credencial', c))
+    .sort((a, b) => a.credencial_nombre.localeCompare(b.credencial_nombre, 'es'))
+    .map(c => ({ id: c.id, nombre: c.credencial_nombre, tipo: c.credencial_tipo }));
+  const configuraciones = Array.from(cache.configuraciones.values()).filter(c => c.equipo_id === e.id && !c.eliminado_en && ok('Configuracion', c)).map(c => publico('configuraciones', c));
+  const enlacesIsp = Array.from(cache.enlaces_isp.values()).filter(l => l.equipo_id === e.id && !l.eliminado_en && ok('EnlaceIsp', l)).map(l => publico('enlaces_isp', l));
+  const notas = Array.from(cache.notas.values()).filter(n => n.entidad === 'Equipo' && n.entidad_id === e.id && !n.eliminado_en && ok('Nota', n)).map(n => publico('notas', n));
+  const impresoras = impresorasDePcSync(e.id).filter(x => ok('Equipo', x)).map(x => publico('equipos', x));
+  const pcId = esImpresora(e) && (e.equipo_campos || {}).impresora_conexion === 'usb' ? (e.equipo_campos || {}).impresora_pc_id : null;
+  const pc = viva(pcId, 'equipos');
+
+  return {
+    puertos, puesto: puesto && ok('Puesto', puesto) ? publico('puestos', puesto) : null,
+    bocaPatchera: boca && ePatch ? { patchera: publico('equipos', ePatch), puerto: publico('puertos', boca) } : null,
+    switch: pSwitch && eSwitch ? { equipo: publico('equipos', eSwitch), puerto: publico('puertos', pSwitch) } : null,
+    vlan, rack, ubicacion: ub && ok('Ubicacion', ub) ? publico('ubicaciones', ub) : null,
+    personas, asignaciones: asignaciones.map(a => publico('asignaciones', a)), licencias, mapeos, credenciales, configuraciones, enlacesIsp, notas, impresoras,
+    pc: pc && ok('Equipo', pc) ? publico('equipos', pc) : null,
+    relaciones: await relacionesDe('Equipo', e.id, { permitido: permitidoFn })
+  };
 }
 
 /**
@@ -1313,7 +1634,8 @@ export async function ipsDeVlan(vlanId) {
  * @property {string} puestoNuevoId
  * @property {Array<{equipo_id: string, nombre: string, vlanAnterior: Vlan|null, vlanNueva: Vlan|null, cambiaVlan: boolean}>} equiposMovidos Con `conEquipo`: equipos que se mudaron con la persona.
  * @property {Array<{equipo_id: string, nombre: string, vlanAnterior: number|null, vlanNueva: number|null}>} avisosVlan Los movidos cuya VLAN cambia (pueden necesitar otra IP o repatchear).
- * @property {Array<{equipo_id: string, nombre: string}>} equiposDevueltos Sin `conEquipo`: equipos que la persona devolvió.
+ * @property {Array<{equipo_id: string, nombre: string}>} equiposDevueltos Sin `conEquipo`: equipos que la persona devolvió. Con `conEquipo`, los compartidos (ver `equiposCompartidos`) también se devuelven, solo por ella.
+ * @property {Array<{equipo_id: string, nombre: string, conPersonas: string[]}>} equiposCompartidos Equipos que comparte con otras personas que se quedan: no se mueven; los devuelve solo ella (D-072).
  * @property {Array<{equipo_id: string, nombre: string}>} equiposAsignados Sin `conEquipo`: equipos libres del puesto nuevo que ahora tiene.
  * @property {Array<{equipo_id: string, nombre: string, persona: string|null}>} equiposDelPuestoOcupados Equipos del puesto nuevo que siguen asignados a otra persona.
  * @property {string[]} resumen Lo hecho, en frases para mostrar.
@@ -1336,7 +1658,7 @@ export async function mudarPersona(datos) {
   if (pu.organizacion_id !== p.organizacion_id) throw new Error('El puesto es de otra organización.');
   const nombreEq = (/** @type {string} */ id) => (cache.equipos.get(id) ? cache.equipos.get(id).equipo_nombre : '');
   /** @type {ResultadoMudanza} */
-  const res = { puestoAnteriorId: p.puesto_id || null, puestoNuevoId: pu.id, equiposMovidos: [], avisosVlan: [], equiposDevueltos: [], equiposAsignados: [], equiposDelPuestoOcupados: [], resumen: [] };
+  const res = { puestoAnteriorId: p.puesto_id || null, puestoNuevoId: pu.id, equiposMovidos: [], avisosVlan: [], equiposDevueltos: [], equiposCompartidos: [], equiposAsignados: [], equiposDelPuestoOcupados: [], resumen: [] };
   const vigentes = Array.from(cache.asignaciones.values()).filter(a => a.persona_id === p.id && !a.asignacion_hasta && !a.eliminado_en && cache.equipos.get(a.equipo_id) && !cache.equipos.get(a.equipo_id).eliminado_en);
   if (p.puesto_id === pu.id) { res.resumen.push(p.persona_nombre + ' ya está en el puesto ' + pu.puesto_nombre + '.'); return res; }
   await guardar('personas', { ...publico('personas', p), puesto_id: pu.id }, datos.usuarioId, { motivo: 'Mudanza al puesto ' + pu.puesto_nombre + '.' });
@@ -1345,15 +1667,24 @@ export async function mudarPersona(datos) {
     for (const a of vigentes) {
       const e = cache.equipos.get(a.equipo_id);
       if (e.rack_id) continue;
+      const otras = vigentesSync(e.id).filter(x => x.persona_id !== p.id).map(x => cache.personas.get(x.persona_id)).filter(x => x && !x.eliminado_en);
+      if (otras.length) {
+        // Equipo compartido: se queda donde está para las otras personas; quien se muda lo devuelve (D-072).
+        await devolverEquipo({ equipoId: e.id, personaId: p.id, usuarioId: datos.usuarioId, observaciones: 'Devuelto por mudanza de ' + p.persona_nombre + ' (lo siguen usando otras personas).' });
+        res.equiposDevueltos.push({ equipo_id: e.id, nombre: e.equipo_nombre });
+        res.equiposCompartidos.push({ equipo_id: e.id, nombre: e.equipo_nombre, conPersonas: otras.map(x => x.persona_nombre) });
+        continue;
+      }
       const r = await moverEquipoAPuesto({ equipoId: e.id, puestoId: pu.id, usuarioId: datos.usuarioId });
       res.equiposMovidos.push({ equipo_id: e.id, nombre: e.equipo_nombre, ...r });
       if (r.cambiaVlan) res.avisosVlan.push({ equipo_id: e.id, nombre: e.equipo_nombre, vlanAnterior: r.vlanAnterior ? r.vlanAnterior.vlan_numero : null, vlanNueva: r.vlanNueva ? r.vlanNueva.vlan_numero : null });
     }
-    res.resumen.push(res.equiposMovidos.length ? 'Se mudó con ' + res.equiposMovidos.map(x => x.nombre).join(', ') + '.' : 'No tenía equipos asignados para mudar.');
+    res.resumen.push(res.equiposMovidos.length ? 'Se mudó con ' + res.equiposMovidos.map(x => x.nombre).join(', ') + '.' : (res.equiposCompartidos.length ? 'No tenía equipos propios para mudar.' : 'No tenía equipos asignados para mudar.'));
+    for (const x of res.equiposCompartidos) res.resumen.push('Aviso: ' + x.nombre + ' lo comparte con ' + x.conPersonas.join(', ') + ': el equipo no se mueve, queda con ' + (x.conPersonas.length > 1 ? 'ellas' : 'esa persona') + ' y ' + p.persona_nombre + ' lo devuelve.');
     for (const x of res.avisosVlan) res.resumen.push('Aviso: ' + x.nombre + ' cambia de VLAN ' + (x.vlanAnterior ?? '?') + ' a VLAN ' + (x.vlanNueva ?? '?') + ': puede necesitar otra IP o repatchear.');
   } else {
     for (const a of vigentes) {
-      await devolverEquipo({ equipoId: a.equipo_id, usuarioId: datos.usuarioId, observaciones: 'Devuelto por mudanza de ' + p.persona_nombre + '.' });
+      await devolverEquipo({ equipoId: a.equipo_id, personaId: p.id, usuarioId: datos.usuarioId, observaciones: 'Devuelto por mudanza de ' + p.persona_nombre + '.' });
       res.equiposDevueltos.push({ equipo_id: a.equipo_id, nombre: nombreEq(a.equipo_id) });
     }
     if (res.equiposDevueltos.length) res.resumen.push('Devolvió ' + res.equiposDevueltos.map(x => x.nombre).join(', ') + '.');
@@ -1842,7 +2173,7 @@ export async function exportar(opciones) {
   }
   const orgObj = org ? cache.organizaciones.get(org) : null;
   const paquete = {
-    version_esquema: 1, generado_en: ahoraISO(), exportado_en: ahoraISO(), exportado_por: o.usuarioId || null,
+    version_esquema: 1, version_modelo: VERSION_MODELO, generado_en: ahoraISO(), exportado_en: ahoraISO(), exportado_por: o.usuarioId || null,
     alcance: org ? 'organizacion' : 'todas', alcance_organizacion: orgObj ? orgObj.organizacion_nombre : null,
     incluye_secretos: !!o.incluirSecretos, ...salida
   };
@@ -1858,21 +2189,26 @@ let importacionPendiente = null;
 /**
  * Lee un archivo exportado y lo valida SIN cambiar nada: devuelve un resumen para confirmar.
  * @param {string} texto
- * @returns {Promise<{filas: Array<[string, number]>, organizaciones: string[], alcance: string, advertencias: string[]}>}
+ * Acepta exportaciones de versiones anteriores del modelo (las migra) y rechaza las de una versión más nueva que la de esta app.
+ * @returns {Promise<{filas: Array<[string, number]>, organizaciones: string[], alcance: string, advertencias: string[], versionModelo: number, migrado: boolean}>}
  */
 export async function analizarImportacion(texto) {
   await iniciar();
   /** @type {any} */
   let crudo;
   try { crudo = JSON.parse(texto); } catch { throw new Error('El archivo no es un JSON válido.'); }
+  const desde = versionModeloDe(crudo);
   const datos = validarEstructura(crudo);
+  const migraciones = migrarDatos(datos, desde);
   importacionPendiente = datos;
   const advertencias = [];
+  if (migraciones) advertencias.push('El archivo se exportó con una versión anterior de Infradoc (modelo de datos ' + desde + '): se actualiza solo al importarlo (los campos nuevos quedan con su valor por defecto y no se pierde nada).');
   if (crudo.alcance === 'organizacion') advertencias.push('El archivo es de una sola organización («' + (crudo.alcance_organizacion || '?') + '»): al importarlo, las demás organizaciones que hoy hay en este navegador se pierden.');
   if (crudo.incluye_secretos === false) advertencias.push('El archivo se exportó sin contraseñas: las credenciales quedarán sin contraseña y los usuarios, sin su clave de prueba (no vas a poder ingresar con ellos).');
   return {
     filas: COLECCIONES.filter(c => datos[c].length).map(c => /** @type {[string, number]} */ ([c, datos[c].length])),
-    organizaciones: datos.organizaciones.map(x => x.organizacion_nombre), alcance: crudo.alcance === 'organizacion' ? 'una organización' : 'todas las organizaciones', advertencias
+    organizaciones: datos.organizaciones.map(x => x.organizacion_nombre), alcance: crudo.alcance === 'organizacion' ? 'una organización' : 'todas las organizaciones', advertencias,
+    versionModelo: desde, migrado: migraciones > 0
   };
 }
 
@@ -1884,6 +2220,9 @@ export async function aplicarImportacion() {
   importacionPendiente = null;
   await reemplazarTodo(datos);
   await metaSet('importado_en', ahoraISO());
+  await metaSet('version_modelo', VERSION_MODELO);
+  datosPropios = false;
+  await marcarDatosPropios(); // lo importado es de un usuario: el restablecer automático no lo toca (D-073)
 }
 
 /** Descarta un archivo analizado que no se llegó a importar. */

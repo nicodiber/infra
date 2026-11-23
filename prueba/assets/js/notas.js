@@ -17,7 +17,7 @@ import { botonBaja, nombresUsuarios } from './credenciales.js';
 /** Hash de la ficha de cada entidad (null: no tiene ficha propia). @type {Object<string, string|null>} */
 const RUTA_FICHA = {
   Rack: '#/rack/', Persona: '#/persona/', CuentaDominio: '#/cuenta/', Licencia: '#/licencia/', MapeoDisco: '#/mapeo/', Puesto: '#/puesto/',
-  Configuracion: '#/config/', Credencial: '#/credencial/', Vlan: '#/vlan/', RedWifi: '#/wifi/', Ubicacion: null, EnlaceIsp: '#/red/isp'
+  Configuracion: '#/config/', Credencial: '#/credencial/', Vlan: '#/vlan/', RedWifi: '#/wifi/', Ubicacion: null, EnlaceIsp: '#/enlace/'
 };
 
 /** Etiqueta de tipo de cada entidad. @type {Object<string, string>} */

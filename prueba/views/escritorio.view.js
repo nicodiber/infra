@@ -38,7 +38,7 @@ export async function renderVista(contenedor) {
       tb.textContent = ''; chipsCont.textContent = '';
       const q = normalizar(fTexto);
       const base = todos.filter(e => (!fUbic || ubDe(e) === fUbic) && (!q || normalizar([e.equipo_codigo, e.equipo_nombre, categoria(e), e.equipo_marca, e.equipo_modelo, e.equipo_ip_gestion,
-        e.puesto_id && mapaPu.get(e.puesto_id) ? mapaPu.get(e.puesto_id).puesto_nombre : '', pers.asignadoA.get(e.id) ? pers.asignadoA.get(e.id).persona_nombre : ''].join(' ')).includes(q)));
+        e.puesto_id && mapaPu.get(e.puesto_id) ? mapaPu.get(e.puesto_id).puesto_nombre : '', (pers.asignadasA.get(e.id) || []).map(x => x.persona_nombre).join(' ')].join(' ')).includes(q)));
       /** @type {Object<string, (e: any) => boolean>} */
       const pred = { en_uso: e => e.equipo_estado === 'en_uso', en_deposito: e => e.equipo_estado === 'en_deposito', baja: e => e.equipo_estado === 'baja', sinasig: e => !pers.asignadoA.has(e.id), sinpuesto: e => !e.puesto_id };
       const chips = ESTADOS.concat(/** @type {Array<[string, string]>} */ ([['sinasig', 'Sin asignar'], ['sinpuesto', 'Sin puesto']]).filter(c => c[0] !== 'sinasig' || pers.ver));
@@ -48,10 +48,10 @@ export async function renderVista(contenedor) {
         const cab = ['Código', 'Equipo', 'Categoría', 'Marca / modelo', 'Asignado a', 'Puesto', 'IP', 'Estado', 'Verificado'];
         if (ctx.modifica) cab.push('');
         tb.appendChild(tabla(cab, f.map(e => {
-          const pe = pers.asignadoA.get(e.id), pu = e.puesto_id ? mapaPu.get(e.puesto_id) : null;
+          const pes = pers.asignadasA.get(e.id) || [], pu = e.puesto_id ? mapaPu.get(e.puesto_id) : null;
           /** @type {Array<Node|string>} */
           const fila = [e.equipo_codigo, enlaceFila(hashEquipo(e), e.equipo_nombre), categoria(e), [e.equipo_marca, e.equipo_modelo].filter(Boolean).join(' ') || '—',
-            !pers.ver ? '—' : pe ? enlaceFila('#/persona/' + pe.id, pe.persona_nombre) : h('span', { class: 'mut', text: 'Sin asignar' }),
+            !pers.ver ? '—' : pes.length ? h('div', null, pes.map(pe => h('div', null, [enlaceFila('#/persona/' + pe.id, pe.persona_nombre)]))) : h('span', { class: 'mut', text: 'Sin asignar' }),
             pu ? enlaceFila('#/puesto/' + pu.id, pu.puesto_nombre) : h('span', { class: 'mut', text: 'Sin puesto' }), e.equipo_ip_gestion || '—', estadoPill(e.equipo_estado), indicadorVerificacion(e.verificado_en, ctx.umbrales, true)];
           if (ctx.modifica) fila.push(e.rack_id ? '' : h('button', { type: 'button', text: 'Mover a otro puesto', onclick: (/** @type {Event} */ ev) => { ev.stopPropagation(); abrirMoverEquipo(ctx, e, () => dibujar()); } }));
           return fila;
