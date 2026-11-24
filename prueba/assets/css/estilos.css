@@ -545,6 +545,8 @@ select[size]:not([size="1"]){height:auto;min-height:9.5em}
 .as-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px}
 .as-chip{height:auto;min-height:28px;padding:4px 10px;border-radius:14px;font-weight:500;font-size:12.5px;text-align:left;background:var(--surf);border:1px solid var(--borde-fuerte);color:var(--texto)}
 .as-chip:hover{background:var(--acc-suave);border-color:var(--acc-borde)}
+.as-sug{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
+.as-bot p.as-tit{margin:8px 0 4px;font-weight:600;color:var(--texto)}
 .as-form{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--borde);background:var(--surf2)}
 .as-input{flex:1;height:34px;padding:0 10px;border:1px solid var(--ctl);border-radius:6px;background:var(--surf);color:var(--texto);font:inherit}
 .as-aviso{padding:0 12px 8px;background:var(--surf2);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
