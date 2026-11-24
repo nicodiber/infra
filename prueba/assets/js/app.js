@@ -31,7 +31,7 @@ import { iniciarAsistente } from './asistente.js';
  */
 
 /** @param {string} codigo @param {string} nombre @param {string} seccion @param {Partial<import('../../views/pendiente.view.js').InfoPendiente>} [extra] @returns {Ruta} */
-const pendiente = (codigo, nombre, seccion, extra) => ({ vista: cargarVista(String(extra && extra.archivo || '')), seccion, requiereOrg: !['solicitudes', 'ajustes'].includes(seccion), info: { codigo, nombre, seccion, ...extra } });
+const pendiente = (codigo, nombre, seccion, extra) => ({ vista: cargarVista(String(extra && extra.archivo || '')), seccion, requiereOrg: !['solicitudes', 'ajustes'].includes(seccion) && !(extra && extra.archivo === 'ajustes'), info: { codigo, nombre, seccion, ...extra } });
 
 /**
  * Carga la vista `views/<archivo>.view.js` (que exporta `renderVista(contenedor, info)`) la primera vez que se usa.

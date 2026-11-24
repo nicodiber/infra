@@ -1,11 +1,12 @@
 // @ts-check
-/** P20 · Ajustes del sistema (solo superadmin): umbrales «a revisar» y «viejo» de la verificación (D-046). */
+/** P20 · Ajustes del sistema (solo superadmin): umbrales «a revisar» y «viejo» de la verificación (D-046), pasos de verificación e IA del navegador. */
 
 import * as repositorio from '../assets/js/repositorio.js';
 import * as sesion from '../assets/js/sesion.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { h, icono, ahoraISO, estadoVerificacion } from '../assets/js/utiles.js';
+import * as ia from '../assets/js/ia-navegador.js';
 import { ROTULO_TIPO_VERIFICACION, PLANTILLAS_INICIALES, leerPlantillas, guardarPlantillas } from '../assets/js/verificacion.js';
 
 /** Colecciones cuyos elementos se verifican (igual que el tablero). */
@@ -100,6 +101,15 @@ export async function renderVista(contenedor) {
     h('div', { class: 'herr', style: 'margin-top:14px' }, [guardar, restaurar, h('button', { text: 'Cancelar', onclick: () => ir('#/organizaciones') })]),
     h('div', { class: 'mut', style: 'margin-top:6px', text: 'Valores iniciales del sistema: 90 y 365 días. Solo el superadmin puede cambiarlos.' })]));
   contenedor.appendChild(await bloquePlantillas(/** @type {any} */ (u).id));
+  contenedor.appendChild(bloqueIA());
+}
+
+/** IA del navegador para el asistente: estado en este navegador y descarga (DA3). Vale para este navegador, no para todo el sistema. */
+function bloqueIA() {
+  return h('div', { class: 'bloque', style: 'max-width:900px;margin-top:16px' }, [
+    h('h2', { text: 'IA del navegador (asistente)' }),
+    h('div', { class: 'mut', text: 'Chrome trae un modelo de IA (Gemini Nano) que corre en la PC. El asistente lo usa solo para entender preguntas escritas de otra forma; las respuestas salen siempre de los datos de Infradoc. Se descarga una vez por navegador, así que este ajuste vale para esta PC y este Chrome. Cualquier usuario puede descargarla también desde el asistente.' }),
+    h('div', { style: 'margin-top:10px' }, [ia.control()])]);
 }
 
 /** Plantillas de pasos de verificación por tipo (D-055, MJ38). @param {string} usuarioId */

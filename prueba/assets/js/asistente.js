@@ -13,6 +13,7 @@ import * as repositorio from './repositorio.js';
 import * as sesion from './sesion.js';
 import { puede, puedeVerSecreto, puedePedirSecreto } from './permisos.js';
 import { modalAbierto } from './marco.js';
+import * as ia from './ia-navegador.js';
 import { h, icono, normalizar, hoyISO, fmtFecha, diasHasta, diasDesde, textoHace, textoVence } from './utiles.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -35,7 +36,6 @@ import { h, icono, normalizar, hoyISO, fmtFecha, diasHasta, diasDesde, textoHace
  */
 
 const INTENCIONES = /** @type {Intencion[]} */ (['ip', 'conexion', 'vence', 'asignado_a', 'equipos_de', 'licencias', 'sin_verificar', 'contrasena']);
-const AVISO_SIN_IA = 'Respuestas exactas para las preguntas sugeridas; en Chrome con IA integrada entiende más formas de preguntar.';
 const TOPE = 10;
 
 // ---------------------------------------------------------------------------------------------
@@ -518,7 +518,6 @@ const RESPONDEDORES = {
 // Opción B: IA integrada del navegador (solo traduce la pregunta a una intención)
 // ---------------------------------------------------------------------------------------------
 
-const OPC_IA = { expectedInputs: [{ type: 'text', languages: ['es'] }], expectedOutputs: [{ type: 'text', languages: ['es'] }] };
 const ESQUEMA_IA = {
   type: 'object',
   properties: {
@@ -537,15 +536,6 @@ const INSTRUCCIONES_IA = 'Sos un clasificador de preguntas de un sistema de docu
   'licencias (licencias excedidas o vencidas; filtro), sin_verificar (qué no se verificó hace más de cierto tiempo; dias = días), contrasena (contraseña o clave de algo; objeto = de qué), ninguna (cualquier otra cosa). ' +
   'No inventes datos y no respondas la pregunta: solo clasificala.';
 
-/** Estado de la IA del navegador: 'available' | 'downloadable' | 'downloading' | 'no'. */
-async function estadoIA() {
-  const LM = /** @type {any} */ (globalThis).LanguageModel;
-  if (!LM || typeof LM.availability !== 'function') return 'no';
-  try { return String(await LM.availability(OPC_IA)); } catch (e) {
-    try { return String(await LM.availability()); } catch (e2) { return 'no'; }
-  }
-}
-
 /**
  * @param {string} pregunta
  * @returns {Promise<Interpretacion|null>}
@@ -554,7 +544,7 @@ async function interpretarConIA(pregunta) {
   const LM = /** @type {any} */ (globalThis).LanguageModel;
   let sesionIA = null;
   try {
-    sesionIA = await LM.create({ ...OPC_IA, initialPrompts: [{ role: 'system', content: INSTRUCCIONES_IA }] });
+    sesionIA = await LM.create({ ...ia.OPC_IA, initialPrompts: [{ role: 'system', content: INSTRUCCIONES_IA }] });
     const salida = await Promise.race([
       sesionIA.prompt(pregunta, { responseConstraint: ESQUEMA_IA, omitResponseConstraintInput: true }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('tiempo')), 20000))]);
@@ -584,7 +574,6 @@ async function interpretarConIA(pregunta) {
 /** @type {HTMLElement|null} */ let alcance = null;
 let usuarioDelPanel = '';
 let ocupado = false;
-let estadoIAActual = 'no';
 
 /** @param {Item} it @returns {HTMLElement} */
 function pintarItem(it) {
@@ -638,9 +627,15 @@ async function preguntar(pregunta) {
     const ctx = await crearContexto();
     if (!ctx) { espera.textContent = 'Ingresá de nuevo para consultar.'; return; }
     let interp = interpretar(q);
-    if (!interp && estadoIAActual === 'available') interp = await interpretarConIA(q);
+    /** Cómo se entendió la pregunta (MI6). */
+    let origen = interp ? 'Pregunta prevista' : 'Búsqueda por palabras: no reconocí la pregunta';
+    if (!interp && ia.activa()) {
+      interp = await interpretarConIA(q);
+      origen = interp ? 'Entendida por la IA del navegador' : 'Búsqueda por palabras: ni la IA del navegador reconoció la pregunta';
+    }
     const r = interp ? await RESPONDEDORES[interp.intencion](ctx, interp) : await responderBusqueda(ctx, q);
     const nuevo = pintarRespuesta(r, ctx.orgs, !!ctx.org);
+    nuevo.appendChild(h('p', { class: 'as-origen', text: origen }));
     espera.replaceWith(nuevo);
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
   } catch (e) {
@@ -685,97 +680,6 @@ async function pintarBienvenida() {
   for (const t of await sugerencias(ctx)) zonaChips.appendChild(h('button', { type: 'button', class: 'as-chip', text: t, onclick: () => preguntar(t) }));
 }
 
-// Descarga del modelo de IA de Chrome. El estado vive en el módulo para que el progreso siga visible al cerrar y reabrir el panel.
-/** @type {{activa: boolean, progreso: number|null, error: string}} */
-const descarga = { activa: false, progreso: null, error: '' };
-
-/** Texto del motivo de un error de descarga. @param {any} e */
-function motivoError(e) {
-  const n = e && e.name;
-  if (n === 'QuotaExceededError') return 'No hay espacio suficiente en el disco (Chrome pide unos 22 GB libres en la unidad de su perfil).';
-  if (n === 'NotAllowedError') return 'Chrome no permitió la descarga. Puede estar bloqueada por una política de la empresa, o hay que volver a tocar el botón.';
-  if (n === 'NetworkError') return 'Se cortó la conexión. Volvé a intentarlo: Chrome retoma desde donde quedó.';
-  if (n === 'NotSupportedError') return 'Esta PC no cumple los requisitos del modelo (memoria, placa de video o idioma).';
-  return 'No se pudo descargar' + (e && e.message ? ': ' + e.message : '.');
-}
-
-/** Explicación cuando Chrome no ofrece la IA. @param {HTMLElement} zona */
-function pintarPorQueNo(zona) {
-  const det = h('details', { class: 'as-porque' });
-  det.appendChild(h('summary', { text: '¿Cómo la activo?' }));
-  const lista = h('ul');
-  for (const t of [
-    'Usá Chrome de escritorio (Windows 10 u 11, macOS 13 o posterior, o Linux), versión 148 o posterior: Menú › Ayuda › Información de Google Chrome.',
-    'Necesita unos 22 GB libres en el disco donde está el perfil de Chrome, y placa de video con más de 4 GB o 16 GB de RAM con 4 núcleos. La primera descarga pide una conexión sin límite de datos.',
-    'Para ver el estado del modelo, copiá chrome://on-device-internals en la barra de direcciones.',
-    'En una PC de empresa puede estar bloqueada por política: consultalo con quien administra Chrome.'
-  ]) lista.appendChild(h('li', { text: t }));
-  det.appendChild(lista);
-  zona.appendChild(det);
-}
-
-/** Barra de progreso de la descarga. @param {HTMLElement} zona */
-function pintarProgreso(zona) {
-  const pct = descarga.progreso === null ? null : Math.round(descarga.progreso * 100);
-  zona.appendChild(h('span', { text: pct === null ? 'Descargando el modelo de IA de Chrome…' : 'Descargando el modelo de IA de Chrome: ' + pct + ' %' }));
-  const barra = h('progress', { class: 'as-progreso', max: '100', 'aria-label': 'Progreso de la descarga' });
-  if (pct !== null) barra.setAttribute('value', String(pct));
-  zona.appendChild(barra);
-  zona.appendChild(h('span', { class: 'as-nota', text: 'Podés seguir usando el asistente y cerrar este panel; la descarga sigue mientras Chrome esté abierto.' }));
-}
-
-async function pintarAviso() {
-  if (!zonaAviso) return;
-  if (!descarga.activa) estadoIAActual = await estadoIA();
-  const zona = zonaAviso;
-  zona.textContent = '';
-  if (descarga.activa) { pintarProgreso(zona); return; }
-  if (estadoIAActual === 'available') {
-    zona.appendChild(h('span', { text: 'IA del navegador activa: entiende más formas de preguntar. Los datos salen siempre del repositorio.' }));
-    return;
-  }
-  zona.appendChild(h('span', { text: AVISO_SIN_IA }));
-  if (descarga.error) zona.appendChild(h('span', { class: 'as-error', role: 'alert', text: descarga.error }));
-  if (estadoIAActual === 'downloadable') {
-    const b = h('button', { type: 'button', text: descarga.error ? 'Reintentar la descarga' : 'Descargar la IA del navegador' });
-    b.addEventListener('click', () => {
-      zona.textContent = '';
-      zona.appendChild(h('span', { text: 'Chrome va a descargar su modelo de IA (Gemini Nano, de varios GB; pide unos 22 GB libres en el disco). Se descarga una sola vez y corre en tu PC: tus datos no salen.' }));
-      zona.appendChild(h('button', { type: 'button', class: 'primario', text: 'Descargar ahora', onclick: () => descargarModelo() }));
-      zona.appendChild(h('button', { type: 'button', text: 'Cancelar', onclick: () => { pintarAviso(); } }));
-    });
-    zona.appendChild(b);
-  } else if (estadoIAActual === 'downloading') {
-    // Chrome ya la está bajando (por otro sitio o una pestaña anterior): un toque engancha el progreso.
-    zona.appendChild(h('span', { text: 'Chrome ya está descargando su modelo de IA.' }));
-    zona.appendChild(h('button', { type: 'button', text: 'Ver el progreso', onclick: () => descargarModelo() }));
-  } else {
-    pintarPorQueNo(zona);
-  }
-}
-
-/** Descarga (o engancha una descarga en curso) creando una sesión con monitor. Necesita el toque del usuario. */
-async function descargarModelo() {
-  const LM = /** @type {any} */ (globalThis).LanguageModel;
-  if (!LM || descarga.activa) return;
-  descarga.activa = true; descarga.progreso = null; descarga.error = '';
-  await pintarAviso();
-  try {
-    const s = await LM.create({ ...OPC_IA, monitor(/** @type {any} */ m) {
-      m.addEventListener('downloadprogress', (/** @type {any} */ e) => {
-        descarga.progreso = Math.max(0, Math.min(1, Number(e.loaded) || 0));
-        if (panel && !panel.hidden) pintarAviso();
-      });
-    } });
-    try { s.destroy(); } catch (e) { /* nada */ }
-  } catch (e) {
-    console.warn(e);
-    descarga.error = motivoError(e);
-  }
-  descarga.activa = false;
-  await pintarAviso();
-}
-
 function abrirPanel() {
   if (!panel || !fab) return;
   panel.hidden = false;
@@ -785,7 +689,7 @@ function abrirPanel() {
     usuarioDelPanel = u.id + '|' + (sesion.organizacionActiva() || '');
     pintarBienvenida();
   } else if (alcance && u) { crearContexto().then(c => { if (c && alcance) alcance.textContent = c.org ? (c.orgs.get(c.org) || '') : 'Todas las organizaciones que ves'; }); }
-  pintarAviso();
+  ia.actualizarEstado();
   if (campo) campo.focus();
 }
 
@@ -808,6 +712,12 @@ function sincronizarSesion() {
   }
 }
 
+/** Abre el panel del asistente (por ejemplo desde el indicador de IA del pie). Sin sesión no hace nada. */
+export function abrirAsistente() {
+  if (fab && !fab.hidden && panel && panel.hidden) abrirPanel();
+  else if (panel && !panel.hidden && campo) campo.focus();
+}
+
 /** Arma el botón flotante y el panel (una sola vez) y los conecta a la sesión. */
 export function iniciarAsistente() {
   if (fab) return;
@@ -816,7 +726,7 @@ export function iniciarAsistente() {
 
   msgs = h('div', { class: 'as-msgs', role: 'log', 'aria-live': 'polite', 'aria-label': 'Conversación' });
   zonaChips = h('div', { class: 'as-chips', 'aria-label': 'Preguntas sugeridas' });
-  zonaAviso = h('div', { class: 'as-aviso' });
+  zonaAviso = ia.control({ clase: 'as-aviso' });
   alcance = h('span', { class: 'as-alcance' });
   campo = /** @type {HTMLInputElement} */ (h('input', { class: 'as-input', type: 'text', id: 'as-pregunta', 'aria-label': 'Tu pregunta', placeholder: 'Preguntá algo…', autocomplete: 'off', maxlength: '300' }));
   const form = h('form', { class: 'as-form' }, [campo, h('button', { type: 'submit', class: 'primario as-enviar', text: 'Preguntar' })]);
@@ -839,4 +749,7 @@ export function iniciarAsistente() {
   });
   window.addEventListener('hashchange', sincronizarSesion);
   sincronizarSesion();
+  // MI2: estado de la IA del navegador en el pie; al tocarlo abre el asistente, donde está el botón para descargarla.
+  const pie = document.getElementById('pie');
+  if (pie) pie.appendChild(ia.indicador(abrirAsistente));
 }
