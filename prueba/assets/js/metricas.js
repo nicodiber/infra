@@ -19,6 +19,20 @@ const URL_METRICAS = 'https://script.google.com/macros/s/AKfycbxwwplxZMFLRBGiuXQ
 
 const HOST_PUBLICADO = 'nicodiber.github.io';
 const CLAVE_FORZAR = 'infradoc_metricas_forzar';
+/** Navegador marcado como uso interno (MJ54): sus eventos salen con «Empresa» = «Infradoc (interno)». */
+const CLAVE_INTERNO = 'infradoc_metricas_interno';
+
+/** ¿Es uso interno (pruebas del desarrollo) y no del sysadmin? Se marca abriendo el sitio con `?interno=1` (y se desmarca con `?interno=0`); los navegadores automáticos de la IA se marcan solos. */
+function esInterno() {
+  try {
+    const p = new URLSearchParams(location.search).get('interno');
+    if (p === '1') localStorage.setItem(CLAVE_INTERNO, '1');
+    if (p === '0') localStorage.removeItem(CLAVE_INTERNO);
+    if (/Claude-Agent|HeadlessChrome/i.test(navigator.userAgent)) return true;
+    return localStorage.getItem(CLAVE_INTERNO) === '1';
+  } catch { return false; }
+}
+const INTERNO = esInterno();
 const CLAVE_ANONIMO = 'infradoc_navegador_anonimo';
 const INTERVALO_MS = 10000;
 const EVENTOS_PARA_ENVIAR = 20;
@@ -168,7 +182,7 @@ export function registrarEvento(tipo, detalle) {
 function armar(tipo, detalle, extra) {
   if (!habilitado()) return null;
   return {
-    fecha: new Date().toISOString(), empresa: 'Infradoc', version: version(), tipoEvento: String(tipo || ''),
+    fecha: new Date().toISOString(), empresa: INTERNO ? 'Infradoc (interno)' : 'Infradoc', version: version(), tipoEvento: String(tipo || ''),
     detalle: limpiar(detalle || {}), ip: '', userAgent: navigator.userAgent, sesion: idSesion, navegadorAnonimo: anonimo(),
     rol: rol(), pantalla: extra.pantalla !== undefined ? extra.pantalla : pantallaActual,
     duracionMs: extra.duracionMs == null ? null : Math.round(extra.duracionMs)
@@ -311,7 +325,8 @@ function esSecreto(c, rotulo) {
   const dato = c.getAttribute('data-campo') || '';
   if (CAMPOS_SECRETOS.includes(nombre) || CAMPOS_SECRETOS.includes(c.id) || CAMPOS_SECRETOS.includes(dato)) return true;
   const pistas = [nombre, c.id, c.getAttribute('aria-label') || '', rotulo, c.getAttribute('placeholder') || '', c.getAttribute('title') || '', dato];
-  return pistas.some(p => RE_SECRETO.test(sinTildes(p)));
+  // «Notas (sin secretos)» o «sin contraseñas» avisan que NO hay secretos: no cuentan como pista.
+  return pistas.some(p => RE_SECRETO.test(sinTildes(p).toLowerCase().replace(/sin (secretos?|contrasenas?|claves?)/g, '')));
 }
 
 /** @param {Event} e */

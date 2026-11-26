@@ -87,7 +87,7 @@ export async function renderVista(contenedor) {
       datos.appendChild(campo('Letra de unidad', inp('letra', 'Letra de unidad', { maxlength: '2', placeholder: 'P:', style: 'width:80px' })));
       datos.appendChild(campo('Ruta de red', inp('ruta', 'Ruta de red', { placeholder: '\\\\SERVIDOR\\Carpeta' })));
       datos.appendChild(campo('Servidor que la comparte', selectorConCrear({ desde: 'mapeos_disco', campo: 'equipo_id', organizacion_id: orgId, valor: ed.equipo || null, etiqueta: 'Servidor',
-        cargarOpciones: () => opcionesEquipos(orgId, { filtro: e => e.equipo_tipo === 'servidor' }), valoresAlta: { equipo_tipo: 'servidor' }, rotuloOrigen: 'Editar mapeo', alCambiar: v => { ed.equipo = v; } })));
+        cargarOpciones: () => opcionesEquipos(orgId, { filtro: e => e.equipo_tipo === 'servidor' }), valoresAlta: { equipo_tipo: 'servidor', tipos: ['servidor'] }, rotuloOrigen: 'Editar mapeo', alCambiar: v => { ed.equipo = v; } })));
       datos.appendChild(campo('Se aplica a', sel('aplica', 'Se aplica a', Object.keys(ROTULO_MAPEO_APLICA_A).map(k => /** @type {[string, string]} */ ([k, ROTULO_MAPEO_APLICA_A[k]])))));
       if (ed.aplica === 'grupo') datos.appendChild(campo('Grupo de dominio', inp('grupo', 'Grupo de dominio', { placeholder: 'GG-Compras' })));
       if (ed.aplica === 'persona') {

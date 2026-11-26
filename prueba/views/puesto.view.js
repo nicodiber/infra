@@ -68,7 +68,13 @@ async function dibujar(cont, ctx, pu, editando, cambiar) {
     botones.push(h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: async () => {
       const r = /** @type {Function} */ (leer)();
       if (r.errores.length) { err.textContent = r.errores.join(' '); return; }
-      if (!(await seguro(() => repositorio.guardar('puestos', { ...pu, ...r.valores, ubicacion_id: /** @type {HTMLSelectElement} */ (selUb).value }, ctx.u.id)))) return;
+      const nuevaUb = /** @type {HTMLSelectElement} */ (selUb).value;
+      if (!(await seguro(async () => {
+        await repositorio.guardar('puestos', { ...pu, ...r.valores, ubicacion_id: nuevaUb }, ctx.u.id);
+        // Los equipos del puesto están donde está el puesto (como la mudanza, D-067): si el puesto cambia de sede o sala, lo acompañan.
+        if (nuevaUb !== pu.ubicacion_id) for (const e of enPuesto) if (!e.rack_id && e.ubicacion_id !== nuevaUb) await repositorio.guardar('equipos', { ...e, ubicacion_id: nuevaUb }, ctx.u.id);
+        return true;
+      }))) return;
       toast('Cambios guardados · verificado hoy (' + fmtFecha(ahoraISO()) + ')'); await cambiar(false);
     } }), h('button', { type: 'button', text: 'Cancelar', onclick: () => cambiar(false) }));
   } else {

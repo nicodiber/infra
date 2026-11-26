@@ -285,6 +285,13 @@ export function modalAbierto() { return pila.length > 0; }
 export function nivelesDeModal() { return pila.length; }
 
 /** Cierra SOLO el diálogo de arriba: el de abajo (si hay) queda como estaba y recupera el foco. No hace nada si no hay ninguno. */
+/** Cierra todas las ventanas apiladas (al cambiar de pantalla no tiene que quedar ninguna abierta). */
+export function cerrarTodosLosModales() {
+  let guarda = 20;
+  while (pila.length && guarda-- > 0) cerrarModal();
+}
+window.addEventListener('hashchange', () => cerrarTodosLosModales());
+
 export function cerrarModal() {
   const cerrado = pila.pop();
   if (!cerrado) return;

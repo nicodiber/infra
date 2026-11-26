@@ -42,10 +42,17 @@ export async function renderVista(contenedor) {
     ir(creado ? '#/tramo/' + creado.id : '#/fibra');
     return;
   }
-  const [ubicaciones, patcheras] = await Promise.all([repositorio.listar('ubicaciones', { organizacion_id: org }, { ordenarPor: 'ubicacion_nombre' }),
-    repositorio.listar('equipos', { organizacion_id: org, equipo_tipo: 'patchera' }, { ordenarPor: 'equipo_nombre' })]);
-  const ubPor = new Map(ubicaciones.map(x => [x.id, x]));
-  const eqPor = new Map(patcheras.map(x => [x.id, x]));
+  /** @type {Map<string, any>} */ const ubPor = new Map();
+  /** @type {Map<string, any>} */ const eqPor = new Map();
+  /** Recarga sedes/salas y patcheras: algo creado con «+ Crear nuevo» durante la edición tiene que verse en la ficha al guardar. */
+  const cargarMapas = async () => {
+    const [ubicaciones, patcheras] = await Promise.all([repositorio.listar('ubicaciones', { organizacion_id: org }, { ordenarPor: 'ubicacion_nombre' }),
+      repositorio.listar('equipos', { organizacion_id: org, equipo_tipo: 'patchera' }, { ordenarPor: 'equipo_nombre' })]);
+    ubPor.clear(); eqPor.clear();
+    for (const x of ubicaciones) ubPor.set(x.id, x);
+    for (const x of patcheras) eqPor.set(x.id, x);
+  };
+  await cargarMapas();
   const nomUb = (/** @type {string|null} */ id) => (id && ubPor.get(id) ? ubPor.get(id).ubicacion_nombre : '—');
 
   let editando = nuevo;
@@ -61,7 +68,7 @@ export async function renderVista(contenedor) {
 
   /** @param {any} cambios */
   const guardarTramo = async cambios => repositorio.guardar('tramos_fibra', { ...(t || { organizacion_id: org, tramo_pelos_usados: [], tramo_mediciones: [] }), ...cambios }, ctx.u.id);
-  const rerender = async () => { t = (await repositorio.obtener('tramos_fibra', t.id)) || t; await pintar(); };
+  const rerender = async () => { t = (await repositorio.obtener('tramos_fibra', t.id)) || t; await cargarMapas(); await pintar(); };
 
   async function pintar() {
     contenedor.textContent = '';

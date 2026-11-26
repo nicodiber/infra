@@ -580,6 +580,7 @@ export async function abrirMoverEquipo(ctx, equipo, alTerminar) {
     asignado ? h('p', { class: 'mut', text: 'La asignación' + (quien ? ' a ' + quien : '') + ' no cambia al mover el equipo. Si la persona también se muda, resolvelo en su ficha.' }) : null,
     q, lista, h('div', { style: 'margin-top:6px' }, [h('button', { type: 'button', class: 'chico', text: textoCrear('puestos'), onclick: async () => {
       const nuevo = await abrirAlta('puestos', { organizacion_id: ctx.org, rotulo: 'Mover a otro puesto' });
+      window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo: 'crear_nuevo', detalle: { desde: 'Mover a otro puesto', campo: 'puesto_id', crea: 'puestos', resultado: nuevo ? 'creado' : 'cancelado' } } }));
       if (!nuevo) return;
       candidatos.push(nuevo); if (!mapaUb.has(nuevo.ubicacion_id)) mapaUb.set(nuevo.ubicacion_id, await repositorio.obtener('ubicaciones', nuevo.ubicacion_id));
       vlans.set(nuevo.id, null); elegido = nuevo; q.value = ''; pintar(); textoAviso();
@@ -720,7 +721,7 @@ export async function abrirConectarPuerto(ctx, e, origen, alTerminar) {
     lista.textContent = '';
     const t = normalizar(q.value.trim());
     const f = cand.filter(x => !t || normalizar(x.eq.equipo_nombre + ' ' + x.p.puerto_numero + ' ' + (x.p.puerto_nombre || '')).includes(t)).slice(0, 80);
-    if (!f.length) lista.appendChild(h('div', { class: 'mut', style: 'padding:10px', text: 'Ningún puerto coincide con la búsqueda.' }));
+    if (!f.length) lista.appendChild(h('div', { class: 'mut', style: 'padding:10px', text: cand.length ? 'Ningún puerto coincide con la búsqueda.' : 'Todavía no hay otros puertos cargados. Abrí el otro equipo, pestaña «Puertos», y usá «Cargar puerto» o «Editar varios»; después volvé a conectar.' }));
     for (const x of f) {
       const oc = puertoOcupado(x.p);
       lista.appendChild(h('button', { type: 'button', role: 'option', 'aria-selected': String(!!elegido && elegido.p.id === x.p.id), onclick: () => { elegido = x; pintar(); textoAviso(); } }, [

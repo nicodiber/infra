@@ -9,12 +9,12 @@ import * as repositorio from '../assets/js/repositorio.js';
 import * as sesion from '../assets/js/sesion.js';
 import * as solicitudes from '../assets/js/solicitudes.js';
 import { puede } from '../assets/js/permisos.js';
-import { ir, pantalla, migasRaiz, repintarMarco, toast } from '../assets/js/marco.js';
+import { ir, pantalla, migasRaiz, repintarMarco, toast, abrirModal, cerrarModal } from '../assets/js/marco.js';
 import {
   h, icono, tabla, fmtFecha, fmtFechaHora, diasHasta, textoVence, indicadorVerificacion, estadoVerificacion, diasDesde
 } from '../assets/js/utiles.js';
 import {
-  COLECCION_DE_ENTIDAD, ROTULO_CREDENCIAL_TIPO, ROTULO_SERVICIO_TIPO, ROTULO_EQUIPO_TIPO, ROTULO_PERFIL, moduloDeEntidad
+  COLECCION_DE_ENTIDAD, ROTULO_ENTIDAD, rutaDeEntidad, ROTULO_CREDENCIAL_TIPO, ROTULO_SERVICIO_TIPO, ROTULO_EQUIPO_TIPO, ROTULO_PERFIL, moduloDeEntidad
 } from '../assets/js/modelos.js';
 import { CATEGORIAS_PUESTO } from '../assets/js/red.js';
 import { confirmarConPasos } from '../assets/js/verificacion.js';
@@ -248,7 +248,7 @@ async function bloqueVencimientos(u, orgId) {
  * @param {string} orgId
  */
 async function bloqueParaRevisar(u, orgId) {
-  /** @type {Array<{n: number, texto: string, hash: string}>} */
+  /** @type {Array<{n: number, texto: string, hash?: string, alTocar?: () => void}>} */
   const avisos = [];
   if (puede(u, 'ver', 'licencias', orgId)) {
     let vencidas = 0, porVencer = 0, excedidas = 0;
@@ -281,6 +281,9 @@ async function bloqueParaRevisar(u, orgId) {
     const sinAsignar = equiposOrg.filter(e => e.equipo_estado !== 'baja' && e.equipo_tipo === 'otro' && CATEGORIAS_PUESTO.includes(String((e.equipo_campos || {}).otro_categoria)) && !asignados.has(e.id));
     avisos.push({ n: sinAsignar.length, texto: 'equipos de escritorio sin asignar', hash: '#/escritorio' });
   }
+  // MJ55: lo que la planilla creó sola y nadie completó todavía
+  const autos = (await repositorio.creadosAutomaticamente(orgId)).filter(x => puede(u, 'ver', moduloDeEntidad(x.entidad, x.registro), orgId));
+  if (autos.length) avisos.push({ n: autos.length, texto: autos.length === 1 ? 'elemento creado automáticamente para completar' : 'elementos creados automáticamente para completar', alTocar: () => abrirCreadosAutomaticamente(autos) });
   const conAviso = avisos.filter(a => a.n > 0);
   const caja = h('div', { class: 'bloque', id: 'bloqueRevisar', style: 'margin-bottom:10px' });
   caja.appendChild(h('h2', { text: 'Para revisar' }));
@@ -289,8 +292,39 @@ async function bloqueParaRevisar(u, orgId) {
     return caja;
   }
   caja.appendChild(h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px 14px' }, conAviso.map(a =>
-    h('a', { href: a.hash }, [h('b', { text: String(a.n) }), ' ' + a.texto]))));
+    h('a', { href: a.hash || '#', onclick: a.alTocar ? (/** @type {Event} */ e) => { e.preventDefault(); /** @type {() => void} */ (a.alTocar)(); } : null }, [h('b', { text: String(a.n) }), ' ' + a.texto]))));
   return caja;
+}
+
+/**
+ * Ventana con lo que la planilla creó sola (MJ55), agrupado por tipo. Cada nombre abre su ficha.
+ * @param {Array<{entidad: string, registro: any, nombre: string, fecha: string, sinSede: boolean}>} autos
+ */
+function abrirCreadosAutomaticamente(autos) {
+  /** @type {Map<string, typeof autos>} */
+  const grupos = new Map();
+  for (const x of autos) {
+    const tipo = x.entidad === 'Equipo' && x.registro.equipo_tipo ? (ROTULO_EQUIPO_TIPO[x.registro.equipo_tipo] || ROTULO_ENTIDAD.Equipo) : (ROTULO_ENTIDAD[x.entidad] || x.entidad);
+    if (!grupos.has(tipo)) grupos.set(tipo, []);
+    /** @type {typeof autos} */ (grupos.get(tipo)).push(x);
+  }
+  const cuerpo = h('div', { role: 'dialog', 'aria-label': 'Elementos creados automáticamente' }, [
+    h('h2', { text: 'Elementos creados automáticamente' }),
+    h('div', { class: 'mut', style: 'margin-bottom:8px', text: 'Los creó solo la planilla de Excel con datos mínimos porque otra fila los nombraba y no existían. Abrí cada ficha y completala: al editarla sale de esta lista.' })
+  ]);
+  for (const [tipo, lista] of Array.from(grupos).sort((a, b) => a[0].localeCompare(b[0], 'es'))) {
+    cuerpo.appendChild(h('h3', { text: tipo + ' (' + lista.length + ')', style: 'margin:10px 0 4px' }));
+    cuerpo.appendChild(h('ul', { style: 'margin:0;padding-left:18px' }, lista.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map(x => {
+      const ruta = rutaDeEntidad(x.entidad, x.registro);
+      const origen = x.sinSede ? 'sala de la sede provisoria «Sin sede»' : 'planilla de Excel importada el ' + fmtFechaHora(x.fecha);
+      return h('li', null, [
+        ruta ? h('a', { href: ruta, onclick: () => cerrarModal() }, [x.nombre]) : x.nombre,
+        h('span', { class: 'mut', text: ' · ' + origen })
+      ]);
+    })));
+  }
+  cuerpo.appendChild(h('div', { class: 'herr', style: 'margin-top:10px' }, [h('button', { type: 'button', class: 'chico', text: 'Cerrar', onclick: () => cerrarModal() })]));
+  abrirModal(cuerpo);
 }
 
 // ---------------------------------------------------------------------------------------------

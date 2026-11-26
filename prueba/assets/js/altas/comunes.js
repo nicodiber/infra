@@ -96,6 +96,7 @@ export function nombreDeCopia(nombre, existentes) {
 export async function duplicar(coleccion, origen, valores, hashDeFicha, rotulo) {
   window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo: 'duplicar', detalle: { coleccion, origen_id: origen.id } } }));
   const creado = await abrirAlta(coleccion, { organizacion_id: origen.organizacion_id, valores });
+  window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo: 'duplicar_resultado', detalle: { coleccion, origen_id: origen.id, resultado: creado ? 'guardado' : 'cancelado' } } }));
   if (!creado) return null;
   toast((rotulo || 'Registro') + ' duplicado: revisá los datos de la copia');
   ir(hashDeFicha(creado));

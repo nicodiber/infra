@@ -140,6 +140,9 @@ const ALTAS = new Map();
  * @type {Object<string, () => Promise<any>>}
  */
 /** Módulo que registra el alta de cada colección. Un archivo por colección en `altas/` (si falta, `abrirAlta` avisa). */
+/** Momento de la última apertura de cada alta (evita duplicados por doble clic). @type {Map<string, number>} */
+const ULTIMA_APERTURA = new Map();
+
 const MODULOS_DE_ALTA = {
   ubicaciones: () => import('./altas/ubicaciones.js'),
   racks: () => import('./altas/racks.js'),
@@ -187,6 +190,10 @@ export function coleccionesConAlta() { return Array.from(new Set([...ALTAS.keys(
  */
 export async function abrirAlta(coleccion, opciones) {
   const o = opciones || {};
+  // Un doble clic en «Nueva …» abría dos formularios apilados iguales: se ignora la segunda apertura inmediata.
+  const ahora = Date.now();
+  if (ahora - (ULTIMA_APERTURA.get(coleccion) || 0) < 800) return null;
+  ULTIMA_APERTURA.set(coleccion, ahora);
   if (!ALTAS.has(coleccion) && MODULOS_DE_ALTA[coleccion]) {
     try { await MODULOS_DE_ALTA[coleccion](); } catch (e) { console.error(e); }
   }
@@ -219,6 +226,7 @@ export function abrirFormularioDeAlta(o) {
     const error = h('div', { class: 'msg mal', role: 'alert', hidden: 'hidden' });
     const btnGuardar = /** @type {HTMLButtonElement} */ (h('button', { type: 'button', class: 'primario', text: o.textoGuardar || 'Crear' }));
     const guardar = async () => {
+      if (btnGuardar.disabled) return; // un doble clic o un Enter repetido no crea dos registros
       error.hidden = true;
       btnGuardar.disabled = true;
       try {
@@ -479,5 +487,9 @@ export function multiConCrear(o) {
  */
 export function duplicar(coleccion, origen, valores, nombreOrigen) {
   window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo: 'duplicar', detalle: { coleccion, origen_id: origen.id } } }));
-  return abrirAlta(coleccion, { organizacion_id: origen.organizacion_id, valores: { ...valores, duplicado_de: nombreOrigen }, rotulo: null });
+  return abrirAlta(coleccion, { organizacion_id: origen.organizacion_id, valores: { ...valores, duplicado_de: nombreOrigen }, rotulo: null }).then(creado => {
+    // QC69-C: también si se guardó o se canceló, para saber si «Duplicar» le sirvió.
+    window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo: 'duplicar_resultado', detalle: { coleccion, origen_id: origen.id, resultado: creado ? 'guardado' : 'cancelado' } } }));
+    return creado;
+  });
 }

@@ -24,7 +24,7 @@ registrarAlta('mapeos_disco', async ctx => {
   const grupo = entrada(id.grupo, v.mapeo_grupo, { placeholder: 'GG-Compras' });
   const metodo = selectorDeRotulos(id.metodo, ROTULO_MAPEO_METODO, v.mapeo_metodo || 'gpo');
   const servidor = selectorConCrear({ desde: 'mapeos_disco', campo: 'equipo_id', organizacion_id: ctx.organizacion_id, valor: v.equipo_id || null, id: id.srv,
-    cargarOpciones: () => opcionesEquipos(ctx.organizacion_id, { filtro: e => e.equipo_tipo === 'servidor' }), valoresAlta: { equipo_tipo: 'servidor' }, rotuloOrigen: 'Nuevo mapeo de disco' });
+    cargarOpciones: () => opcionesEquipos(ctx.organizacion_id, { filtro: e => e.equipo_tipo === 'servidor' }), valoresAlta: { equipo_tipo: 'servidor', tipos: ['servidor'] }, rotuloOrigen: 'Nuevo mapeo de disco' });
   const persona = verPersonas ? selectorConCrear({ desde: 'mapeos_disco', campo: 'persona_id', organizacion_id: ctx.organizacion_id, valor: v.persona_id || null, id: id.persona,
     cargarOpciones: () => opcionesPersonas(ctx.organizacion_id, { soloActivas: true }), rotuloOrigen: 'Nuevo mapeo de disco' }) : null;
   const cGrupo = campoDeAlta(id.grupo, 'Grupo de dominio *', grupo);

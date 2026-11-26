@@ -907,6 +907,12 @@ function validarImpresora(r) {
  * @param {any} r
  */
 function validarPuerto(r) {
+  if (r.puesto_id) {
+    const e = cache.equipos.get(r.equipo_id), pu = cache.puestos.get(r.puesto_id);
+    if (!pu || pu.eliminado_en) throw new Error('El puesto de trabajo del puerto no existe.');
+    if (!e || e.equipo_tipo !== 'patchera') throw new Error('Solo una boca de patchera puede llegar a un puesto de trabajo.');
+    if (e.organizacion_id !== pu.organizacion_id) throw new Error('El puesto y la patchera tienen que ser de la misma organización.');
+  } else r.puesto_id = null;
   if (!r.enlace_isp_id) { r.enlace_isp_id = null; return; }
   const e = cache.equipos.get(r.equipo_id), l = cache.enlaces_isp.get(r.enlace_isp_id);
   if (!l || l.eliminado_en) throw new Error('El enlace a Internet del puerto no existe.');
@@ -2494,3 +2500,54 @@ export async function aplicarImportacion() {
 
 /** Descarta un archivo analizado que no se llegó a importar. */
 export function cancelarImportacion() { importacionPendiente = null; }
+
+// ---------------------------------------------------------------------------------------------
+// Creados automáticamente por la planilla y sin editar (MJ55)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Registros de la organización que la planilla de Excel creó sola (motivo «Creado automáticamente al importar…») y que nadie
+ * editó después (su único cambio en el historial es el alta), más las salas que cuelgan de la sede «Sin sede». Una sola pasada
+ * sobre el historial. No incluye registros dados de baja.
+ * @param {string} orgId
+ * @returns {Promise<Array<{entidad: string, registro: any, nombre: string, fecha: string, sinSede: boolean}>>}
+ */
+export async function creadosAutomaticamente(orgId) {
+  await iniciar();
+  /** @type {Map<string, any>} */ const altas = new Map();
+  /** @type {Set<string>} */ const tocados = new Set();
+  /** @type {Map<string, string>} */ const fechaAlta = new Map();
+  for (const c of cache.cambios.values()) {
+    if (c.organizacion_id !== orgId) continue;
+    const clave = c.cambio_entidad + ':' + c.entidad_id;
+    if (c.cambio_operacion === 'alta') {
+      fechaAlta.set(clave, c.cambio_fecha);
+      if (String(c.cambio_motivo || '').startsWith('Creado automáticamente al importar')) altas.set(clave, c);
+    } else if (!/^verificado_/.test(String(c.cambio_campo || ''))) tocados.add(clave); // «Confirmar vigente» no completa nada
+  }
+  /** @type {Array<{entidad: string, registro: any, nombre: string, fecha: string, sinSede: boolean}>} */
+  const salida = [];
+  /** @type {Set<string>} */ const vistos = new Set();
+  const nombreGenerico = (/** @type {any} */ r) => {
+    const k = Object.keys(r).find(x => /_nombre$/.test(x) && !x.startsWith('usuario_') && !x.startsWith('creado_') && !x.startsWith('actualizado_') && !x.startsWith('eliminado_') && !x.startsWith('verificado_'));
+    return String((k && r[k]) || r.equipo_codigo || r.id);
+  };
+  for (const [clave, c] of altas) {
+    if (tocados.has(clave)) continue;
+    const col = COLECCION_DE_ENTIDAD[c.cambio_entidad];
+    const r = col && cache[col] && cache[col].get(c.entidad_id);
+    if (!r || r.eliminado_en) continue;
+    vistos.add(clave);
+    salida.push({ entidad: c.cambio_entidad, registro: publico(col, r), nombre: nombreGenerico(r), fecha: c.cambio_fecha, sinSede: false });
+  }
+  const sinSede = Array.from(cache.ubicaciones.values()).find(u => u.organizacion_id === orgId && !u.eliminado_en && u.ubicacion_tipo === 'sede' && u.ubicacion_nombre === 'Sin sede');
+  if (sinSede) {
+    for (const u of cache.ubicaciones.values()) {
+      if (u.eliminado_en || u.organizacion_id !== orgId || u.ubicacion_padre_id !== sinSede.id) continue;
+      const clave = 'Ubicacion:' + u.id;
+      if (vistos.has(clave)) continue;
+      salida.push({ entidad: 'Ubicacion', registro: publico('ubicaciones', u), nombre: u.ubicacion_nombre + ' (sala de «Sin sede»)', fecha: fechaAlta.get(clave) || '', sinSede: true });
+    }
+  }
+  return salida;
+}

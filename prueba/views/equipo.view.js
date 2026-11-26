@@ -513,6 +513,9 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
     const vel = h('input', { type: 'text', 'aria-label': 'Velocidad' });
     const nativa = selectorConCrear({ desde: 'puertos', campo: 'vlan_nativa_id', organizacion_id: ctx.org, valor: p.vlan_nativa_id || null, etiqueta: 'VLAN nativa', rotuloOrigen: 'Editar puerto ' + n,
       alCambiar: (_id, reg) => { if (reg) { vlans.push(reg); mv.set(reg.id, reg); } } });
+    const puedePuesto = tipo === 'patchera';
+    // Boca de patchera → puesto de trabajo (lado de atrás, D-047). «+ Crear nuevo puesto…» como todo selector de una dependencia (D-082).
+    const selPuesto = puedePuesto ? selectorConCrear({ desde: 'puertos', campo: 'puesto_id', organizacion_id: ctx.org, valor: p.puesto_id || null, etiqueta: 'Puesto de trabajo', rotuloOrigen: 'Editar puerto ' + n }) : null;
     const desc = h('input', { type: 'text', 'aria-label': 'Destino en texto libre' });
     const selIsp = h('select', { 'aria-label': 'Enlace a Internet' }, [h('option', { value: '', text: '—' })].concat(enlacesIsp.map(l => h('option', { value: l.id, text: l.enlace_proveedor + (l.enlace_ip_publica ? ' · ' + l.enlace_ip_publica : '') + (l.enlace_es_principal ? ' (principal)' : ' (respaldo)') }))));
     /** @type {HTMLSelectElement} */ (selIsp).value = p.enlace_isp_id || '';
@@ -534,13 +537,14 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
       const reg2 = { ...p, puerto_modo: m || null, puerto_estado: /** @type {HTMLSelectElement} */ (estadoS).value, puerto_velocidad: /** @type {HTMLInputElement} */ (vel).value.trim() || null,
         vlan_nativa_id: /** @type {HTMLSelectElement} */ (nativa).value || null, vlans_etiquetadas: m === 'troncal' ? Array.from(chks).filter(x => x[1].checked).map(x => x[0]) : [],
         conectado_a_descripcion: p.conectado_a_puerto_id ? null : /** @type {HTMLInputElement} */ (desc).value.trim() || null, puerto_notas: /** @type {HTMLInputElement} */ (notas).value.trim() || null,
+        ...(puedePuesto ? { puesto_id: /** @type {HTMLSelectElement} */ (selPuesto).value || null } : {}),
         ...(puedeIsp ? { enlace_isp_id: /** @type {HTMLSelectElement} */ (selIsp).value || null } : {}) };
       if (await seguro(() => repositorio.guardar('puertos', reg2, ctx.u.id))) { toast('Puerto ' + n + ' guardado · verificado hoy (' + fmtFecha(ahoraISO()) + ')'); await rearmar(); }
     });
     const campoE = (/** @type {string} */ t, /** @type {Node} */ c) => h('div', { class: 'campo' }, [h('label', { text: t }), c]);
     detalle.appendChild(h('div', { class: 'rd-cab-det' }, [h('h2', { text: 'Editar puerto ' + n }), h('span', { class: 'esp' }), guardar, h('button', { type: 'button', class: 'chico', text: 'Cancelar', onclick: () => pintarDetalle() })]));
     detalle.appendChild(h('div', { class: 'datos', style: 'grid-template-columns:repeat(2,1fr)' }, [campoE('Estado', estadoS), tipo === 'switch' ? campoE('Modo', modo) : null, campoE('Velocidad', vel), campoE('VLAN nativa', nativa),
-      puedeIsp ? campoE('Sale a Internet por (enlace)', selIsp) : null, campoE('Destino (texto libre)', desc), campoE('Notas', notas)]));
+      puedeIsp ? campoE('Sale a Internet por (enlace)', selIsp) : null, puedePuesto && selPuesto ? campoE('Puesto de trabajo (a qué boca de pared llega)', selPuesto) : null, campoE('Destino (texto libre)', desc), campoE('Notas', notas)]));
     detalle.appendChild(h('div', { class: 'campo', style: 'margin-top:6px' }, [h('label', { text: 'VLAN etiquetadas (solo en troncal)' }), lista]));
     detalle.appendChild(err);
     detalle.appendChild(h('div', { class: 'rd-campo-nota', text: p.conectado_a_puerto_id ? 'Para cambiar la conexión con otro puerto usá «Conectar a…» o «Desconectar» en el detalle del puerto.' : '' }));
