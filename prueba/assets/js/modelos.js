@@ -59,7 +59,7 @@
  * }} Rack
  */
 
-/** @typedef {'router'|'firewall'|'switch'|'access_point'|'servidor'|'patchera'|'ups'|'otro'} EquipoTipo */
+/** @typedef {'router'|'firewall'|'switch'|'access_point'|'servidor'|'patchera'|'ups'|'camara'|'otro'} EquipoTipo */
 
 /**
  * @typedef {Comunes & {
@@ -208,6 +208,18 @@
  */
 
 /**
+ * Proveedor de la organización (QC75-A, modelo 4): empresa a la que se le compra o con la que se tiene soporte (Internet,
+ * telefonía, mantenimiento, hardware, software, seguridad…). Todos los datos son opcionales salvo el nombre. `credencial_id`:
+ * acceso al portal de autogestión (la contraseña vive en la credencial). Vive en el módulo `configuraciones`.
+ * @typedef {Comunes & {
+ *   organizacion_id: string, proveedor_nombre: string, proveedor_rubro: string|null, proveedor_soporte_telefono: string|null,
+ *   proveedor_soporte_mail: string|null, proveedor_horario_soporte: string|null, proveedor_numero_cliente: string|null,
+ *   proveedor_numero_contrato: string|null, proveedor_comercial_nombre: string|null, proveedor_comercial_telefono: string|null,
+ *   proveedor_comercial_mail: string|null, proveedor_portal_url: string|null, credencial_id: string|null, proveedor_notas: string|null
+ * }} Proveedor
+ */
+
+/**
  * Tramo de fibra entre dos ubicaciones (QA45-C). `tramo_pelos_usados`: qué se transporta por cada pelo.
  * @typedef {Comunes & {
  *   organizacion_id: string, tramo_nombre: string, tramo_origen_ubicacion_id: string, tramo_destino_ubicacion_id: string,
@@ -315,7 +327,7 @@
 export const COLECCIONES = /** @type {const} */ ([
   'organizaciones', 'usuarios', 'permisos_modulo', 'ubicaciones', 'racks', 'equipos', 'puertos', 'vlans',
   'enlaces_isp', 'redes_wifi', 'configuraciones', 'credenciales', 'puestos', 'personas', 'cuentas_dominio', 'asignaciones',
-  'licencias', 'instalaciones_licencia', 'mapeos_disco', 'notas', 'servicios', 'tramos_fibra', 'archivos', 'relaciones', 'solicitudes', 'registro_accesos',
+  'licencias', 'instalaciones_licencia', 'mapeos_disco', 'notas', 'servicios', 'tramos_fibra', 'archivos', 'relaciones', 'proveedores', 'solicitudes', 'registro_accesos',
   'cambios', 'lecturas_cambio', 'ajustes_sistema'
 ]);
 
@@ -327,7 +339,7 @@ export const ENTIDAD_DE_COLECCION = {
   cuentas_dominio: 'CuentaDominio', asignaciones: 'Asignacion', licencias: 'Licencia',
   instalaciones_licencia: 'InstalacionLicencia', mapeos_disco: 'MapeoDisco', notas: 'Nota', solicitudes: 'Solicitud',
   registro_accesos: 'RegistroAccesoCredencial', cambios: 'Cambio', lecturas_cambio: 'LecturaCambio',
-  ajustes_sistema: 'AjusteSistema', servicios: 'Servicio', tramos_fibra: 'TramoFibra', archivos: 'Archivo', relaciones: 'Relacion'
+  ajustes_sistema: 'AjusteSistema', servicios: 'Servicio', tramos_fibra: 'TramoFibra', archivos: 'Archivo', relaciones: 'Relacion', proveedores: 'Proveedor'
 };
 
 /** @type {Object<string, string>} */
@@ -337,7 +349,7 @@ export const COLECCION_DE_ENTIDAD = Object.fromEntries(Object.entries(ENTIDAD_DE
 export const COLECCIONES_COMUNES = [
   'organizaciones', 'usuarios', 'permisos_modulo', 'ubicaciones', 'racks', 'equipos', 'puertos', 'vlans',
   'enlaces_isp', 'redes_wifi', 'configuraciones', 'credenciales', 'puestos', 'personas', 'cuentas_dominio', 'asignaciones',
-  'licencias', 'instalaciones_licencia', 'mapeos_disco', 'notas', 'servicios', 'tramos_fibra', 'archivos', 'relaciones'
+  'licencias', 'instalaciones_licencia', 'mapeos_disco', 'notas', 'servicios', 'tramos_fibra', 'archivos', 'relaciones', 'proveedores'
 ];
 
 /** @type {Modulo[]} */
@@ -358,8 +370,24 @@ export const ROTULO_PERFIL = { superadmin: 'Superadmin', gerente: 'Gerente', tec
 /** @type {Object<string, string>} */
 export const ROTULO_EQUIPO_TIPO = {
   router: 'Router', firewall: 'Firewall', switch: 'Switch', access_point: 'Access point', servidor: 'Servidor',
-  patchera: 'Patchera', ups: 'UPS', otro: 'Otro'
+  patchera: 'Patchera', ups: 'UPS', camara: 'Cámara', otro: 'Otro'
 };
+
+/** Categoría de `equipo_tipo = otro` para el grabador de cámaras (NVR / DVR): las cámaras (`equipo_tipo = camara`) apuntan a uno. */
+export const CATEGORIA_NVR = 'NVR de cámaras';
+
+/** Rubros sugeridos de un proveedor (QC75-A): el campo es texto libre, esto son solo las sugerencias. */
+export const RUBROS_PROVEEDOR = /** @type {const} */ (['Internet', 'Telefonía', 'Mantenimiento', 'Hardware', 'Software', 'Seguridad', 'Otro']);
+
+/**
+ * ¿Es un NVR (grabador de cámaras)? Un equipo `otro` cuya categoría es «NVR de cámaras» (sin distinguir mayúsculas ni tildes) o «NVR» / «DVR».
+ * @param {{equipo_tipo: string, equipo_campos?: Object<string, any>}} e
+ */
+export function esNvr(e) {
+  if (!e || e.equipo_tipo !== 'otro') return false;
+  const c = String((e.equipo_campos || {}).otro_categoria || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return c === 'nvr de camaras' || c === 'nvr' || c === 'dvr' || c === 'dvr de camaras';
+}
 
 /** @type {Object<string, string>} */
 export const ROTULO_CREDENCIAL_TIPO = {
@@ -439,7 +467,7 @@ export const LIMITE_ARCHIVO_BYTES = 5 * 1024 * 1024;
 export const ROTULO_ENTIDAD = {
   Equipo: 'Equipo', Servidor: 'Servidor', Rack: 'Rack', Ubicacion: 'Sede / sala', Puesto: 'Puesto', Vlan: 'VLAN', RedWifi: 'Wi-Fi',
   EnlaceIsp: 'Enlace a Internet', Configuracion: 'Configuración', Credencial: 'Credencial', Persona: 'Persona',
-  CuentaDominio: 'Cuenta de dominio', Licencia: 'Licencia', MapeoDisco: 'Mapeo de disco', Servicio: 'Servicio', TramoFibra: 'Tramo de fibra'
+  CuentaDominio: 'Cuenta de dominio', Licencia: 'Licencia', MapeoDisco: 'Mapeo de disco', Servicio: 'Servicio', TramoFibra: 'Tramo de fibra', Proveedor: 'Proveedor'
 };
 
 /**
@@ -467,6 +495,7 @@ export function rutaDeEntidad(entidad, registro) {
     case 'MapeoDisco': return '#/mapeo/' + id;
     case 'Servicio': return '#/servicio/' + id;
     case 'TramoFibra': return '#/tramo/' + id;
+    case 'Proveedor': return '#/proveedor/' + id;
     default: return null;
   }
 }
@@ -492,7 +521,7 @@ export function moduloDeEntidad(entidad, registro) {
     case 'Usuario': case 'PermisoModulo': return 'usuarios';
     case 'Persona': case 'CuentaDominio': case 'Asignacion': return 'personas';
     case 'Licencia': case 'InstalacionLicencia': return 'licencias';
-    case 'MapeoDisco': case 'Servicio': return 'configuraciones';
+    case 'MapeoDisco': case 'Servicio': case 'Proveedor': return 'configuraciones';
     case 'TramoFibra': return 'red';
     default: return 'organizacion';
   }
@@ -507,8 +536,10 @@ export function moduloDeEntidad(entidad, registro) {
  * Al cambiar el modelo (campo nuevo, campo renombrado) se sube en 1 y se agrega `MIGRACIONES[versión anterior]`.
  * 1: hasta la v0.5.x. 2: varias personas por equipo, impresoras con conexión (`impresora_conexion`, `impresora_pc_id`) y `puertos.enlace_isp_id` (v0.6).
  * 3: las ubicaciones son solo sedes y salas (`oficina` → `sala`; `edificio` desaparece, QC66-A).
+ * 4: colección nueva `proveedores` (QC75-A) y tipo de equipo nuevo `camara` (QC74-A). Nada cambia en lo que ya estaba: la migración solo
+ *    deja la colección vacía.
  */
-export const VERSION_MODELO = 3;
+export const VERSION_MODELO = 4;
 
 /**
  * Migraciones ordenadas: `MIGRACIONES[n]` lleva los datos de la versión n a la n+1, completando los campos nuevos con su valor
@@ -525,7 +556,8 @@ export const MIGRACIONES = {
       if (!('impresora_pc_id' in e.equipo_campos)) e.equipo_campos.impresora_pc_id = null;
     }
   },
-  2: datos => migrarUbicacionesASedesYSalas(datos)
+  2: datos => migrarUbicacionesASedesYSalas(datos),
+  3: datos => { if (!Array.isArray(datos.proveedores)) datos.proveedores = []; }
 };
 
 /**

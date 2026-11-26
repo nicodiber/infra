@@ -16,7 +16,7 @@ export const CLAVE_PLANTILLAS = 'verificacion_plantillas';
 /** Tipos de elemento con plantilla, en el orden en que se muestran: clave → rótulo. @type {Object<string, string>} */
 export const ROTULO_TIPO_VERIFICACION = {
   switch: 'Switch', router: 'Router', firewall: 'Firewall', access_point: 'Access point', servidor: 'Servidor',
-  rack: 'Rack', patchera: 'Patchera', ups: 'UPS', puesto: 'Puesto', pc: 'PC', notebook: 'Notebook', impresora: 'Impresora',
+  rack: 'Rack', patchera: 'Patchera', ups: 'UPS', camara: 'Cámara', puesto: 'Puesto', pc: 'PC', notebook: 'Notebook', impresora: 'Impresora',
   reloj: 'Reloj de control de personal', credencial: 'Credencial', licencia: 'Licencia', otro: 'Otro equipo'
 };
 
@@ -30,6 +30,7 @@ export const PLANTILLAS_INICIALES = {
   rack: ['Comparar los equipos montados con la ficha del rack', 'Revisar el orden del cableado y las etiquetas', 'Confirmar el estado de la UPS y la ventilación'],
   patchera: ['Comparar las etiquetas de los puertos con la ficha', 'Revisar que los patch cords estén donde dice la ficha'],
   ups: ['Revisar el indicador de batería y de carga', 'Comparar los equipos conectados con la ficha'],
+  camara: ['Confirmar qué mira y el canal en el NVR', 'Confirmar la IP y que se vea la imagen en el NVR'],
   puesto: ['Comparar la boca de pared con la ficha', 'Confirmar el equipo y la persona del puesto'],
   pc: ['Comparar el rótulo con la ficha', 'Confirmar la persona asignada', 'Confirmar el nombre de equipo y la IP'],
   notebook: ['Comparar el rótulo con la ficha', 'Confirmar la persona asignada'],

@@ -26,7 +26,7 @@ import { h, icono, normalizar, hoyISO, fmtFecha, diasHasta, diasDesde, textoHace
 /** @typedef {{partes: Parte[], detalle?: string, orgId?: string|null}} Item */
 /** @typedef {{texto: string, items?: Item[], mas?: number, sugerencias?: string[], encabezado?: boolean}} Grupo */
 /** @typedef {{grupos: Grupo[], nota?: string, enlace?: Parte}} Respuesta */
-/** @typedef {'ayuda'|'ip'|'conexion'|'vence'|'asignado_a'|'equipos_de'|'licencias'|'sin_verificar'|'contrasena'|'ubicacion'|'rack_contenido'|'vlan_info'|'vlan_de'|'wifi'|'internet'|'dato_equipo'|'listar_tipo'|'sin_asignar'|'cuenta_de'|'persona_info'|'licencias_de'|'mapeo'|'servicio'|'config_doc'|'fibra'|'solicitudes'|'navegar'} Intencion */
+/** @typedef {'ayuda'|'ip'|'conexion'|'vence'|'asignado_a'|'equipos_de'|'licencias'|'sin_verificar'|'contrasena'|'ubicacion'|'rack_contenido'|'vlan_info'|'vlan_de'|'wifi'|'internet'|'dato_equipo'|'listar_tipo'|'sin_asignar'|'cuenta_de'|'persona_info'|'licencias_de'|'mapeo'|'servicio'|'config_doc'|'fibra'|'solicitudes'|'navegar'|'camara'|'proveedor'} Intencion */
 /**
  * @typedef {Object} Interpretacion
  * @property {Intencion} intencion
@@ -52,7 +52,7 @@ import { h, icono, normalizar, hoyISO, fmtFecha, diasHasta, diasDesde, textoHace
  */
 
 const INTENCIONES = /** @type {Intencion[]} */ (['ayuda', 'ip', 'conexion', 'vence', 'asignado_a', 'equipos_de', 'licencias', 'sin_verificar', 'contrasena', 'ubicacion', 'rack_contenido', 'vlan_info', 'vlan_de', 'wifi', 'internet', 'dato_equipo', 'listar_tipo', 'sin_asignar',
-  'cuenta_de', 'persona_info', 'licencias_de', 'mapeo', 'servicio', 'config_doc', 'fibra', 'solicitudes', 'navegar']);
+  'cuenta_de', 'persona_info', 'licencias_de', 'mapeo', 'servicio', 'config_doc', 'fibra', 'solicitudes', 'navegar', 'camara', 'proveedor']);
 const TOPE = 10;
 
 // ---------------------------------------------------------------------------------------------
@@ -98,6 +98,7 @@ function ruta(coleccion, r) {
     case 'licencias': return '#/licencia/' + r.id;
     case 'mapeos_disco': return '#/mapeo/' + r.id;
     case 'servicios': return '#/servicio/' + r.id;
+    case 'proveedores': return '#/proveedor/' + r.id;
     case 'tramos': case 'tramos_fibra': return '#/tramo/' + r.id;
     case 'enlaces_isp': return '#/enlace/' + r.id;
     default: return '#/inicio';
@@ -110,7 +111,7 @@ function moduloDe(coleccion, r) {
     case 'equipos': return r.equipo_tipo === 'servidor' ? 'servidores' : 'red';
     case 'credenciales': return 'credenciales';
     case 'racks': return 'racks';
-    case 'configuraciones': case 'mapeos_disco': case 'servicios': return 'configuraciones';
+    case 'configuraciones': case 'mapeos_disco': case 'servicios': case 'proveedores': return 'configuraciones';
     case 'personas': case 'cuentas_dominio': case 'asignaciones': return 'personas';
     case 'licencias': case 'instalaciones_licencia': return 'licencias';
     default: return 'red';
@@ -133,6 +134,7 @@ function titulo(coleccion, r) {
     case 'licencias': return r.licencia_producto;
     case 'mapeos_disco': return r.mapeo_letra + ' ' + r.mapeo_ruta;
     case 'servicios': return r.servicio_nombre;
+    case 'proveedores': return r.proveedor_nombre;
     case 'tramos_fibra': return r.tramo_nombre;
     default: {
       const k = Object.keys(r).find(x => /_(nombre|titulo|producto)$/.test(x));
@@ -234,7 +236,9 @@ const CATALOGO = {
   config_doc: { titulo: 'Configuraciones y documentación', ejemplos: ['¿Cómo está configurada la {VPN}?', '¿Cuáles son las reglas del {firewall}?', '¿Hay documentación del {controlador de dominio}?', '¿Qué puertos están redirigidos?'], claves: ['config', 'vpn', 'regla', 'reenv', 'redirig', 'document', 'politic'] },
   fibra: { titulo: 'Fibra óptica', ejemplos: ['¿Qué tramos de fibra hay?', '¿Qué va por la fibra entre la planta y la administración?', '¿Cuál fue la última medición de la fibra?'], claves: ['fibra', 'tramo', 'pelo', 'medicion', 'empalm'] },
   solicitudes: { titulo: 'Solicitudes', ejemplos: ['¿Tengo solicitudes pendientes?', '¿Qué pedidos de acceso hay?'], claves: ['solicitud', 'pedido', 'pendiente', 'aprob'] },
-  navegar: { titulo: 'Cómo llegar a una pantalla', ejemplos: ['¿Cómo exporto los datos?', '¿Dónde cargo un equipo nuevo?', '¿Dónde veo el registro de accesos?', 'Quiero ver la topología'], claves: ['exporto', 'exportar', 'importar', 'imprimo', 'etiqueta', 'topolog', 'plano', 'registro', 'cargo', 'cargar', 'crear', 'nuevo', 'abrir'] }
+  navegar: { titulo: 'Cómo llegar a una pantalla', ejemplos: ['¿Cómo exporto los datos?', '¿Dónde cargo un equipo nuevo?', '¿Dónde veo el registro de accesos?', 'Quiero ver la topología'], claves: ['exporto', 'exportar', 'importar', 'imprimo', 'etiqueta', 'topolog', 'plano', 'registro', 'cargo', 'cargar', 'crear', 'nuevo', 'abrir'] },
+  camara: { titulo: 'Cámaras', ejemplos: ['¿Qué IP tiene la cámara {del portón}?', '¿A qué switch y puerto está conectada la cámara {del portón}?', '¿Dónde está la cámara {del portón}?', '¿Qué cámaras graba el {NVR-METAL-01}?'], claves: ['camar', 'nvr', 'dvr', 'canal', 'poe', 'graba', 'grabador', 'enfoca', 'video'] },
+  proveedor: { titulo: 'Proveedores y soporte', ejemplos: ['¿Cuál es el teléfono de soporte de {Telecom}?', '¿Qué número de cliente tenemos con {Telecom}?', '¿Quién es el contacto comercial de {Telecom}?', '¿Qué proveedores de {mantenimiento} tenemos?'], claves: ['proveedor', 'soporte', 'cliente', 'contrato', 'comercial', 'portal', 'rubro', 'telefono', 'horario'] }
 };
 
 /** Texto de un ejemplo sin las llaves. @param {string} e */
@@ -377,6 +381,7 @@ const DESTINOS = [
   { id: 'recorrido', ruta: '#/recorrido', rotulo: 'Recorrido de verificación', texto: 'Ahí recorrés la organización y confirmás qué datos siguen vigentes.', patron: /\b(recorrido|verificar|verifico|verificacion)\b/, modulo: 'racks', org: true },
   { id: 'fibra', ruta: '#/fibra', rotulo: 'Fibra óptica', texto: 'Ahí ves los tramos de fibra, sus pelos y las mediciones.', patron: /\b(fibra|tramos?|pelos)\b/, modulo: 'red', org: true },
   { id: 'servicios', ruta: '#/servicios', rotulo: 'Dominios y servicios', texto: 'Ahí ves los dominios, el DNS, el hosting, los certificados y el correo.', patron: /\b(dominios?|servicios|hosting|certificados?|dns)\b/, modulo: 'configuraciones', org: true },
+  { id: 'proveedores', ruta: '#/proveedores', rotulo: 'Proveedores', texto: 'Ahí ves los proveedores, su soporte, el número de cliente y el acceso a su portal.', patron: /\b(proveedores|proveedor)\b/, modulo: 'configuraciones', org: true },
   { id: 'notas', ruta: '#/notas', rotulo: 'Notas', texto: 'Ahí ves las notas libres de la organización y las de cada ficha.', patron: /\bnotas?\b/, org: true },
   { id: 'licencias', ruta: '#/licencias', rotulo: 'Licencias', texto: 'Ahí ves las licencias, cuántas están en uso y cuándo vencen.', patron: /\blicencias?\b/, modulo: 'licencias', org: true },
   { id: 'personas', ruta: '#/personas', rotulo: 'Personas', texto: 'Ahí ves las personas, sus cuentas de dominio y sus equipos.', patron: /\b(personas?|empleados?|gente|cuentas de dominio)\b/, modulo: 'personas', org: true },
@@ -401,13 +406,14 @@ function temaNavegacion(n) {
 function pantallasDeAlta(n) {
   if (/\b(servidor|servidores|maquina virtual|vm)\b/.test(n)) return ['servidores'];
   if (/\b(pc|pcs|notebooks?|laptops?|computadoras?|compus?|impresoras?)\b/.test(n)) return ['escritorio'];
-  if (/\b(switch|switches|router|firewall|access points?|patchera|ups|vlans?|wifi|wi-?fi|enlace|isp)\b/.test(n)) return ['red'];
+  if (/\b(switch|switches|router|firewall|access points?|patchera|ups|camaras?|nvr|dvr|vlans?|wifi|wi-?fi|enlace|isp)\b/.test(n)) return ['red'];
   if (/\bracks?\b/.test(n)) return ['racks'];
   if (/\b(personas?|empleados?|cuentas?)\b/.test(n)) return ['personas'];
   if (/\blicencias?\b/.test(n)) return ['licencias'];
   if (/\b(credenciales?|contrasenas?)\b/.test(n)) return ['credenciales'];
   if (/\b(configuraciones?|vpn|mapeos?|reglas)\b/.test(n)) return ['configuraciones'];
   if (/\b(dominios?|servicios?|hosting|certificados?)\b/.test(n)) return ['servicios'];
+  if (/\bproveedor(es)?\b/.test(n)) return ['proveedores'];
   if (/\b(fibra|tramos?)\b/.test(n)) return ['fibra'];
   if (/\bnotas?\b/.test(n)) return ['notas'];
   if (/\busuarios?\b/.test(n)) return ['usuarios'];
@@ -486,6 +492,25 @@ function interpretar(pregunta) {
     if (obj) return { intencion: 'dato_equipo', objeto: obj, campo: campo.clave };
   }
   if (codigo && /\b(datos|ficha|detalles?|informacion|info|todo)\b/.test(n) && !/\b(vence|ip)\b/.test(n)) return { intencion: 'dato_equipo', objeto: palabrasDe(n, ['datos', 'ficha', 'detalle', 'detalles', 'del', 'de', 'todo']).join(' '), campo: '' };
+
+  // Cámaras (QC74): IP, a qué switch y puerto está conectada, en qué NVR y canal, dónde está.
+  if ((/\bcamaras?\b/.test(n) || /\bcanal(es)?\b/.test(n) && /\b(nvr|dvr)\b/.test(n)) && !/\b(vlans?|wifi|licencias?)\b/.test(n)) {
+    const c = /\b(ip|ips|direccion)\b/.test(n) ? 'ip'
+      : /\b(switch|switches|puertos?|bocas?|alimenta|alimentan|alimentada|poe|conectad[oa]s?|conecta|enchufad[oa]s?|patchera)\b/.test(n) ? 'switch'
+        : /\b(donde|ubicad[oa]s?|queda|ubicacion)\b/.test(n) ? 'donde'
+          : /\b(nvr|dvr|canal|canales|graba|grabadora|grabadoras)\b/.test(n) ? 'nvr' : '';
+    return { intencion: 'camara', campo: c, objeto: palabrasDe(n, ['camara', 'camaras', 'ip', 'ips', 'direccion', 'switch', 'switches', 'puerto', 'puertos', 'boca', 'bocas', 'alimenta', 'alimentan', 'alimentada', 'poe', 'conectada', 'conectado', 'conecta', 'enchufada',
+      'patchera', 'nvr', 'dvr', 'canal', 'canales', 'graba', 'grabadora', 'grabadoras', 'ubicada', 'ubicado', 'queda', 'ubicacion', 'hay', 'tenemos', 'tiene', 'cuantas', 'cuantos', 'lista', 'listame', 'todas', 'las', 'cual', 'cuales', 'que', 'enfoca', 'mira', 'esta']).join(' ') };
+  }
+
+  // Proveedores (QC75): soporte, número de cliente o de contrato, contacto comercial, portal. Los de Internet los responde `internet`.
+  if (/\b(proveedor(es)?|(numero|nro|n) de (cliente|contrato)|contratos?|soporte|contacto comercial|comercial|portal de(l)? proveedor)\b/.test(n)
+    && !/\b(internet|isp|isps|ips? publicas?|megas|mbps|ancho de banda|velocidad|enlaces?|tramos?|dominios?|hosting|dns|certificados?|correo|licencias?)\b/.test(n)) {
+    const c = /\b(numero|nro|n) de cliente\b/.test(n) ? 'cliente' : /\b(numero|nro|n) de contrato\b|\bcontratos?\b/.test(n) ? 'contrato' : /\b(comercial|vendedor|ejecutivo)\b/.test(n) ? 'comercial'
+      : /\bportal|pagina|sitio\b/.test(n) ? 'portal' : /\b(soporte|telefono|mail|horario|atencion)\b/.test(n) ? 'soporte' : '';
+    return { intencion: 'proveedor', campo: c, objeto: palabrasDe(n, ['proveedor', 'proveedores', 'numero', 'nro', 'cliente', 'contrato', 'contratos', 'soporte', 'telefono', 'mail', 'horario', 'atencion', 'comercial', 'contacto', 'portal', 'pagina', 'sitio', 'vendedor', 'ejecutivo',
+      'tenemos', 'tiene', 'tienen', 'cuales', 'cual', 'quien', 'son', 'hay', 'rubro', 'web', 'acceso', 'usuario']).join(' ') };
+  }
 
   // Vencimientos
   if (/\b(vence|vencen|vencimiento|vencimientos|vencer|vencera|caduc\w*|se termina|terminan|se terminan|se acaba|se acaban|expira|expiran|expirar|renovar|renovamos|renovacion|renovaciones|por vencer|a vencer)\b/.test(n)) {
@@ -1083,7 +1108,7 @@ async function gruposDeAyuda(ctx) {
   const sust = await sustitucionesDeEjemplo(ctx);
   /** @type {Record<string, any>} */
   const modulo = { ip: 'red', conexion: 'red', ubicacion: 'red', vlan_info: 'red', vlan_de: 'red', wifi: 'red', internet: 'red', dato_equipo: 'red', listar_tipo: 'red', sin_asignar: 'red', fibra: 'red', rack_contenido: 'racks', contrasena: 'credenciales',
-    equipos_de: 'personas', asignado_a: 'personas', cuenta_de: 'personas', persona_info: 'personas', licencias: 'licencias', licencias_de: 'licencias', mapeo: 'configuraciones', servicio: 'configuraciones', config_doc: 'configuraciones' };
+    equipos_de: 'personas', asignado_a: 'personas', cuenta_de: 'personas', persona_info: 'personas', licencias: 'licencias', licencias_de: 'licencias', mapeo: 'configuraciones', servicio: 'configuraciones', config_doc: 'configuraciones', camara: 'red', proveedor: 'configuraciones' };
   /** @type {Grupo[]} */
   const grupos = [];
   for (const intencion of INTENCIONES) {
@@ -1821,13 +1846,142 @@ async function responderNoReconocida(ctx, pregunta) {
   return { grupos };
 }
 
+/**
+ * Cámaras que coinciden con las palabras: por nombre, código, qué miran, NVR («NVR-METAL-01»), «canal N», IP, marca o modelo.
+ * Un número solo coincide con una palabra entera (el 3 no es el 13 ni una parte de una IP). Sin palabras devuelve todas las que el usuario ve.
+ * @param {Ctx} ctx @param {string[]} palabras @returns {Promise<any[]>}
+ */
+async function hallarCamaras(ctx, palabras) {
+  const equipos = await ctx.listar('equipos');
+  const porId = new Map(equipos.map(e => [e.id, e]));
+  const visibles = equipos.filter(e => e.equipo_tipo === 'camara' && ctx.veo('red', e.organizacion_id));
+  const orden = (/** @type {any} */ a, /** @type {any} */ b) => a.organizacion_id.localeCompare(b.organizacion_id)
+    || String(((porId.get((a.equipo_campos || {}).camara_nvr_id) || {}).equipo_nombre) || '').localeCompare(String(((porId.get((b.equipo_campos || {}).camara_nvr_id) || {}).equipo_nombre) || ''), 'es', { numeric: true })
+    || ((a.equipo_campos || {}).camara_canal || 0) - ((b.equipo_campos || {}).camara_canal || 0);
+  visibles.sort(orden);
+  if (!palabras.length) return visibles;
+  const texto = (/** @type {any} */ e) => {
+    const c = e.equipo_campos || {}, nvr = porId.get(c.camara_nvr_id);
+    return normalizar([e.equipo_nombre, e.equipo_codigo, c.camara_enfoque, nvr ? nvr.equipo_nombre : '', c.camara_canal != null ? 'canal ' + c.camara_canal : '', e.equipo_ip_gestion, e.equipo_marca, e.equipo_modelo].filter(Boolean).join(' '));
+  };
+  const cumple = (/** @type {any} */ e, /** @type {string[]} */ pals) => { const t = texto(e), toks = t.split(/[^a-z0-9]+/).filter(Boolean); return pals.every(w => /^\d+$/.test(w) ? toks.includes(w) : t.includes(w)); };
+  let r = visibles.filter(e => cumple(e, palabras));
+  for (let i = palabras.length - 1; !r.length && palabras.length > 1 && i >= 0; i--) r = visibles.filter(e => cumple(e, palabras.filter((_, j) => j !== i)));
+  return r;
+}
+
+/**
+ * Cadena de una cámara hasta el switch que la alimenta: su puerto, y si va por una patchera, la boca y el switch del otro lado.
+ * @param {any[]} puertos @param {any[]} equipos @param {any} cam
+ * @returns {{camPt: any|null, patch: {eq: any, pt: any}|null, sw: {eq: any, pt: any}|null}}
+ */
+function switchDeCamara(puertos, equipos, cam) {
+  const camPt = puertos.filter(p => p.equipo_id === cam.id).sort((a, b) => a.puerto_numero - b.puerto_numero).find(p => p.conectado_a_puerto_id) || puertos.find(p => p.equipo_id === cam.id) || null;
+  let actual = camPt;
+  /** @type {{eq: any, pt: any}|null} */ let patch = null;
+  for (let salto = 0; actual && actual.conectado_a_puerto_id && salto < 3; salto++) {
+    const pt = puertos.find(p => p.id === actual.conectado_a_puerto_id);
+    const eq = pt ? equipos.find(e => e.id === pt.equipo_id) : null;
+    if (!pt || !eq) break;
+    if (eq.equipo_tipo === 'patchera') { patch = { eq, pt }; actual = pt.conectado_a_puerto_id === actual.id ? null : pt; continue; }
+    return { camPt, patch, sw: { eq, pt } };
+  }
+  return { camPt, patch, sw: null };
+}
+
+/** @param {Ctx} ctx @param {Interpretacion} q @returns {Promise<Respuesta>} */
+async function responderCamara(ctx, q) {
+  if (!ctx.veo('red', ctx.org)) return sinPermiso('la red');
+  const palabras = q.objeto.split(' ').filter(hay);
+  const campo = q.campo || '';
+  if (!palabras.length && (campo === 'ip' || campo === 'switch')) return aviso('¿De qué cámara? Por ejemplo: «¿Qué IP tiene la cámara del portón?».');
+  const cams = await hallarCamaras(ctx, palabras);
+  if (!cams.length) return { grupos: [{ texto: palabras.length ? 'No encontré una cámara «' + palabras.join(' ') + '» en lo que podés ver.' : 'No hay cámaras cargadas en lo que podés ver.' }], enlace: atajo(ctx, 'red', 'Ver la red') };
+  const [equipos, puertos, ubics] = await Promise.all([ctx.listar('equipos'), ctx.listar('puertos'), ctx.listar('ubicaciones')]);
+  const ub = new Map(ubics.map(u => [u.id, u]));
+  /** @type {Item[]} */
+  const items = [];
+  for (const cam of cams.slice(0, 50)) {
+    const c = cam.equipo_campos || {};
+    const org = cam.organizacion_id;
+    const nvr = c.camara_nvr_id ? equipos.find(e => e.id === c.camara_nvr_id) : null;
+    const { camPt, patch, sw } = switchDeCamara(puertos, equipos, cam);
+    /** @type {Parte} */
+    const pCam = { t: cam.equipo_nombre, href: ruta('equipos', cam) };
+    const lugar = cadenaUbicacion(ub, cam.ubicacion_id);
+    /** @type {Parte} */
+    const pNvr = nvr ? parteSi(ctx, 'red', org, nvr.equipo_nombre + ' (canal ' + c.camara_canal + ')', ruta('equipos', nvr)) : { t: 'sin NVR cargado' };
+    /** @type {Parte} */
+    const pSw = sw ? parteSi(ctx, 'red', org, sw.eq.equipo_nombre + ' › Puerto ' + sw.pt.puerto_numero, ruta('puertos', sw.pt)) : { t: 'sin conexión a un switch cargada' };
+    const poe = c.camara_poe === false ? 'No usa PoE (tiene fuente propia)' : sw ? 'Se alimenta por PoE desde ese puerto' : 'Se alimenta por PoE';
+    const pPatch = patch ? [parteSi(ctx, 'red', org, patch.eq.equipo_nombre + ' · boca ' + patch.pt.puerto_numero, ruta('puertos', patch.pt))] : [];
+    if (campo === 'ip') items.push({ partes: [pCam], detalle: cam.equipo_ip_gestion ? 'IP ' + cam.equipo_ip_gestion + (c.camara_enfoque ? ' · mira ' + c.camara_enfoque : '') : 'No tiene una IP cargada.', orgId: org });
+    else if (campo === 'switch') items.push({ partes: [pCam, ...pPatch, pSw], detalle: sw ? poe : camPt ? undefined : 'No tiene su puerto cargado.', orgId: org });
+    else if (campo === 'nvr') items.push({ partes: [pCam, pNvr], detalle: unir(c.camara_enfoque ? 'mira ' + c.camara_enfoque : '', c.camara_resolucion), orgId: org });
+    else {
+      // «Dónde está» (MJ57): Sede › Sala → NVR (canal) → Switch › Puerto.
+      /** @type {Parte[]} */
+      const partes = [pCam];
+      if (lugar) partes.push({ t: lugar, href: cam.ubicacion_id ? ruta('ubicaciones', { id: cam.ubicacion_id }) : undefined });
+      partes.push(pNvr, ...pPatch, pSw);
+      items.push({ partes, detalle: unir(c.camara_enfoque ? 'mira ' + c.camara_enfoque : '', cam.equipo_ip_gestion ? 'IP ' + cam.equipo_ip_gestion : ''), orgId: org });
+    }
+  }
+  const titulos = /** @type {Record<string, string>} */ ({ ip: 'IP de la cámara:', switch: 'Así se conecta:', nvr: 'Se graba así:', donde: 'Esto encontré:' });
+  const intro = !palabras.length ? 'Hay ' + cams.length + ' cámara(s):' : cams.length === 1 ? titulos[campo] || 'Esto encontré:' : 'Encontré ' + cams.length + ' cámaras:';
+  return { grupos: [grupo(intro, items, 12)], enlace: atajo(ctx, 'red', 'Ver la red') };
+}
+
+/** @param {Ctx} ctx @param {Interpretacion} q @returns {Promise<Respuesta>} */
+async function responderProveedor(ctx, q) {
+  if (!ctx.veo('configuraciones', ctx.org)) return sinPermiso('los proveedores');
+  const palabras = q.objeto.split(' ').filter(hay);
+  const campo = q.campo || '';
+  const todos = (await ctx.listar('proveedores')).filter(p => ctx.veo('configuraciones', p.organizacion_id));
+  /** Si no hay un proveedor cargado con ese nombre, puede ser el de un enlace a Internet (tiene su propio número de cliente y soporte). */
+  const comoInternet = async () => {
+    const r = await responderInternet(ctx, { intencion: 'internet', objeto: q.objeto, campo: campo === 'cliente' || campo === 'soporte' ? campo : '' });
+    return r.nota || !r.grupos.some(g => g.items && g.items.length) ? null : r;
+  };
+  if (!todos.length) return (await comoInternet()) || { grupos: [{ texto: 'No hay proveedores cargados en lo que podés ver.' }], enlace: atajo(ctx, 'proveedores', 'Ver los proveedores') };
+  const texto = (/** @type {any} */ p) => normalizar([p.proveedor_nombre, p.proveedor_rubro, p.proveedor_comercial_nombre].filter(Boolean).join(' '));
+  const lista = palabras.length ? todos.filter(p => palabras.every(w => texto(p).includes(w))) : todos;
+  if (!lista.length) return (await comoInternet()) || { grupos: [{ texto: 'No encontré un proveedor «' + palabras.join(' ') + '» en lo que podés ver.' }], enlace: atajo(ctx, 'proveedores', 'Ver los proveedores') };
+  lista.sort((a, b) => a.proveedor_nombre.localeCompare(b.proveedor_nombre, 'es', { numeric: true }));
+  const verCred = (/** @type {any} */ p) => ctx.veo('credenciales', p.organizacion_id);
+  const falta = (/** @type {string} */ rotulo, /** @type {any} */ v) => rotulo + ': ' + (v || 'no cargado');
+  const items = lista.map(p => {
+    /** @type {Parte[]} */
+    const partes = [{ t: p.proveedor_nombre, href: ruta('proveedores', p) }];
+    const soporte = unir(p.proveedor_soporte_telefono, p.proveedor_soporte_mail, p.proveedor_horario_soporte);
+    /** @type {string} */
+    let detalle;
+    if (campo === 'soporte') detalle = 'Soporte: ' + (soporte || 'no cargado');
+    else if (campo === 'cliente') detalle = falta('N.º de cliente', p.proveedor_numero_cliente);
+    else if (campo === 'contrato') detalle = falta('N.º de contrato', p.proveedor_numero_contrato);
+    else if (campo === 'comercial') detalle = 'Contacto comercial: ' + (unir(p.proveedor_comercial_nombre, p.proveedor_comercial_telefono, p.proveedor_comercial_mail) || 'no cargado');
+    else if (campo === 'portal') detalle = falta('Portal', p.proveedor_portal_url);
+    else detalle = unir(p.proveedor_rubro, soporte ? 'soporte ' + soporte : '', p.proveedor_numero_cliente ? 'cliente ' + p.proveedor_numero_cliente : '');
+    return { partes, detalle, orgId: p.organizacion_id };
+  });
+  // El acceso al portal es una credencial: se enlaza a su ficha (la contraseña nunca se muestra).
+  if (campo === 'portal') {
+    const creds = await ctx.listar('credenciales');
+    lista.forEach((p, i) => {
+      const c = p.credencial_id && verCred(p) ? creds.find(x => x.id === p.credencial_id) : null;
+      if (c) items[i].partes.push({ t: 'Credencial «' + c.credencial_nombre + '»', href: ruta('credenciales', c) });
+    });
+  }
+  return { grupos: [grupo(lista.length === 1 ? 'Esto encontré:' : 'Encontré ' + lista.length + ' proveedores:', items)], enlace: atajo(ctx, 'proveedores', 'Ver los proveedores') };
+}
+
 /** @type {Record<Intencion, (ctx: Ctx, q: Interpretacion) => Promise<Respuesta>>} */
 const RESPONDEDORES = {
   ayuda: responderAyuda, ip: responderIp, conexion: responderConexion, vence: responderVence, asignado_a: responderAsignadoA, equipos_de: responderEquiposDe,
   licencias: responderLicencias, sin_verificar: responderSinVerificar, contrasena: responderContrasena, ubicacion: responderUbicacion, rack_contenido: responderRackContenido,
   vlan_info: responderVlanInfo, vlan_de: responderVlanDe, wifi: responderWifi, internet: responderInternet, dato_equipo: responderDatoEquipo, listar_tipo: responderListarTipo,
   sin_asignar: responderSinAsignar, cuenta_de: responderCuentaDe, persona_info: responderPersonaInfo, licencias_de: responderLicenciasDe, mapeo: responderMapeo,
-  servicio: responderServicio, config_doc: responderConfigDoc, fibra: responderFibra, solicitudes: responderSolicitudes, navegar: responderNavegar
+  servicio: responderServicio, config_doc: responderConfigDoc, fibra: responderFibra, solicitudes: responderSolicitudes, navegar: responderNavegar, camara: responderCamara, proveedor: responderProveedor
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1842,7 +1996,7 @@ const ESQUEMA_IA = {
     puesto: { type: 'string' },
     dias: { type: 'integer' },
     filtro: { type: 'string', enum: ['excedidas', 'vencidas', 'ambas'] },
-    campo: { type: 'string', enum: ['', ...CAMPOS_EQUIPO.map(c => c.clave), 'gateway', 'dhcp', 'rango', 'red', 'clave', 'ip_publica', 'cliente', 'soporte', 'velocidad', 'quedan', 'instalado', 'MX', 'A', 'TXT', 'CNAME', 'NS', 'registros', 'medicion'] },
+    campo: { type: 'string', enum: ['', ...CAMPOS_EQUIPO.map(c => c.clave), 'gateway', 'dhcp', 'rango', 'red', 'clave', 'ip_publica', 'cliente', 'soporte', 'velocidad', 'quedan', 'instalado', 'MX', 'A', 'TXT', 'CNAME', 'NS', 'registros', 'medicion', 'ip', 'switch', 'nvr', 'donde', 'contrato', 'comercial', 'portal'] },
     tipo: { type: 'string', enum: ['', ...TIPOS_EQUIPO.map(t => t.clave), 'vpn', 'reglas', 'nat', 'wifi', 'dominio', 'dns', 'hosting', 'certificado', 'correo'] },
     letra: { type: 'string' },
     numero: { type: 'integer' },
@@ -1861,6 +2015,7 @@ const INSTRUCCIONES_IA = 'Sos un clasificador de preguntas de un sistema de docu
   'sin_asignar (equipos sin persona o en depósito; tipo opcional), cuenta_de (cuentas o usuario de dominio de una persona, o de quién es una cuenta; objeto), persona_info (sector o puesto de una persona, quién está en un puesto o quiénes son de un sector; objeto, puesto, campo = persona|sector|puesto), ' +
   'licencias_de (licencias de un equipo, persona o producto, dónde está instalado un producto o cuántas quedan; objeto; campo = quedan|instalado), mapeo (unidades de red de una persona o a dónde apunta una letra; objeto = persona, letra = «S:»), ' +
   'servicio (dominios, hosting, DNS, certificados, correo; objeto = dominio; tipo = dominio|dns|hosting|certificado|correo; campo = tipo de registro DNS como MX), config_doc (cómo está configurada una VPN, reglas de firewall, reenvío de puertos o documentación de algo; objeto; tipo = vpn|reglas|nat|wifi), ' +
+  'camara (IP, switch y puerto, NVR y canal o ubicación de una cámara; objeto = nombre o qué mira; campo = ip|switch|nvr|donde), proveedor (teléfono de soporte, número de cliente o de contrato, contacto comercial o portal de un proveedor; objeto = proveedor; campo = soporte|cliente|contrato|comercial|portal), ' +
   'fibra (tramos de fibra, pelos, mediciones; objeto), solicitudes (solicitudes pendientes), navegar (cómo o dónde se hace algo en el sistema; tema = pantalla), ayuda (qué se puede preguntar, saludos), ninguna (cualquier otra cosa). ' +
   'No inventes datos y no respondas la pregunta: solo clasificala.';
 

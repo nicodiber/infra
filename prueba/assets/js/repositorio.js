@@ -18,7 +18,7 @@ import {
   ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, ROTULO_ESTADO_EQUIPO, ROTULO_LICENCIA_TIPO, ROTULO_PERSONA_ESTADO,
   ROTULO_CUENTA_ESTADO, ROTULO_MAPEO_APLICA_A, ROTULO_MAPEO_METODO, ROTULO_RELOJ_METODO, CATEGORIA_RELOJ,
   moduloDeEntidad as moduloDeEntidadModelo, ROTULO_SERVICIO_TIPO, TIPOS_REGISTRO_DNS, ROTULO_FIBRA_TIPO, CONECTORES_FIBRA,
-  ROTULO_ARCHIVO_TIPO, LIMITE_ARCHIVO_BYTES, ROTULO_ENTIDAD, rutaDeEntidad, VERSION_MODELO, migrarDatos, esImpresora, ROTULO_UBICACION_TIPO
+  ROTULO_ARCHIVO_TIPO, LIMITE_ARCHIVO_BYTES, ROTULO_ENTIDAD, rutaDeEntidad, VERSION_MODELO, migrarDatos, esImpresora, ROTULO_UBICACION_TIPO, esNvr
 } from './modelos.js';
 import { normalizar, ahoraISO, descargarTexto, hoyISO } from './utiles.js';
 
@@ -36,7 +36,7 @@ import { normalizar, ahoraISO, descargarTexto, hoyISO } from './utiles.js';
 /** @typedef {import('./utiles.js').Umbrales} Umbrales */
 
 const NOMBRE_DB = 'infradoc';
-const VERSION_DB = 3; // 2: personas, cuentas de dominio, asignaciones, licencias, instalaciones, mapeos y notas. 3: servicios, tramos de fibra, archivos y relaciones (el upgrade solo agrega stores)
+const VERSION_DB = 4; // 4: proveedores (store nuevo). 2: personas, cuentas de dominio, asignaciones, licencias, instalaciones, mapeos y notas. 3: servicios, tramos de fibra, archivos y relaciones (el upgrade solo agrega stores)
 const STORE_META = 'meta';
 const URL_DATOS_EJEMPLO = new URL('../../datos-demo/infradoc-demo.json', import.meta.url).href;
 /** Archivo chico con la versión de los datos de ejemplo del sitio: se consulta al iniciar sin bajar todos los datos (D-073). */
@@ -174,7 +174,7 @@ const ABREVIATURA_CATEGORIA = {
   'impresora': 'IMP', 'hmi / terminal de planta': 'HMI', 'terminal de balanza': 'BAL', 'nvr de camaras': 'NVR', 'nas': 'NAS'
 };
 /** @type {Object<string, string>} */
-const ABREVIATURA_TIPO = { router: 'RTR', firewall: 'FW', switch: 'SW', access_point: 'AP', servidor: 'SRV', patchera: 'PAT', ups: 'UPS', otro: 'OTR' };
+const ABREVIATURA_TIPO = { router: 'RTR', firewall: 'FW', switch: 'SW', access_point: 'AP', servidor: 'SRV', patchera: 'PAT', ups: 'UPS', otro: 'OTR', camara: 'CAM' };
 
 /**
  * Abreviatura del tipo de equipo para su código (`PC`, `SW`, `VM`…).
@@ -687,7 +687,7 @@ function armarBaja(coleccion, id, usuarioId, motivo) {
 
 /** Nombre corto de un registro para los motivos del historial. @param {string} coleccion @param {any} r */
 function nombreDe(coleccion, r) {
-  const k = { equipos: 'equipo_nombre', personas: 'persona_nombre', licencias: 'licencia_producto', racks: 'rack_nombre', puestos: 'puesto_nombre', organizaciones: 'organizacion_nombre', ubicaciones: 'ubicacion_nombre' }[/** @type {'equipos'} */ (coleccion)];
+  const k = { equipos: 'equipo_nombre', personas: 'persona_nombre', licencias: 'licencia_producto', racks: 'rack_nombre', puestos: 'puesto_nombre', organizaciones: 'organizacion_nombre', ubicaciones: 'ubicacion_nombre', proveedores: 'proveedor_nombre' }[/** @type {'equipos'} */ (coleccion)];
   return k ? r[k] : '';
 }
 
@@ -713,6 +713,7 @@ function validarEscritura(coleccion, r) {
   if (coleccion === 'equipos') {
     if (!r.equipo_codigo) throw new Error('El equipo necesita un código.');
     if (esImpresora(r)) validarImpresora(r);
+    if (r.equipo_tipo === 'camara') validarCamara(r);
     const repetido = Array.from(cache.equipos.values()).find(x => x.id !== r.id && x.organizacion_id === r.organizacion_id && x.equipo_codigo === r.equipo_codigo);
     if (repetido) throw new Error('Ya hay un equipo con el código «' + r.equipo_codigo + '» en esta organización.');
   } else if (coleccion === 'asignaciones') {
@@ -730,6 +731,8 @@ function validarEscritura(coleccion, r) {
     if (r.mapeo_aplica_a === 'persona' && !r.persona_id) throw new Error('Falta indicar la persona a la que aplica el mapeo.');
   } else if (coleccion === 'servicios') {
     validarServicio(r);
+  } else if (coleccion === 'proveedores') {
+    validarProveedor(r);
   } else if (coleccion === 'vlans' || coleccion === 'redes_wifi' || coleccion === 'enlaces_isp') {
     validarUnicidadDeRed(coleccion, r);
   } else if (coleccion === 'tramos_fibra') {
@@ -918,6 +921,32 @@ function validarPuerto(r) {
   if (!l || l.eliminado_en) throw new Error('El enlace a Internet del puerto no existe.');
   if (!e || !['router', 'firewall'].includes(e.equipo_tipo)) throw new Error('Solo un puerto de router o firewall puede ir a un enlace a Internet.');
   if (e.organizacion_id !== l.organizacion_id) throw new Error('El enlace y el equipo tienen que ser de la misma organización.');
+}
+
+/**
+ * Una cámara (QC74): cuelga de un NVR de su organización, con un canal entero único por NVR y el dato de qué mira.
+ * @param {any} r
+ */
+function validarCamara(r) {
+  if (r.eliminado_en) return;
+  const c = r.equipo_campos || {};
+  if (!String(c.camara_enfoque || '').trim()) throw new Error('Falta indicar qué mira la cámara.');
+  const nvr = c.camara_nvr_id ? cache.equipos.get(c.camara_nvr_id) : null;
+  if (!nvr || nvr.eliminado_en) throw new Error('La cámara necesita un NVR que exista.');
+  if (nvr.organizacion_id !== r.organizacion_id) throw new Error('El NVR y la cámara tienen que ser de la misma organización.');
+  if (!esNvr(nvr)) throw new Error('El equipo elegido no es un NVR (categoría «NVR de cámaras»).');
+  if (!Number.isInteger(c.camara_canal) || c.camara_canal < 1) throw new Error('El canal de la cámara es un número entero desde 1.');
+  const otra = Array.from(cache.equipos.values()).find(x => x.id !== r.id && !x.eliminado_en && x.equipo_tipo === 'camara' && x.equipo_campos && x.equipo_campos.camara_nvr_id === c.camara_nvr_id && x.equipo_campos.camara_canal === c.camara_canal);
+  if (otra) throw new Error('El canal ' + c.camara_canal + ' de ese NVR ya lo usa «' + otra.equipo_nombre + '».');
+}
+
+/** @param {any} r */
+function validarProveedor(r) {
+  if (!String(r.proveedor_nombre || '').trim()) throw new Error('El proveedor necesita un nombre.');
+  if (r.credencial_id) {
+    const c = cache.credenciales.get(r.credencial_id);
+    if (!c || c.organizacion_id !== r.organizacion_id) throw new Error('La credencial del portal tiene que ser de la misma organización.');
+  }
 }
 
 /** @param {any} r */
@@ -1410,6 +1439,7 @@ function describir(entidad, r) {
     case 'Licencia': return { titulo: r.licencia_producto, subtitulo: unir(ROTULO_LICENCIA_TIPO[r.licencia_tipo] || r.licencia_tipo, r.licencia_vence_en ? 'vence ' + f(r.licencia_vence_en) : '') };
     case 'MapeoDisco': return { titulo: r.mapeo_letra + ' ' + r.mapeo_ruta, subtitulo: ROTULO_MAPEO_METODO[r.mapeo_metodo] || '' };
     case 'Servicio': return { titulo: r.servicio_nombre, subtitulo: unir(ROTULO_SERVICIO_TIPO[r.servicio_tipo], r.servicio_proveedor, r.servicio_vence_en ? 'vence ' + f(r.servicio_vence_en) : '') };
+    case 'Proveedor': return { titulo: r.proveedor_nombre, subtitulo: unir(r.proveedor_rubro, r.proveedor_soporte_telefono ? 'Soporte ' + r.proveedor_soporte_telefono : '') };
     case 'TramoFibra': return { titulo: r.tramo_nombre, subtitulo: unir(nombreUb(r.tramo_origen_ubicacion_id) + ' → ' + nombreUb(r.tramo_destino_ubicacion_id), r.tramo_pelos + ' pelos') };
     case 'Nota': return { titulo: r.nota_titulo, subtitulo: 'Nota' };
     case 'Archivo': return { titulo: r.archivo_nombre, subtitulo: ROTULO_ARCHIVO_TIPO[r.archivo_tipo] || '' };
@@ -2178,13 +2208,16 @@ function construirIndice() {
       if (e.equipo_tipo === 'switch') detalle += ' ' + c.switch_puertos_total + '+' + c.switch_puertos_sfp;
       if (e.equipo_tipo === 'patchera') detalle += ' ' + c.patchera_cantidad_bocas + ' bocas';
       if (e.equipo_tipo === 'otro' && c.otro_categoria) detalle = c.otro_categoria;
+      const nvrCam = e.equipo_tipo === 'camara' ? nombreEq(c.camara_nvr_id) : '';
+      const canalCam = e.equipo_tipo === 'camara' && c.camara_canal != null ? 'Canal ' + c.camara_canal : '';
       const reloj = e.equipo_tipo === 'otro' && c.otro_categoria === CATEGORIA_RELOJ;
       const quien = asignadoA.get(e.id);
       agregar('equipos', e, 'Equipos', 'equipo', 'red', e.equipo_nombre, unir(e.equipo_codigo, detalle, unir(e.equipo_marca, e.equipo_modelo)),
         [['Código', e.equipo_codigo], ['Tipo', detalle], ['Modelo', unir(e.equipo_marca, e.equipo_modelo)], ['IP de gestión', e.equipo_ip_gestion], ['MAC', e.equipo_mac], ['N.º de serie', e.equipo_numero_serie],
           [e.rack_id ? 'Rack y posición (U)' : 'Sede / sala', ubicacion], ['Puesto', puesto], ['Asignado a', quien], ['Estado', ROTULO_ESTADO_EQUIPO[e.equipo_estado]]]
+          .concat(e.equipo_tipo === 'camara' ? [['Qué mira', c.camara_enfoque], ['NVR', nvrCam], ['Canal', c.camara_canal != null ? String(c.camara_canal) : '']] : [])
           .concat(reloj ? [['Método de fichada', ROTULO_RELOJ_METODO[c.reloj_metodo] || c.reloj_metodo], ['Software', c.reloj_software], ['PC de descarga', nombreEq(c.reloj_pc_descarga_id)]] : []),
-        [e.equipo_codigo, e.equipo_marca, e.equipo_modelo, e.equipo_notas, nombreUb(e.ubicacion_id), ROTULO_EQUIPO_TIPO[e.equipo_tipo], puesto].concat(strings));
+        [e.equipo_codigo, e.equipo_marca, e.equipo_modelo, e.equipo_notas, nombreUb(e.ubicacion_id), ROTULO_EQUIPO_TIPO[e.equipo_tipo], puesto, nvrCam, canalCam].concat(strings));
     }
     // El código corto cuenta como parte del título: buscar `AGR-PC-014` pone primero al equipo (MJ37).
     if (indice.length > n0) indice[indice.length - 1]._tituloN += ' ' + normalizar(e.equipo_codigo);
@@ -2317,7 +2350,7 @@ function construirIndice() {
     if (n.eliminado_en) continue;
     const col = n.entidad ? COLECCION_DE_ENTIDAD[n.entidad] : null;
     const reg = col && cache[col] ? cache[col].get(n.entidad_id) : null;
-    const nombreFicha = reg ? (reg.equipo_nombre || reg.persona_nombre || reg.rack_nombre || reg.ubicacion_nombre || reg.puesto_nombre || reg.licencia_producto || reg.configuracion_titulo || reg.servicio_nombre || reg.tramo_nombre || reg.organizacion_nombre || (reg.cuenta_usuario ? reg.cuenta_dominio + '\\' + reg.cuenta_usuario : '') || '') : '';
+    const nombreFicha = reg ? (reg.equipo_nombre || reg.persona_nombre || reg.rack_nombre || reg.ubicacion_nombre || reg.puesto_nombre || reg.licencia_producto || reg.configuracion_titulo || reg.servicio_nombre || reg.proveedor_nombre || reg.tramo_nombre || reg.organizacion_nombre || (reg.cuenta_usuario ? reg.cuenta_dominio + '\\' + reg.cuenta_usuario : '') || '') : '';
     const resumen = n.nota_contenido.length > 200 ? n.nota_contenido.slice(0, 200).replace(/\s+\S*$/, '') + '…' : n.nota_contenido;
     agregar('notas', n, 'Notas', 'nota', moduloNota(n), n.nota_titulo, n.entidad ? 'Nota de «' + nombreFicha + '»' : 'Nota de la organización',
       [['Ficha', n.entidad ? nombreFicha : 'La organización'], ['Contenido', resumen]], [n.nota_contenido]);
@@ -2339,6 +2372,15 @@ function construirIndice() {
         [['Tipo de registro', g.tipo], ['Nombre', g.nombre], ['Valor', g.valor], ['Prioridad', g.prioridad != null ? String(g.prioridad) : ''], ['Servicio', sv.servicio_nombre], ['Proveedor', sv.servicio_proveedor]], [],
         { clave: 'servicios:' + sv.id + ':' + g.tipo + ':' + g.nombre + ':' + g.valor, ruta });
     }
+  }
+  for (const pv of cache.proveedores.values()) {
+    if (pv.eliminado_en) continue;
+    const cred = pv.credencial_id && cache.credenciales.get(pv.credencial_id) ? cache.credenciales.get(pv.credencial_id).credencial_nombre : '';
+    agregar('proveedores', pv, 'Proveedores', 'configuracion', 'configuraciones', pv.proveedor_nombre, unir(pv.proveedor_rubro, pv.proveedor_soporte_telefono ? 'Soporte ' + pv.proveedor_soporte_telefono : ''),
+      [['Rubro', pv.proveedor_rubro], ['Teléfono de soporte', pv.proveedor_soporte_telefono], ['Mail de soporte', pv.proveedor_soporte_mail], ['Horario de soporte', pv.proveedor_horario_soporte],
+        ['N.º de cliente', pv.proveedor_numero_cliente], ['N.º de contrato', pv.proveedor_numero_contrato], ['Contacto comercial', unir(pv.proveedor_comercial_nombre, pv.proveedor_comercial_telefono)],
+        ['Portal', pv.proveedor_portal_url], ['Acceso al portal', cred ? 'Credencial «' + cred + '»' : '']],
+      [pv.proveedor_comercial_mail, pv.proveedor_notas], { ruta: '#/proveedor/' + pv.id });
   }
   for (const t of cache.tramos_fibra.values()) {
     if (t.eliminado_en) continue;

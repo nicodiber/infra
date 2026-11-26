@@ -59,7 +59,7 @@ async function tabEquipos(ctx, racks, ubic) {
     tb.textContent = ''; chipsCont.textContent = '';
     const q = normalizar(filtroTexto);
     const base = todos.filter(e => (!filtroTipo || e.equipo_tipo === filtroTipo)
-      && (!q || normalizar([e.equipo_nombre, ROTULO_EQUIPO_TIPO[e.equipo_tipo], e.equipo_marca, e.equipo_modelo, e.equipo_ip_gestion, textoUbicacion(e, racks, ubic)].join(' ')).includes(q)));
+      && (!q || normalizar([e.equipo_nombre, ROTULO_EQUIPO_TIPO[e.equipo_tipo], e.equipo_marca, e.equipo_modelo, e.equipo_ip_gestion, textoUbicacion(e, racks, ubic), e.equipo_campos && e.equipo_campos.camara_enfoque].join(' ')).includes(q)));
     chipsCont.appendChild(chipsEstado(ESTADOS, c => base.filter(e => e.equipo_estado === c).length, base.length, filtroEstado, v => { filtroEstado = v; pintar(); }));
     const f = base.filter(e => !filtroEstado || e.equipo_estado === filtroEstado);
     if (f.length) {

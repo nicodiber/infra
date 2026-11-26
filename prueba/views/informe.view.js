@@ -103,9 +103,9 @@ export async function renderVista(contenedor) {
   }
 
   // ---- datos (una sola lectura)
-  const [ubicaciones, equipos, puestos, racks, vlans, wifis, enlaces, configs, mapeos, personas, asignaciones, licencias, instalaciones, credenciales, notasTodas, servicios, tramos] = await Promise.all([
+  const [ubicaciones, equipos, puestos, racks, vlans, wifis, enlaces, configs, mapeos, personas, asignaciones, licencias, instalaciones, credenciales, notasTodas, servicios, tramos, proveedores] = await Promise.all([
     'ubicaciones', 'equipos', 'puestos', 'racks', 'vlans', 'redes_wifi', 'enlaces_isp', 'configuraciones', 'mapeos_disco', 'personas', 'asignaciones', 'licencias', 'instalaciones_licencia', 'credenciales', 'notas'
-  ].map(c => leer(c, { organizacion_id: org }).then(r => r || [])).concat(['servicios', 'tramos_fibra'].map(c => leer(c, { organizacion_id: org }))));
+  ].map(c => leer(c, { organizacion_id: org }).then(r => r || [])).concat(['servicios', 'tramos_fibra', 'proveedores'].map(c => leer(c, { organizacion_id: org }))));
   const nomUb = new Map(ubicaciones.map((x /** @type {any} */) => [x.id, x.ubicacion_nombre]));
   const nomRack = new Map(racks.map((x /** @type {any} */) => [x.id, x.rack_nombre]));
   const mapaEq = new Map(equipos.map((x /** @type {any} */) => [x.id, x]));
@@ -171,6 +171,7 @@ export async function renderVista(contenedor) {
       filas: ordenar(licencias, 'licencia_producto').map(l => [l.licencia_producto, ROTULO_LICENCIA_TIPO[l.licencia_tipo] || texto(l.licencia_tipo), texto(l.licencia_cantidad), usoLic.get(l.id) || 0, fmtFecha(l.licencia_vence_en), texto(l.licencia_proveedor)]), verificados: licencias.map(l => l.verificado_en) }] }) }
   ];
   if (servicios) secciones.push({ id: 'servicios', titulo: 'Dominios y servicios', modulo: 'configuraciones', cargar: () => ({ tablas: [tablaGenerica(servicios, 'servicio')] }) });
+  if (proveedores) secciones.push({ id: 'proveedores', titulo: 'Proveedores', modulo: 'configuraciones', cargar: () => ({ tablas: [tablaGenerica(proveedores, 'proveedor')] }) });
   if (tramos) secciones.push({ id: 'fibra', titulo: 'Fibra óptica', modulo: 'red', cargar: () => ({ tablas: [tablaGenerica(tramos, 'tramo')] }) });
   secciones.push({ id: 'notas', titulo: 'Notas', modulo: 'organizacion', ayuda: 'Las notas se imprimen tal cual: revisalas antes de entregar.', cargar: () => {
     const l = notasTodas.filter(n => n.__ok).sort((a, b) => String(b.actualizado_en).localeCompare(String(a.actualizado_en)));

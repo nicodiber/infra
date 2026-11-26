@@ -17,17 +17,40 @@
 
 import * as repositorio from '../repositorio.js';
 import { h, normalizar } from '../utiles.js';
-import { ROTULO_EQUIPO_TIPO, ROTULO_ESTADO_EQUIPO } from '../modelos.js';
+import { ROTULO_EQUIPO_TIPO, ROTULO_ESTADO_EQUIPO, CATEGORIA_NVR, esNvr } from '../modelos.js';
 import { CAMPOS_POR_TIPO, camposIniciales, camposDeCategoria, formulario } from '../red.js';
 import { ipValida, macValida, validarLugarEnRack, primeraUnidadLibre, ROTULO_VIRTUALIZACION } from '../racks.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear, opcionesDe } from '../altas.js';
 
 /** @typedef {import('../red.js').Campo} Campo */
 
-const TIPOS = ['router', 'firewall', 'switch', 'access_point', 'servidor', 'patchera', 'ups', 'otro'];
+const TIPOS = ['router', 'firewall', 'switch', 'access_point', 'servidor', 'patchera', 'ups', 'camara', 'otro'];
 const CATEGORIAS_SUGERIDAS = ['PC de escritorio', 'Notebook', 'Impresora de red', 'Impresora', 'Reloj de control de personal', 'HMI / terminal de planta', 'Terminal de balanza', 'NVR de cámaras', 'NAS'];
 /** Claves de `equipo_campos` que son una IP del propio equipo: no se copian al duplicar. */
 const CLAVES_IP = ['router_ip_lan', 'firewall_ip_lan', 'servidor_ip_ilo_idrac'];
+
+/**
+ * Selector del NVR de una cámara (QC74): solo equipos «otro» de categoría NVR, con «+ Crear nuevo» que abre el alta de un NVR.
+ * @param {import('../red.js').Campo} c @param {any} valor @param {string} org @param {string} rotuloOrigen
+ * @param {(id: string, registro: any) => void} [alCambiar]
+ */
+export function selectorDeNvr(c, valor, org, rotuloOrigen, alCambiar) {
+  return selectorConCrear({ desde: 'equipos', campo: 'equipo_campos.' + c.k, organizacion_id: org, valor: valor || null, etiqueta: c.r, rotuloOrigen,
+    cargarOpciones: () => opcionesDe('equipos', org, { filtro: esNvr }),
+    valoresAlta: { equipo_tipo: 'otro', tipos: ['otro'], otro_categoria: CATEGORIA_NVR, categorias: [CATEGORIA_NVR], titulo: 'Nuevo NVR' }, alCambiar });
+}
+
+/**
+ * Primer canal libre (desde 1) de un NVR, mirando las cámaras vigentes.
+ * @param {string} nvrId @param {string} org @param {string|null} [exceptoId] Cámara que se está editando.
+ */
+export async function proximoCanalLibre(nvrId, org, exceptoId) {
+  const usados = new Set((await repositorio.listar('equipos', { organizacion_id: org }))
+    .filter(x => x.equipo_tipo === 'camara' && x.id !== exceptoId && x.equipo_campos && x.equipo_campos.camara_nvr_id === nvrId).map(x => x.equipo_campos.camara_canal));
+  let n = 1;
+  while (usados.has(n)) n++;
+  return n;
+}
 
 /** Campos del servidor (modelo 4.5); `host_id` va aparte. @type {Array<Campo & {soloFisico?: boolean}>} */
 const CAMPOS_SERVIDOR_ALTA = [
@@ -46,6 +69,7 @@ export function valoresParaDuplicar(e) {
   const c = { ...(e.equipo_campos || {}) };
   for (const k of CLAVES_IP) delete c[k];
   delete c.switch_stack_miembro;
+  delete c.camara_canal; // el canal es único por NVR: el de la copia lo propone el formulario
   return { equipo_tipo: e.equipo_tipo, tipos: [e.equipo_tipo], otro_categoria: c.otro_categoria, equipo_nombre: e.equipo_nombre + ' (copia)', equipo_marca: e.equipo_marca, equipo_modelo: e.equipo_modelo,
     equipo_estado: e.equipo_estado, equipo_notas: e.equipo_notas, ubicacion_id: e.ubicacion_id, rack_id: e.rack_id, rack_u_alto: e.rack_u_alto, puesto_id: e.puesto_id, equipo_campos: c, host_id: c.host_id || null,
     es_vm: !!c.host_id };
@@ -60,7 +84,7 @@ registrarAlta('equipos', async ctx => {
   const ID = { tipo: idUnico('eq-tipo'), que: idUnico('eq-que'), cat: idUnico('eq-cat'), host: idUnico('eq-host'), nom: idUnico('eq-nom'), cod: idUnico('eq-cod'), marca: idUnico('eq-marca'), mod: idUnico('eq-mod'),
     ser: idUnico('eq-ser'), mac: idUnico('eq-mac'), ip: idUnico('eq-ip'), est: idUnico('eq-est'), rack: idUnico('eq-rack'), ini: idUnico('eq-ini'), alto: idUnico('eq-alto'), ub: idUnico('eq-ub'), pu: idUnico('eq-pu'), notas: idUnico('eq-notas') };
   let tipo = tiposOk.includes(v.equipo_tipo) ? v.equipo_tipo : tiposOk[0];
-  const titulo = v.titulo || (tipoFijo && tipo !== 'otro' ? (tipo === 'patchera' ? 'Nueva patchera' : 'Nuevo ' + ROTULO_EQUIPO_TIPO[tipo].toLowerCase()) : 'Nuevo equipo');
+  const titulo = v.titulo || (tipoFijo && tipo !== 'otro' ? (tipo === 'patchera' ? 'Nueva patchera' : tipo === 'camara' ? 'Nueva cámara' : 'Nuevo ' + ROTULO_EQUIPO_TIPO[tipo].toLowerCase()) : 'Nuevo equipo');
   const dos = (/** @type {Node[]} */ ...c) => h('div', { class: 'rk-dos' }, c);
   const inp = (/** @type {string} */ id, /** @type {any} */ val, /** @type {Object<string,string>} */ ex) => { const i = /** @type {HTMLInputElement} */ (h('input', { id, type: 'text', ...(ex || {}) })); i.value = val == null ? '' : String(val); return i; };
 
@@ -112,7 +136,14 @@ registrarAlta('equipos', async ctx => {
     const inicial = { ...camposIniciales(tipo), ...(tipo === 'servidor' ? { servidor_virtualizacion: 'ninguna' } : {}), ...valoresCampos };
     const campos = (tipo === 'servidor' ? CAMPOS_SERVIDOR_ALTA.filter(c => !(esVM() && c.soloFisico)) : (CAMPOS_POR_TIPO[tipo] || []).filter(c => c.k !== 'otro_categoria'));
     if (campos.length) {
-      fTipo = formulario(campos, inicial);
+      /** Propone el primer canal libre del NVR elegido (solo si el canal está vacío). @param {string} nvrId */
+      const sugerirCanal = async nvrId => {
+        const canal = fTipo && fTipo.ctl.camara_canal;
+        if (!nvrId || !canal || canal.value.trim()) return;
+        canal.value = String(await proximoCanalLibre(nvrId, org, null));
+      };
+      fTipo = formulario(campos, inicial, tipo === 'camara' ? { selectorEquipo: (c, val) => selectorDeNvr(c, val, org, titulo, id => { sugerirCanal(id); }) } : undefined);
+      if (tipo === 'camara' && inicial.camara_nvr_id) sugerirCanal(inicial.camara_nvr_id);
       zonaTipo.appendChild(h('h3', { text: 'Datos propios de ' + (tipo === 'otro' ? 'este equipo' : ROTULO_EQUIPO_TIPO[tipo].toLowerCase()), style: 'margin:10px 0 6px' })); zonaTipo.appendChild(fTipo.nodo);
     }
     if (tipo === 'otro') {
@@ -217,7 +248,13 @@ registrarAlta('equipos', async ctx => {
         equipo_numero_serie: serie.value.trim() || null, equipo_mac: mac.value.trim() || null, equipo_ip_gestion: ip.value.trim() || null, ubicacion_id: ubicacion, rack_id: rk,
         rack_u_inicio: ini, rack_u_alto: alto, puesto_id: pu, equipo_estado: estado.value, equipo_notas: notas.value.trim() || null, equipo_campos: campos };
       if (codigo.value.trim()) reg.equipo_codigo = codigo.value.trim();
-      return repositorio.guardar('equipos', reg, ctx.usuario.id);
+      const creado = await repositorio.guardar('equipos', reg, ctx.usuario.id);
+      // Una cámara tiene una boca RJ45: se crea con el equipo para poder conectarla a un puerto de switch (QC74).
+      if (tipo === 'camara') {
+        await repositorio.guardar('puertos', { equipo_id: creado.id, puerto_numero: 1, puerto_nombre: null, puerto_tipo: 'rj45', puerto_velocidad: null, puerto_modo: null, vlan_nativa_id: null, vlans_etiquetadas: [],
+          conectado_a_equipo_id: null, conectado_a_puerto_id: null, conectado_a_descripcion: null, enlace_isp_id: null, puesto_id: null, puerto_estado: 'libre', puerto_notas: null }, ctx.usuario.id);
+      }
+      return creado;
     }
   });
 });

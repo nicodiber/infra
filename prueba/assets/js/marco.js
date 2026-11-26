@@ -49,6 +49,7 @@ const MENU = [
   ['Configuraciones', '#/configuraciones', 'configuraciones', { modulo: 'configuraciones' }, 'configuracion', 'configuracion', 'ORG'],
   ['Credenciales', '#/credenciales', 'credenciales', { modulo: 'credenciales' }, 'credencial', 'credencial', 'ORG'],
   ['Dominios y servicios', '#/servicios', 'servicios', { modulo: 'configuraciones' }, 'red', null, 'ORG'],
+  ['Proveedores', '#/proveedores', 'proveedores', { modulo: 'configuraciones' }, 'configuracion', null, 'ORG'],
   ['Equipos de escritorio', '#/escritorio', 'escritorio', { modulo: 'red' }, 'escritorio', null, 'ORG'],
   ['Personas', '#/personas', 'personas', { modulo: 'personas' }, 'persona', null, 'ORG'],
   ['Licencias', '#/licencias', 'licencias', { modulo: 'licencias' }, 'licencia', null, 'ORG'],

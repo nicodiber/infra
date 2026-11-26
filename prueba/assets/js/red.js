@@ -20,7 +20,7 @@ import { ROTULO_EQUIPO_TIPO, ROTULO_ESTADO_EQUIPO, CATEGORIA_RELOJ, CATEGORIA_IM
 /** @typedef {import('./modelos.js').Puerto} Puerto */
 
 /** Tipos de equipo que aparecen en el módulo Red (los servidores tienen su propio módulo). */
-export const TIPOS_RED = ['firewall', 'router', 'switch', 'patchera', 'access_point', 'ups', 'otro'];
+export const TIPOS_RED = ['firewall', 'router', 'switch', 'patchera', 'access_point', 'ups', 'camara', 'otro'];
 /** Categorías de «otro» que son puestos de trabajo y no equipos de red (se ven en la ficha del puesto). */
 export const CATEGORIAS_PUESTO = ['PC de escritorio', 'Notebook'];
 
@@ -183,6 +183,9 @@ export const CAMPOS_POR_TIPO = {
     C('ups_topologia', 'Topología', 'enum', { op: [['offline', 'Offline'], ['linea_interactiva', 'Línea interactiva'], ['online', 'Online']] }),
     C('ups_autonomia_min', 'Autonomía (min)', 'entero'), C('ups_baterias_modelo', 'Modelo de batería', 'texto'), C('ups_baterias_cantidad', 'Cantidad de baterías', 'entero'),
     C('ups_baterias_cambio_en', 'Último cambio de baterías', 'fecha'), C('ups_tarjeta_red', 'Tarjeta de red', 'bool')],
+  camara: [
+    C('camara_nvr_id', 'NVR que la graba', 'equipo', { req: true }), C('camara_canal', 'Canal en el NVR', 'entero', { req: true }),
+    C('camara_enfoque', 'Qué mira', 'texto', { req: true }), C('camara_resolucion', 'Resolución', 'texto'), C('camara_poe', 'Se alimenta por PoE', 'bool', { req: true })],
   otro: [
     C('otro_categoria', 'Categoría', 'texto', { req: true }), C('otro_descripcion', 'Descripción', 'texto'), C('otro_proveedor_soporte', 'Soporte', 'texto'),
     C('otro_garantia_vence_en', 'Garantía vence', 'fecha')]
@@ -424,6 +427,7 @@ export function camposIniciales(tipo) {
   if (tipo === 'switch') Object.assign(o, { switch_puertos_total: 24, switch_puertos_sfp: 0, switch_administrable: true });
   if (tipo === 'patchera') Object.assign(o, { patchera_cantidad_bocas: 24, patchera_categoria: 'cat6', patchera_conector: 'rj45' });
   if (tipo === 'otro') o.otro_categoria = 'Sin clasificar';
+  if (tipo === 'camara') Object.assign(o, { camara_poe: true, camara_canal: null });
   return o;
 }
 

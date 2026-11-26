@@ -51,7 +51,8 @@ export const DEPENDENCIAS = Object.freeze({
   racks: { organizacion_id: 'organizaciones', ubicacion_id: 'ubicaciones' },
   equipos: {
     organizacion_id: 'organizaciones', ubicacion_id: 'ubicaciones', rack_id: 'racks', puesto_id: 'puestos',
-    'equipo_campos.host_id': 'equipos', 'equipo_campos.impresora_pc_id': 'equipos', 'equipo_campos.reloj_pc_descarga_id': 'equipos'
+    'equipo_campos.host_id': 'equipos', 'equipo_campos.impresora_pc_id': 'equipos', 'equipo_campos.reloj_pc_descarga_id': 'equipos',
+    'equipo_campos.camara_nvr_id': 'equipos'
   },
   puertos: {
     equipo_id: 'equipos', vlan_nativa_id: 'vlans', vlans_etiquetadas: 'vlans', conectado_a_equipo_id: 'equipos',
@@ -71,6 +72,7 @@ export const DEPENDENCIAS = Object.freeze({
   mapeos_disco: { organizacion_id: 'organizaciones', equipo_id: 'equipos', persona_id: 'personas' },
   notas: { organizacion_id: 'organizaciones', entidad_id: CUALQUIERA },
   servicios: { organizacion_id: 'organizaciones', credencial_id: 'credenciales' },
+  proveedores: { organizacion_id: 'organizaciones', credencial_id: 'credenciales' },
   tramos_fibra: {
     organizacion_id: 'organizaciones', tramo_origen_ubicacion_id: 'ubicaciones', tramo_destino_ubicacion_id: 'ubicaciones',
     tramo_origen_equipo_id: 'equipos', tramo_destino_equipo_id: 'equipos'
@@ -161,6 +163,7 @@ const MODULOS_DE_ALTA = {
   instalaciones_licencia: () => import('./altas/instalaciones_licencia.js'),
   mapeos_disco: () => import('./altas/mapeos_disco.js'),
   servicios: () => import('./altas/servicios.js'),
+  proveedores: () => import('./altas/proveedores.js'),
   notas: () => import('./altas/notas.js'),
   organizaciones: () => import('./altas/organizaciones.js')
 };
@@ -278,7 +281,7 @@ const VALOR_CREAR = '__crear__';
 const NUEVO_DE = {
   ubicaciones: 'nueva sede o sala', racks: 'nuevo rack', puestos: 'nuevo puesto', equipos: 'nuevo equipo', vlans: 'nueva VLAN',
   enlaces_isp: 'nuevo enlace a Internet', redes_wifi: 'nueva red Wi-Fi', configuraciones: 'nueva configuración', credenciales: 'nueva credencial',
-  personas: 'nueva persona', cuentas_dominio: 'nueva cuenta de dominio', licencias: 'nueva licencia', servicios: 'nuevo servicio', tramos_fibra: 'nuevo tramo de fibra',
+  personas: 'nueva persona', cuentas_dominio: 'nueva cuenta de dominio', licencias: 'nueva licencia', servicios: 'nuevo servicio', proveedores: 'nuevo proveedor', tramos_fibra: 'nuevo tramo de fibra',
   asignaciones: 'nueva asignación', instalaciones_licencia: 'nueva instalación de licencia', mapeos_disco: 'nuevo mapeo de disco', notas: 'nueva nota', organizaciones: 'nueva organización'
 };
 
@@ -299,7 +302,7 @@ const ROTULO_REGISTRO = {
   racks: r => r.rack_nombre, puestos: r => r.puesto_nombre, equipos: r => r.equipo_nombre, vlans: r => r.vlan_numero + ' · ' + r.vlan_nombre,
   enlaces_isp: r => r.enlace_proveedor, redes_wifi: r => r.wifi_ssid, configuraciones: r => r.configuracion_titulo, credenciales: r => r.credencial_nombre,
   personas: r => r.persona_nombre, cuentas_dominio: r => r.cuenta_dominio + '\\' + r.cuenta_usuario, licencias: r => r.licencia_producto,
-  servicios: r => r.servicio_nombre, tramos_fibra: r => r.tramo_nombre, mapeos_disco: r => r.mapeo_letra + ' ' + r.mapeo_ruta
+  servicios: r => r.servicio_nombre, proveedores: r => r.proveedor_nombre, tramos_fibra: r => r.tramo_nombre, mapeos_disco: r => r.mapeo_letra + ' ' + r.mapeo_ruta
 };
 
 /**

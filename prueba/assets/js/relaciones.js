@@ -18,7 +18,7 @@ import { abrirAlta as abrirAltaDe, tieneAlta, rotuloDeRegistro, textoCrear } fro
 function rotuloCrear(c) { const t = textoCrear(c).replace(/^\+ Crear /, '').replace(/…$/, ''); return t.charAt(0).toUpperCase() + t.slice(1); }
 
 /** Colecciones que se pueden crear desde «Relacionar con…» (las que tienen ficha y alta). */
-const CREABLES = ['equipos', 'racks', 'ubicaciones', 'puestos', 'vlans', 'redes_wifi', 'enlaces_isp', 'tramos_fibra', 'credenciales', 'configuraciones', 'personas', 'cuentas_dominio', 'licencias', 'mapeos_disco', 'servicios'];
+const CREABLES = ['equipos', 'racks', 'ubicaciones', 'puestos', 'vlans', 'redes_wifi', 'enlaces_isp', 'tramos_fibra', 'credenciales', 'configuraciones', 'personas', 'cuentas_dominio', 'licencias', 'mapeos_disco', 'servicios', 'proveedores'];
 
 /**
  * @param {HTMLElement} contenedor

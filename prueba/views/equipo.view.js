@@ -8,10 +8,10 @@
 import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
-import { duplicar, selectorConCrear } from '../assets/js/altas.js';
-import { valoresParaDuplicar } from '../assets/js/altas/equipos.js';
+import { duplicar, selectorConCrear, abrirAlta } from '../assets/js/altas.js';
+import { valoresParaDuplicar, selectorDeNvr } from '../assets/js/altas/equipos.js';
 import { h, icono, tabla, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion, estadoVerificacion, normalizar } from '../assets/js/utiles.js';
-import { ROTULO_EQUIPO_TIPO, ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, esImpresora } from '../assets/js/modelos.js';
+import { ROTULO_EQUIPO_TIPO, ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, esImpresora, esNvr } from '../assets/js/modelos.js';
 import {
   CAMPOS_COMUNES, CAMPOS_POR_TIPO, camposDe, camposDeCategoria, CATEGORIAS_PUESTO, ROTULO_ENLACE_TIPO, ROTULO_ESTADO_PUERTO, ROTULO_SEGURIDAD, cargarContexto, leerRuta, encabezado, pestanas, campo, enlace, avisoVista,
   formulario, textoValor, fichaCab, miniRack, cadenaDePuerto, textoUltimoCambio, pedirBaja, seguro, estadoPill, valorHistorial, nodoCadena, hashEquipo, abrirConectarPuerto, abrirDesconectarPuerto
@@ -22,7 +22,7 @@ import { cargarVinculos, contarVinculos, pintarVinculos } from '../assets/js/vin
 /** @typedef {import('../assets/js/modelos.js').Puerto} Puerto */
 /** @typedef {import('../assets/js/modelos.js').Equipo} Equipo */
 
-const TIPOS_CON_PUERTOS = ['switch', 'patchera', 'router', 'firewall', 'access_point'];
+const TIPOS_CON_PUERTOS = ['switch', 'patchera', 'router', 'firewall', 'access_point', 'camara'];
 const CLASES_VLAN = ['v10', 'v20', 'v30', 'v40'];
 
 // Estado de la pantalla de puertos que se recuerda entre vistas.
@@ -77,13 +77,16 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
     .sort((a, b) => a.equipo_nombre.localeCompare(b.equipo_nombre, 'es', { numeric: true })).map(x => [x.id, x.equipo_nombre + (x.equipo_ip_gestion ? ' · ' + x.equipo_ip_gestion : '')]);
   const mapaRacks = new Map(racks.map(r => [r.id, r])), mapaUbic = new Map(ubicaciones.map(x => [x.id, x]));
   const tabs = /** @type {Array<[string, string, string?]>} */ ([['vinculos', 'Vínculos (' + contarVinculos(vinc) + ')']]);
+  const camarasDelNvr = esNvr(e) ? equiposOrg.filter(x => x.equipo_tipo === 'camara' && (x.equipo_campos || {}).camara_nvr_id === e.id)
+    .sort((a, b) => ((a.equipo_campos || {}).camara_canal || 0) - ((b.equipo_campos || {}).camara_canal || 0)) : null;
+  if (camarasDelNvr) tabs.push(['camaras', 'Cámaras (' + camarasDelNvr.length + ')']);
   if (conPuertos) tabs.push(['puertos', 'Puertos']);
   tabs.push(['credenciales', 'Credenciales (' + creds.length + ')'], ['configuraciones', 'Configuraciones (' + confs.length + ')']);
   tabs.push(['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']);
   if (ctx.historial) tabs.push(['historial', 'Historial']);
   const tab = tabs.some(t => t[0] === partes[1]) ? partes[1] : tabs[0][0];
   const hashBase = '#/equipo/' + e.id;
-  const compacta = (tab === 'puertos' || tab === 'vinculos') && !estado.editando;
+  const compacta = (tab === 'puertos' || tab === 'vinculos' || tab === 'camaras') && !estado.editando;
 
   // ---- datos del resumen
   const camposTipo = CAMPOS_POR_TIPO[tipo] || [];
@@ -99,7 +102,7 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
   let errorBox = null;
   if (estado.editando) {
     /** Computadora con «+ Crear …» (impresora USB, reloj). @param {import('../assets/js/red.js').Campo} c @param {any} val */
-    const selectorPc = (c, val) => selectorConCrear({ desde: 'equipos', campo: 'equipo_campos.' + c.k, organizacion_id: ctx.org, valor: val || null, etiqueta: c.r, rotuloOrigen: 'Editar ' + e.equipo_nombre,
+    const selectorPc = (c, val) => c.k === 'camara_nvr_id' ? selectorDeNvr(c, val, ctx.org, 'Editar ' + e.equipo_nombre) : selectorConCrear({ desde: 'equipos', campo: 'equipo_campos.' + c.k, organizacion_id: ctx.org, valor: val || null, etiqueta: c.r, rotuloOrigen: 'Editar ' + e.equipo_nombre,
       cargarOpciones: async () => pcOpciones.map(o => ({ valor: o[0], texto: o[1] })), valoresAlta: { equipo_tipo: 'otro', tipos: ['otro'], categorias: ['PC de escritorio', 'Notebook'], otro_categoria: 'PC de escritorio', titulo: 'Nueva computadora' },
       alCambiar: (id, reg) => { if (reg) pcOpciones.push([reg.id, reg.equipo_nombre]); } });
     const fc = formulario(CAMPOS_COMUNES, e), ft = formulario(camposTipo, e.equipo_campos || {}, { equipos: pcOpciones, selectorEquipo: selectorPc });
@@ -164,8 +167,8 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
       else pares.push([c.r, textoValor(c, val)]);
     }
     if (e.equipo_notas) pares.push(['Notas', e.equipo_notas]);
-    const compactos = tab === 'vinculos' ? ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'MAC', 'Número de serie', 'Estado', 'Rack / unidad', 'Sede / sala', 'Categoría', 'Conexión', 'Conectada a']
-      : ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'Rack / unidad', 'Estado'];
+    const compactos = tab === 'vinculos' ? ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'MAC', 'Número de serie', 'Estado', 'Rack / unidad', 'Sede / sala', 'Categoría', 'Conexión', 'Conectada a', 'Qué mira', 'NVR que la graba', 'Canal en el NVR', 'Resolución', 'Se alimenta por PoE']
+      : ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'Rack / unidad', 'Estado', 'Qué mira', 'NVR que la graba', 'Canal en el NVR', 'Resolución', 'Se alimenta por PoE'];
     const visibles = compacta ? pares.filter(p => compactos.includes(p[0])) : pares;
     datos = h('div', { class: 'datos' }, visibles.map(p => campo(p[0], p[1])));
   }
@@ -235,6 +238,7 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
   cont.appendChild(barra);
 
   if (tab === 'vinculos') { const zona = h('div'); cont.appendChild(zona); pintarVinculos(zona, e, vinc); }
+  else if (tab === 'camaras' && camarasDelNvr) cont.appendChild(await cuerpoCamaras(ctx, e, camarasDelNvr, mapaEq, rearmar));
   else if (tab === 'puertos') cont.appendChild(await cuerpoPuertos(ctx, e, partes, rearmar));
   else if (tab === 'credenciales') {
     cont.appendChild(!puedeCred ? h('div', { class: 'aviso' }, ['Tu rol no ve el módulo Credenciales.'])
@@ -253,6 +257,36 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
     const zona = h('div'); cont.appendChild(zona);
     try { await (await import('../assets/js/archivos.js')).pintarArchivos(zona, { entidad: 'Equipo', entidadId: e.id, organizacionId: ctx.org }); } catch (err) { console.error(err); zona.appendChild(h('div', { class: 'aviso', text: 'No se pudieron mostrar los archivos.' })); }
   } else cont.appendChild(await cuerpoHistorial(ctx, e));
+}
+
+/**
+ * Pestaña «Cámaras» de un NVR (QC74): una fila por cámara, ordenada por canal, con a qué puerto de qué switch está conectada.
+ * @param {import('../assets/js/red.js').Contexto} ctx @param {Equipo} e @param {Equipo[]} camaras @param {Map<string, Equipo>} mapaEq @param {() => Promise<void>} rearmar
+ */
+async function cuerpoCamaras(ctx, e, camaras, mapaEq, rearmar) {
+  void rearmar;
+  const puertos = await repositorio.listar('puertos');
+  const porId = new Map(puertos.map(p => [p.id, p]));
+  const nuevaCamara = () => abrirCamaraNueva(ctx, e);
+  const barra = h('div', { class: 'herr' }, [h('span', { class: 'mut', style: 'flex:1', text: camaras.length + ' cámara(s) grabando en este NVR.' }),
+    ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Agregar cámara', onclick: nuevaCamara }) : null]);
+  if (!camaras.length) return h('div', null, [barra, h('div', { class: 'aviso', text: 'Este NVR todavía no tiene cámaras cargadas.' })]);
+  const filas = camaras.map(c => {
+    const cc = c.equipo_campos || {};
+    const p1 = puertos.find(p => p.equipo_id === c.id && p.puerto_numero === 1);
+    const dest = p1 && p1.conectado_a_puerto_id ? porId.get(p1.conectado_a_puerto_id) : null;
+    const sw = dest ? mapaEq.get(dest.equipo_id) : null;
+    return [String(cc.camara_canal), enlace(c.equipo_nombre, hashEquipo(c)), cc.camara_enfoque || '—', c.equipo_ip_gestion || '—',
+      sw && dest ? enlace(sw.equipo_nombre + ' · puerto ' + dest.puerto_numero, hashEquipo(sw) + '/puertos/' + dest.puerto_numero) : 'Sin conectar'];
+  });
+  return h('div', null, [barra, tabla(['Canal', 'Cámara', 'Qué mira', 'IP', 'Conectada a'], filas, { tipo: 'equipo' })]);
+}
+
+/** @param {import('../assets/js/red.js').Contexto} ctx @param {Equipo} nvr */
+async function abrirCamaraNueva(ctx, nvr) {
+  const c = await abrirAlta('equipos', { organizacion_id: ctx.org, rotulo: 'Cámara de ' + nvr.equipo_nombre,
+    valores: { equipo_tipo: 'camara', tipos: ['camara'], equipo_campos: { camara_nvr_id: nvr.id }, ubicacion_id: nvr.ubicacion_id } });
+  if (c) { toast('«' + c.equipo_nombre + '» creada.'); ir(hashEquipo(c)); }
 }
 
 /** @param {string} base @param {string[]} partes */
@@ -309,6 +343,7 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
   else if (tipo === 'patchera') nRj = Number(ec.patchera_cantidad_bocas) || 0;
   else if (tipo === 'router') nRj = (Number(ec.router_puertos_wan) || 0) + (Number(ec.router_puertos_lan) || 0);
   else if (tipo === 'firewall') nRj = Number(ec.firewall_interfaces_total) || 0;
+  else if (tipo === 'camara') nRj = 1; // una cámara tiene una sola boca RJ45
   const total = Math.max(nRj + nSfp, maxReg);
   if (!total) return h('div', { class: 'aviso' }, ['Este equipo no tiene puertos cargados.' + (ctx.modifica ? ' Editá sus datos para indicar la cantidad de puertos.' : '')]);
   const esSfp = (/** @type {number} */ n) => { const p = reg.get(n); return p ? p.puerto_tipo !== 'rj45' : tipo === 'switch' && n > nRj; };

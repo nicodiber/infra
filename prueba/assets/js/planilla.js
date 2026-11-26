@@ -12,7 +12,7 @@ import { puede } from './permisos.js';
 import {
   ROTULO_EQUIPO_TIPO, ROTULO_ESTADO_EQUIPO, ROTULO_CREDENCIAL_TIPO, ROTULO_LICENCIA_TIPO, ROTULO_PERSONA_ESTADO, ROTULO_CUENTA_ESTADO,
   ROTULO_MAPEO_APLICA_A, ROTULO_MAPEO_METODO, ROTULO_CONFIGURACION_TIPO, ROTULO_SERVICIO_TIPO, ROTULO_FIBRA_TIPO, CONECTORES_FIBRA,
-  TIPOS_REGISTRO_DNS, CATEGORIA_RELOJ, CATEGORIA_IMPRESORA, ENTIDAD_DE_COLECCION, COLECCION_DE_ENTIDAD, esImpresora, moduloDeEntidad
+  TIPOS_REGISTRO_DNS, CATEGORIA_RELOJ, CATEGORIA_IMPRESORA, ENTIDAD_DE_COLECCION, COLECCION_DE_ENTIDAD, esImpresora, moduloDeEntidad, CATEGORIA_NVR, esNvr
 } from './modelos.js';
 import { CAMPOS_POR_TIPO, CAMPOS_POR_CATEGORIA, ROTULO_ENLACE_TIPO, ROTULO_SEGURIDAD, ROTULO_ESTADO_PUERTO } from './red.js';
 import { hoyISO } from './utiles.js';
@@ -66,7 +66,7 @@ const NOTAS = (k = 'notas') => C(k, 'Notas', 'largo');
 const FICHAS_NOTA = /** @type {Array<[string, string]>} */ ([
   ['Ubicacion', 'Sede / sala'], ['Rack', 'Rack'], ['Equipo', 'Equipo'], ['Puesto', 'Puesto'], ['Vlan', 'VLAN'], ['RedWifi', 'Red Wi-Fi'],
   ['EnlaceIsp', 'Enlace a Internet'], ['Configuracion', 'Configuración'], ['Credencial', 'Credencial'], ['Persona', 'Persona'],
-  ['CuentaDominio', 'Cuenta de dominio'], ['Licencia', 'Licencia'], ['MapeoDisco', 'Mapeo de disco'], ['Servicio', 'Servicio'], ['TramoFibra', 'Tramo de fibra']
+  ['CuentaDominio', 'Cuenta de dominio'], ['Licencia', 'Licencia'], ['MapeoDisco', 'Mapeo de disco'], ['Servicio', 'Servicio'], ['TramoFibra', 'Tramo de fibra'], ['Proveedor', 'Proveedor']
 ]);
 
 /** Campos de un servidor (docs/modelo-de-datos.md, 4.5): los servidores no están en `CAMPOS_POR_TIPO`. @type {Array<{k: string, r: string, t: string, req?: boolean, op?: Array<[string, string]>}>} */
@@ -89,7 +89,7 @@ function columnasCampos() {
     const t = c.t === 'equipo' ? 'ref' : c.t;
     out.push(C(c.k, grupo + ' · ' + c.r, t, { req: !!c.req, op: c.op, num: c.num, ref: c.t === 'equipo' ? 'equipos' : undefined, campo: true, aplica }));
   };
-  for (const [tipo, etq] of /** @type {Array<[string, string]>} */ ([['router', 'Router'], ['firewall', 'Firewall'], ['switch', 'Switch'], ['access_point', 'Access point'], ['servidor', 'Servidor'], ['patchera', 'Patchera'], ['ups', 'UPS'], ['otro', 'Otro']])) {
+  for (const [tipo, etq] of /** @type {Array<[string, string]>} */ ([['router', 'Router'], ['firewall', 'Firewall'], ['switch', 'Switch'], ['access_point', 'Access point'], ['servidor', 'Servidor'], ['patchera', 'Patchera'], ['ups', 'UPS'], ['camara', 'Cámara'], ['otro', 'Otro']])) {
     const lista = tipo === 'servidor' ? CAMPOS_SERVIDOR : (CAMPOS_POR_TIPO[tipo] || []);
     for (const c of lista) conv(c, etq, e => e.equipo_tipo === tipo);
     if (tipo === 'servidor') out.push(C('host_id', 'Servidor · Host (si es máquina virtual)', 'ref', { ref: 'equipos', campo: true, aplica: e => e.equipo_tipo === 'servidor' }));
@@ -220,6 +220,15 @@ export const ESQUEMA = [
     cols: [ORG, C('servicio_id', 'Servicio', 'ref', { ref: 'servicios', req: true, virtual: true }), C('registro_tipo', 'Tipo de registro', 'enum', { req: true, virtual: true, op: TIPOS_REGISTRO_DNS.map(x => /** @type {[string, string]} */ ([x, x])) }),
       C('registro_nombre', 'Nombre', 'texto', { req: true, virtual: true, ayuda: '«@» = el dominio mismo.' }), C('registro_valor', 'Valor', 'texto', { req: true, virtual: true }), C('registro_prioridad', 'Prioridad', 'entero', { virtual: true, ayuda: 'Solo MX.' })],
     ejemplo: { organizacion_id: 'Organización Ejemplo S.A.', servicio_id: 'ejemplo.example', registro_tipo: 'MX', registro_nombre: '@', registro_valor: 'mail.ejemplo.example.', registro_prioridad: 10 } },
+  { id: 'proveedores', nombre: 'Proveedores', col: 'proveedores', desc: 'Quién da cada servicio (Internet, telefonía, mantenimiento…): soporte, número de cliente o de contrato, contacto comercial y portal. Todo es opcional salvo el nombre.',
+    claveCols: ['proveedor_nombre'],
+    cols: [ORG, C('proveedor_nombre', 'Nombre', 'texto', { req: true }), C('proveedor_rubro', 'Rubro', 'texto', { ayuda: 'Internet, Telefonía, Mantenimiento, Hardware, Software, Seguridad u otro (texto libre).' }),
+      C('proveedor_soporte_telefono', 'Teléfono de soporte', 'texto'), C('proveedor_soporte_mail', 'Mail de soporte', 'texto'), C('proveedor_horario_soporte', 'Horario de soporte', 'texto'),
+      C('proveedor_numero_cliente', 'N.º de cliente', 'texto'), C('proveedor_numero_contrato', 'N.º de contrato', 'texto'),
+      C('proveedor_comercial_nombre', 'Contacto comercial', 'texto'), C('proveedor_comercial_telefono', 'Teléfono comercial', 'texto'), C('proveedor_comercial_mail', 'Mail comercial', 'texto'),
+      C('proveedor_portal_url', 'Portal (URL)', 'texto'), C('credencial_id', 'Credencial del portal', 'ref', { ref: 'credenciales', ayuda: 'La contraseña va en la hoja Credenciales, nunca acá. Si no existe, se crea una credencial vacía.' }),
+      NOTAS('proveedor_notas')],
+    ejemplo: { organizacion_id: 'Organización Ejemplo S.A.', proveedor_nombre: 'Proveedor Demo', proveedor_rubro: 'Internet', proveedor_soporte_telefono: '0800-000-0000', proveedor_soporte_mail: 'soporte@proveedor.example', proveedor_numero_cliente: '000000' } },
   { id: 'tramos', nombre: 'Tramos de fibra', col: 'tramos_fibra', desc: 'Fibra óptica entre dos sedes o salas, con las patcheras de cada punta si están cargadas.',
     claveCols: ['tramo_nombre'],
     cols: [ORG, C('tramo_nombre', 'Nombre', 'texto', { req: true }), C('tramo_origen_ubicacion_id', 'Origen: sede / sala', 'ref', { ref: 'ubicaciones', req: true, alias: ['Origen: ubicación'] }), C('tramo_destino_ubicacion_id', 'Destino: sede / sala', 'ref', { ref: 'ubicaciones', req: true, alias: ['Destino: ubicación'] }),
@@ -237,13 +246,13 @@ export const ESQUEMA = [
 
 /** Orden en que se guardan las hojas al importar (cada una después de aquello a lo que apunta). */
 const ORDEN_APLICAR = ['organizaciones', 'ubicaciones', 'racks', 'puestos', 'vlans', 'equipos', 'enlaces', 'puertos', 'wifi', 'personas', 'configuraciones', 'credenciales', 'cuentas',
-  'licencias', 'asignaciones', 'mapeos', 'instalaciones', 'servicios', 'dns', 'tramos', 'notas'];
+  'licencias', 'asignaciones', 'mapeos', 'instalaciones', 'servicios', 'dns', 'proveedores', 'tramos', 'notas'];
 
 /** Cómo se nombra cada colección en un mensaje de error. @type {Object<string, string>} */
 const NOMBRE_REF = {
   organizaciones: 'la organización', ubicaciones: 'la sede o sala', racks: 'el rack', equipos: 'el equipo', puestos: 'el puesto', personas: 'la persona', cuentas_dominio: 'la cuenta de dominio',
   vlans: 'la VLAN', enlaces_isp: 'el enlace a Internet', redes_wifi: 'la red Wi-Fi', configuraciones: 'la configuración', credenciales: 'la credencial', licencias: 'la licencia',
-  servicios: 'el servicio', mapeos_disco: 'el mapeo', tramos_fibra: 'el tramo'
+  servicios: 'el servicio', mapeos_disco: 'el mapeo', tramos_fibra: 'el tramo', proveedores: 'el proveedor'
 };
 
 /** Hoja en la que se carga cada colección. @type {Object<string, string>} */
@@ -251,7 +260,7 @@ const HOJA_DE_COLECCION = Object.fromEntries(ESQUEMA.filter(h => h.col).map(h =>
 
 /** Colecciones que se leen para armar las referencias. */
 const COLS_MUNDO = ['organizaciones', 'ubicaciones', 'racks', 'equipos', 'puertos', 'vlans', 'enlaces_isp', 'redes_wifi', 'puestos', 'personas', 'cuentas_dominio', 'configuraciones',
-  'mapeos_disco', 'credenciales', 'licencias', 'instalaciones_licencia', 'servicios', 'tramos_fibra', 'notas', 'asignaciones'];
+  'mapeos_disco', 'credenciales', 'licencias', 'instalaciones_licencia', 'servicios', 'tramos_fibra', 'proveedores', 'notas', 'asignaciones'];
 
 /** Rótulos con los que se puede identificar un registro en una referencia: el primero es el canónico. @type {Object<string, (r: any, m: any) => string[]>} */
 const ETQ = {
@@ -270,7 +279,8 @@ const ETQ = {
   licencias: r => [r.licencia_producto, r.licencia_producto + ' (' + (ROTULO_LICENCIA_TIPO[r.licencia_tipo] || r.licencia_tipo) + ')'],
   servicios: r => [r.servicio_nombre, r.servicio_nombre + ' (' + (ROTULO_SERVICIO_TIPO[r.servicio_tipo] || r.servicio_tipo) + ')'],
   mapeos_disco: r => [r.mapeo_letra + ' ' + r.mapeo_ruta],
-  tramos_fibra: r => [r.tramo_nombre]
+  tramos_fibra: r => [r.tramo_nombre],
+  proveedores: r => [r.proveedor_nombre]
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1529,7 +1539,7 @@ const CREABLE = {
   ubicaciones: { ubicacion_padre_id: 'sede' },
   racks: { ubicacion_id: 'ubicacion' },
   puestos: { ubicacion_id: 'ubicacion' },
-  equipos: { ubicacion_id: 'ubicacion', rack_id: 'rack', puesto_id: 'puesto', host_id: 'servidor', impresora_pc_id: 'pc', reloj_pc_descarga_id: 'pc' },
+  equipos: { ubicacion_id: 'ubicacion', rack_id: 'rack', puesto_id: 'puesto', host_id: 'servidor', impresora_pc_id: 'pc', reloj_pc_descarga_id: 'pc', camara_nvr_id: 'nvr' },
   puertos: { vlan_nativa_id: 'vlan', vlans_etiquetadas: 'vlan', puesto_id: 'puesto' },
   wifi: { vlan_id: 'vlan', credencial_id: 'credencial_wifi', access_point_ids: 'access_point' },
   personas: { puesto_id: 'puesto' },
@@ -1539,6 +1549,7 @@ const CREABLE = {
   licencias: { credencial_id: 'credencial_licencia' },
   instalaciones: { cuenta_id: 'cuenta', persona_id: 'persona' },
   servicios: { credencial_id: 'credencial_servicio' },
+  proveedores: { credencial_id: 'credencial_proveedor' },
   tramos: { tramo_origen_ubicacion_id: 'ubicacion', tramo_destino_ubicacion_id: 'ubicacion', tramo_origen_equipo_id: 'patchera', tramo_destino_equipo_id: 'patchera' },
   dns: { servicio_id: 'dominio' }
 };
@@ -1744,6 +1755,8 @@ function intentarCrear(m, est, f, c, org, texto) {
     case 'pc': return { id: crearEquipo(m, org, t, 'otro', 'PC de escritorio', origen) };
     case 'credencial_wifi': return { id: crearCredencial(m, org, t, 'wifi', origen) };
     case 'credencial_dominio': return { id: crearCredencial(m, org, t, 'dominio', origen) };
+    case 'credencial_proveedor': return { id: crearCredencial(m, org, t, 'otro', origen) };
+    case 'nvr': return { id: crearEquipo(m, org, t, 'otro', CATEGORIA_NVR, origen) };
     case 'credencial_licencia': return { id: crearCredencial(m, org, t, 'clave_licencia', origen) };
     case 'credencial_servicio': return { id: crearCredencial(m, org, t, { hosting: 'hosting', correo: 'correo', dominio: 'nic_dns', dns: 'nic_dns' }[/** @type {'hosting'} */ (f.vals.servicio_tipo)] || 'otro', origen) };
     case 'cuenta': return crearCuenta(m, org, t, origen);
@@ -1807,6 +1820,7 @@ const HOOKS = {
     const ex = f.existente;
     if (ex && f.vals.equipo_tipo && ex.equipo_tipo !== f.vals.equipo_tipo) err('Tipo', 'el tipo de un equipo no se puede cambiar (es «' + (ROTULO_EQUIPO_TIPO[ex.equipo_tipo] || ex.equipo_tipo) + '»)');
     if (!rec.equipo_tipo) return;
+    if (rec.equipo_tipo === 'camara' && !ex && !('camara_poe' in rec.equipo_campos)) rec.equipo_campos.camara_poe = true;
     // Campos del tipo: solo los que corresponden; los obligatorios vacíos toman el valor inicial de la ficha.
     for (const c of columnasEquipo()) {
       const aplica = /** @type {(e: any) => boolean} */ (c.aplica)(rec);
@@ -1816,6 +1830,12 @@ const HOOKS = {
       else if (c.t === 'entero') rec.equipo_campos[c.k] = 0;
       else if (c.t === 'enum' && c.op) rec.equipo_campos[c.k] = c.num ? Number(c.op[0][0]) : c.op[0][0];
       else err(c.r, 'falta «' + c.r + '» (obligatoria para este tipo de equipo)');
+    }
+    if (rec.equipo_tipo === 'camara') {
+      const cc = rec.equipo_campos;
+      if (!Number.isInteger(cc.camara_canal) || cc.camara_canal < 1) err('Cámara · Canal en el NVR', 'el canal es un número entero desde 1');
+      const nvr = cc.camara_nvr_id ? m.cols.equipos.get(cc.camara_nvr_id) : null;
+      if (nvr && !esNvr(nvr)) err('Cámara · NVR que la graba', 'el equipo «' + nvr.equipo_nombre + '» no es un NVR (categoría «' + CATEGORIA_NVR + '»)');
     }
     // Rack, ubicación y puesto
     if (rec.rack_id) {
@@ -1907,6 +1927,21 @@ const POST = {
       if (toca) choca = (porRack.get(r.rack_id) || []).find(o => r.rack_u_inicio <= o.rack_u_inicio + o.rack_u_alto - 1 && o.rack_u_inicio <= r.rack_u_inicio + r.rack_u_alto - 1) || null;
       if (choca) f.errores.push({ col: 'Posición (U)', mensaje: 'se superpone con «' + choca.equipo_nombre + '» en el rack (' + (choca.rack_u_alto > 1 ? 'U ' + choca.rack_u_inicio + ' a ' + (choca.rack_u_inicio + choca.rack_u_alto - 1) : 'U ' + choca.rack_u_inicio) + ')' });
       else ocupar(r);
+    }
+    // Cámaras: el canal es único por NVR (contra las que ya están y entre las filas del archivo; gana la primera).
+    /** @type {Map<string, string>} */
+    const canales = new Map();
+    for (const e of m.cols.equipos.values()) {
+      const c = e.equipo_campos || {};
+      if (e.equipo_tipo === 'camara' && !e.eliminado_en && !enArchivo.has(e.id) && c.camara_nvr_id) canales.set(c.camara_nvr_id + '|' + c.camara_canal, e.equipo_nombre);
+    }
+    for (const f of filas) {
+      const r = f.rec;
+      if (!r || f.errores.length || r.equipo_tipo !== 'camara' || !r.equipo_campos.camara_nvr_id) continue;
+      const k = r.equipo_campos.camara_nvr_id + '|' + r.equipo_campos.camara_canal;
+      const otra = canales.get(k);
+      if (otra) f.errores.push({ col: 'Cámara · Canal en el NVR', mensaje: 'el canal ' + r.equipo_campos.camara_canal + ' de ese NVR ya lo usa «' + otra + '»' });
+      else canales.set(k, r.equipo_nombre);
     }
   },
   puertos(filas, m, plan) {

@@ -92,6 +92,8 @@ const RUTAS = {
   informe: pendiente('P28', 'Documentación de la organización', 'informe', { archivo: 'informe', icono: 'datos' }),
   servicios: pendiente('P29', 'Dominios y servicios', 'servicios', { archivo: 'servicios', modulo: 'configuraciones', icono: 'red' }),
   servicio: pendiente('P29', 'Ficha de servicio', 'servicios', { archivo: 'servicio', modulo: 'configuraciones', icono: 'red' }),
+  proveedores: pendiente('P52', 'Proveedores', 'proveedores', { archivo: 'proveedores', modulo: 'configuraciones', icono: 'configuracion' }),
+  proveedor: pendiente('P53', 'Ficha de proveedor', 'proveedores', { archivo: 'proveedor', modulo: 'configuraciones', icono: 'configuracion' }),
   fibra: pendiente('P30', 'Fibra óptica', 'red', { archivo: 'fibra', modulo: 'red', icono: 'red' }),
   tramo: pendiente('P30', 'Ficha de tramo de fibra', 'red', { archivo: 'tramo', modulo: 'red', icono: 'red' }),
   topologia: pendiente('P31', 'Topología de red', 'red', { archivo: 'topologia', modulo: 'red', icono: 'red' }),
