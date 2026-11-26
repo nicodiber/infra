@@ -78,10 +78,11 @@ registrarAlta('servicios', async ctx => {
     valoresAlta: valoresCred, rotuloOrigen: 'Nuevo servicio' }) : null;
   return abrirFormularioDeAlta({
     titulo: 'Nuevo dominio o servicio', rotulo: ctx.rotulo && ctx.rotulo !== 'Nuevo servicio' ? ctx.rotulo : null, textoGuardar: 'Crear servicio', enfocar: nombre,
-    cuerpo: [campoDeAlta(id.nombre, 'Nombre *', nombre), campoDeAlta(id.tipo, 'Tipo *', tipo), campoDeAlta(id.prov, 'Proveedor', proveedor), campoDeAlta(id.titular, 'Titular', titular),
-      campoDeAlta(id.vence, 'Vence el', vence, 'Vacío en lo que no vence (una zona DNS).'), campoDeAlta(id.deleg, 'DNS delegado en', deleg), campoDeAlta(id.plan, 'Plan', plan),
-      cred ? campoDeAlta(id.cred, 'Acceso al panel (credencial)', cred, 'La contraseña del panel se carga en la credencial, no acá.') : null,
-      h('div', { class: 'campo' }, [h('label', { text: 'Registros DNS' }), registros.nodo])],
+    secciones: [{ titulo: 'Identificación', cuerpo: [campoDeAlta(id.nombre, 'Nombre *', nombre), campoDeAlta(id.tipo, 'Tipo *', tipo), campoDeAlta(id.prov, 'Proveedor', proveedor),
+      campoDeAlta(id.vence, 'Vence el', vence, 'Vacío en lo que no vence (una zona DNS).')] },
+      { titulo: 'Registros DNS', cuerpo: [h('div', { class: 'campo ancho' }, [registros.nodo])] }],
+    mas: { resumen: 'titular, DNS delegado, plan, acceso al panel', cuerpo: [campoDeAlta(id.titular, 'Titular', titular), campoDeAlta(id.deleg, 'DNS delegado en', deleg), campoDeAlta(id.plan, 'Plan', plan),
+      cred ? campoDeAlta(id.cred, 'Acceso al panel (credencial)', cred, 'La contraseña del panel se carga en la credencial, no acá.') : null] },
     alGuardar: async () => {
       if (!nombre.value.trim()) throw new Error('Escribí el nombre del servicio.');
       return repositorio.guardar('servicios', { organizacion_id: ctx.organizacion_id, servicio_tipo: tipo.value, servicio_nombre: nombre.value.trim(),

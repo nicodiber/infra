@@ -11,6 +11,7 @@ import * as repositorio from '../repositorio.js';
 import { h, normalizar } from '../utiles.js';
 import { ROTULO_FIBRA_TIPO, CONECTORES_FIBRA } from '../modelos.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear, opcionesDe } from '../altas.js';
+import { enlazarValidacion, validarNombreUnico } from '../validaciones.js';
 
 registrarAlta('tramos_fibra', async ctx => {
   const v = ctx.valores;
@@ -31,12 +32,13 @@ registrarAlta('tramos_fibra', async ctx => {
   conector.value = v.tramo_conector || 'LC';
   const lon = /** @type {HTMLInputElement} */ (h('input', { id: ID.lon, type: 'number', min: '0', step: 'any' }));
   lon.value = v.tramo_longitud_m == null ? '' : String(v.tramo_longitud_m);
-  const dos = (/** @type {Node[]} */ ...c) => h('div', { class: 'rk-dos' }, c);
+  const cNombre = campoDeAlta(ID.nom, 'Nombre *', nombre);
+  enlazarValidacion(cNombre, () => validarNombreUnico({ coleccion: 'tramos_fibra', campo: 'tramo_nombre', org, valor: nombre.value, articulo: 'un tramo' }));
   return abrirFormularioDeAlta({
     titulo: 'Nuevo tramo de fibra', rotulo: ctx.rotulo && ctx.rotulo !== 'Nuevo tramo de fibra' ? ctx.rotulo : null, textoGuardar: 'Crear tramo', enfocar: nombre,
-    cuerpo: [campoDeAlta(ID.nom, 'Nombre *', nombre), dos(campoDeAlta(ID.ori, 'Origen (sede / sala) *', origen), campoDeAlta(ID.des, 'Destino (sede / sala) *', destino)),
-      dos(campoDeAlta(ID.oeq, 'Patchera de origen', oeq), campoDeAlta(ID.deq, 'Patchera de destino', deq)),
-      dos(campoDeAlta(ID.pel, 'Cantidad de pelos *', pelos), campoDeAlta(ID.lon, 'Longitud (m)', lon)), dos(campoDeAlta(ID.tip, 'Tipo de fibra *', tipo), campoDeAlta(ID.con, 'Conector *', conector))],
+    secciones: [{ titulo: 'Identificación', cuerpo: [cNombre] },
+      { titulo: 'Extremos', cuerpo: [campoDeAlta(ID.ori, 'Origen (sede / sala) *', origen), campoDeAlta(ID.des, 'Destino (sede / sala) *', destino), campoDeAlta(ID.oeq, 'Patchera de origen', oeq), campoDeAlta(ID.deq, 'Patchera de destino', deq)] },
+      { titulo: 'Fibra', cuerpo: [campoDeAlta(ID.pel, 'Cantidad de pelos *', pelos), campoDeAlta(ID.tip, 'Tipo de fibra *', tipo), campoDeAlta(ID.con, 'Conector *', conector), campoDeAlta(ID.lon, 'Longitud (m)', lon)] }],
     alGuardar: async () => {
       const nom = nombre.value.trim();
       if (!nom) throw new Error('Falta el nombre del tramo.');

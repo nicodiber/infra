@@ -214,11 +214,47 @@ export async function abrirAlta(coleccion, opciones) {
 }
 
 /**
- * Arma y abre el diálogo de un alta (título, campos, error en línea, Guardar / Cancelar) y devuelve la promesa del registro.
- * Cada formulario de alta lo usa para no repetir el esqueleto. `alGuardar` crea el registro con `repositorio.guardar` y lo
- * devuelve; si lanza un `Error`, el mensaje se muestra en el diálogo y no se cierra. NO navega: quien llamó decide qué hacer
- * con el registro (por eso sirve igual desde un botón de pantalla que desde un selector).
- * @param {{titulo: string, rotulo?: string|null, intro?: string, cuerpo: Array<Node|null>, textoGuardar?: string, enfocar?: HTMLElement|null, alGuardar: () => Promise<any>}} o
+ * @typedef {Object} SeccionDeAlta
+ * @property {string} [titulo] Título de la sección («Identificación», «Ubicación», «Red»…).
+ * @property {Array<Node|null>} cuerpo Campos (`campoDeAlta`) de la sección: se acomodan en una grilla de 2 columnas; un nodo que no es `.campo` ocupa todo el ancho.
+ */
+
+/** Altas abiertas ahora, de abajo hacia arriba: arma el recorrido «Nuevo rack › Nuevo equipo». @type {Array<{titulo: string, rotulo: string|null}>} */
+const PILA_DE_ALTAS = [];
+
+/**
+ * Acomoda campos en la grilla de 2 columnas de un alta. Tolera los envoltorios viejos `.rk-dos` / `.rk-tres` (sus hijos pasan a la grilla).
+ * @param {Array<Node|null>} nodos
+ */
+function grillaDeCampos(nodos) {
+  const grilla = h('div', { class: 'alta-grilla' });
+  /** @param {Node|null} n */
+  const agregar = n => {
+    if (!n) return;
+    const e = /** @type {HTMLElement} */ (n);
+    if (e.classList && (e.classList.contains('rk-dos') || e.classList.contains('rk-tres'))) { for (const c of Array.from(e.children)) agregar(c); return; }
+    if (e.classList && !e.classList.contains('campo')) e.classList.add('ancho');
+    grilla.appendChild(e);
+  };
+  nodos.forEach(agregar);
+  return grilla;
+}
+
+/**
+ * Arma y abre el diálogo de un alta y devuelve la promesa del registro (o `null` si se cancela).
+ *
+ * Estructura (opción A de la maqueta `prototipos/carga/opciones.html`): recorrido de ventanas apiladas arriba del título, secciones
+ * con título en una columna con grilla de 2 campos (lo obligatorio arriba, marcado con * de color), un bloque plegable «Más datos»
+ * con lo opcional y un pie con «Falta corregir N campos», los atajos y los botones. El botón principal queda deshabilitado
+ * mientras haya errores o obligatorios vacíos (se cuentan a partir del DOM: `.campo` con `.oblig` vacío, `.campo[data-estado=mal]`).
+ * Con `previa` (opción C) se muestra un panel a la derecha que el llamador actualiza y oculta o muestra con `hidden`.
+ *
+ * `alGuardar` crea el registro con `repositorio.guardar` y lo devuelve; si lanza un `Error`, el mensaje se muestra y el diálogo sigue
+ * abierto. NO navega: quien llamó decide qué hacer con el registro (por eso sirve igual desde un botón de pantalla que desde un selector).
+ * Atajos: Ctrl+Enter guarda, Esc cancela (solo el diálogo de arriba).
+ *
+ * Compatible con el uso anterior: un formulario con `cuerpo` y sin `secciones` se dibuja como una sola sección sin título.
+ * @param {{titulo: string, rotulo?: string|null, intro?: string, secciones?: Array<SeccionDeAlta|Node>, mas?: {resumen: string, cuerpo: Array<Node|null>}, cuerpo?: Array<Node|null>, previa?: HTMLElement|null, textoGuardar?: string, enfocar?: HTMLElement|null, alGuardar: () => Promise<any>}} o
  * @returns {Promise<any|null>}
  */
 export function abrirFormularioDeAlta(o) {
@@ -226,30 +262,111 @@ export function abrirFormularioDeAlta(o) {
     let resuelto = false;
     /** @param {any} v */
     const resolverUna = v => { if (!resuelto) { resuelto = true; resolver(v); } };
-    const error = h('div', { class: 'msg mal', role: 'alert', hidden: 'hidden' });
-    const btnGuardar = /** @type {HTMLButtonElement} */ (h('button', { type: 'button', class: 'primario', text: o.textoGuardar || 'Crear' }));
+    const error = h('div', { class: 'msg mal alta-error', role: 'alert', hidden: 'hidden' });
+    const textoGuardar = o.textoGuardar || 'Crear';
+    const btnGuardar = /** @type {HTMLButtonElement} */ (h('button', { type: 'button', class: 'primario', text: textoGuardar }));
+    const estado = h('div', { class: 'alta-estado', 'aria-live': 'polite' });
+
+    // ---- recorrido y subtítulo
+    const entrada = { titulo: o.titulo, rotulo: o.rotulo || null };
+    const camino = PILA_DE_ALTAS.map(x => x.titulo);
+    const raiz = PILA_DE_ALTAS.length ? PILA_DE_ALTAS[0].rotulo : entrada.rotulo;
+    if (raiz && raiz !== camino[0] && raiz !== o.titulo) camino.unshift(raiz);
+    camino.push(o.titulo);
+    const origen = o.rotulo || (PILA_DE_ALTAS.length ? PILA_DE_ALTAS[PILA_DE_ALTAS.length - 1].titulo : null);
+    const recorrido = camino.length > 1 ? h('div', { class: 'alta-recorrido', 'aria-label': 'Ventanas abiertas' }, camino.flatMap((t, i) => {
+      const ultimo = i === camino.length - 1;
+      const paso = h('span', { class: ultimo ? 'actual' : 'previo', text: t, 'aria-current': ultimo ? 'step' : null });
+      return i ? [h('span', { class: 'sep', 'aria-hidden': 'true', text: '›' }), paso] : [paso];
+    })) : null;
+
+    // ---- cuerpo: secciones, «Más datos»
+    /** @type {Node[]} */
+    const bloques = [];
+    const secciones = o.secciones || (o.cuerpo ? [{ cuerpo: o.cuerpo }] : []);
+    for (const s of secciones) {
+      if (s instanceof Node) { bloques.push(s); continue; }
+      if (!s.cuerpo.some(Boolean)) continue; // sección sin campos (por ejemplo, los que este rol no ve)
+      bloques.push(h('section', { class: 'alta-seccion' }, [s.titulo ? h('h3', { text: s.titulo }) : null, grillaDeCampos(s.cuerpo)]));
+    }
+    if (o.mas) bloques.push(h('details', { class: 'alta-mas' }, [
+      h('summary', null, [h('b', { text: 'Más datos' }), ' · ' + o.mas.resumen + '. Opcionales: completalos ahora o después.']), grillaDeCampos(o.mas.cuerpo)]));
+    const cuerpo = h('div', { class: 'alta-cuerpo' }, bloques);
+    const previa = o.previa || null;
+    if (previa) previa.classList.add('alta-previa');
+    const medio = h('div', { class: 'alta-medio' }, [cuerpo, previa]);
+
+    const verbo = textoGuardar.toLowerCase().split(' ')[0];
+    const caja = h('div', { class: 'alta', role: 'dialog', 'aria-label': o.titulo }, [
+      h('div', { class: 'alta-cab' }, [recorrido, h('h2', { text: o.titulo }),
+        origen ? h('p', { class: 'mut', text: 'Cuando lo crees, vuelve a «' + origen + '» ya elegido.' }) : null,
+        h('p', { class: 'mut', text: o.intro || 'Lo obligatorio está arriba y marcado con *. Lo demás se puede completar después.' })]),
+      medio, error,
+      h('div', { class: 'alta-pie' }, [h('div', { class: 'alta-pie-info' }, [estado, h('div', { class: 'alta-atajos', text: 'Ctrl+Enter para ' + verbo + ' · Esc para cancelar' })]),
+        h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }), btnGuardar])]);
+
+    // ---- estado del pie: cuántos campos faltan o están mal
+    let guardando = false;
+    const campos = () => Array.from(cuerpo.querySelectorAll('.campo')).filter(c => !c.closest('[hidden]'));
+    /** @param {Element} c */
+    const faltaCompletar = c => {
+      if (!c.querySelector('label .oblig')) return false;
+      const ctl = /** @type {HTMLInputElement|null} */ (c.querySelector('input:not([type=checkbox]):not([type=radio]), select, textarea'));
+      return !!ctl && !ctl.disabled && ctl.value.trim() === '';
+    };
+    const problemas = () => campos().filter(c => /** @type {HTMLElement} */ (c).dataset.estado === 'mal' || faltaCompletar(c));
+    const actualizarPie = () => {
+      const n = problemas().length;
+      estado.textContent = n ? 'Falta corregir ' + n + (n === 1 ? ' campo' : ' campos') : 'Todo en orden';
+      estado.classList.toggle('con-error', campos().some(c => /** @type {HTMLElement} */ (c).dataset.estado === 'mal'));
+      estado.classList.toggle('pendiente', n > 0);
+      estado.classList.toggle('listo', n === 0);
+      btnGuardar.disabled = guardando || n > 0;
+      if (previa) caja.classList.toggle('con-previa', !previa.hidden);
+    };
+    let pendiente = 0;
+    const programarPie = () => { if (!pendiente) pendiente = requestAnimationFrame(() => { pendiente = 0; actualizarPie(); }); };
+    const observador = new MutationObserver(programarPie);
+    observador.observe(medio, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'disabled', 'class', 'data-estado'] });
+    cuerpo.addEventListener('input', programarPie);
+    cuerpo.addEventListener('change', programarPie);
+    cuerpo.addEventListener('infradoc:estado', programarPie);
+    actualizarPie();
+
     const guardar = async () => {
-      if (btnGuardar.disabled) return; // un doble clic o un Enter repetido no crea dos registros
+      if (guardando || btnGuardar.disabled) return; // un doble clic o un Enter repetido no crea dos registros
       error.hidden = true;
-      btnGuardar.disabled = true;
+      guardando = true; actualizarPie();
       try {
+        // Antes de crear, se vuelven a correr las validaciones enlazadas (el usuario puede no haber salido del último campo).
+        await Promise.all(campos().map(c => (/** @type {any} */ (c).validar ? /** @type {any} */ (c).validar() : null)));
+        const mal = problemas();
+        if (mal.length) {
+          const ctl = /** @type {HTMLElement|null} */ (mal[0].querySelector('input, select, textarea'));
+          if (ctl) ctl.focus();
+          return;
+        }
         const registro = await o.alGuardar();
         resolverUna(registro);
         cerrarModal();
       } catch (e) {
         error.textContent = e instanceof Error ? e.message : 'No se pudo guardar.';
         error.hidden = false;
-      } finally { btnGuardar.disabled = false; }
+      } finally { guardando = false; actualizarPie(); }
     };
     btnGuardar.addEventListener('click', guardar);
-    const caja = h('div', { class: 'bloque rk-modal rk-form', role: 'dialog', 'aria-label': o.titulo }, [
-      h('h2', { text: o.titulo }),
-      o.rotulo ? h('div', { class: 'mut', text: 'Mientras cargás: ' + o.rotulo + '. Al guardar, volvés ahí con esto ya elegido.' }) : null,
-      o.intro ? h('div', { class: 'mut', text: o.intro }) : h('div', { class: 'mut', text: 'Los campos con * son obligatorios.' }),
-      ...o.cuerpo, error,
-      h('div', { class: 'herr' }, [btnGuardar, h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() })])]);
-    caja.addEventListener('keydown', e => { if (e.key === 'Enter' && /** @type {HTMLElement} */ (e.target).tagName === 'INPUT') { e.preventDefault(); guardar(); } });
-    abrirModal(caja, () => resolverUna(null)); // cualquier cierre sin guardar (Cancelar, Esc, fondo) resuelve null
+    caja.addEventListener('keydown', e => {
+      const t = /** @type {HTMLElement} */ (e.target);
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); guardar(); return; }
+      if (e.key === 'Enter' && t.tagName === 'INPUT') { e.preventDefault(); guardar(); }
+    });
+    PILA_DE_ALTAS.push(entrada);
+    abrirModal(caja, () => { // cualquier cierre sin guardar (Cancelar, Esc, fondo) resuelve null
+      const i = PILA_DE_ALTAS.lastIndexOf(entrada);
+      if (i >= 0) PILA_DE_ALTAS.splice(i, 1);
+      observador.disconnect();
+      resolverUna(null);
+    });
     if (o.enfocar) o.enfocar.focus();
   });
 }
@@ -263,11 +380,29 @@ let contadorIds = 0;
 export function idUnico(base) { return base + '-' + (++contadorIds); }
 
 /**
- * Fila de formulario «etiqueta + control» con el estilo de los diálogos (clase `campo`).
- * @param {string} id @param {string} etiqueta @param {HTMLElement} control @param {string} [ayuda]
+ * Fila de formulario «etiqueta + control + ayuda» con el estilo de los diálogos (clase `campo`).
+ * Una etiqueta que termina en « *» marca el campo como obligatorio: el * sale en el color de acento y el pie del alta lo cuenta mientras esté vacío.
+ * Bajo el control va siempre un `.ayuda` (oculto si no hay texto): ahí escribe `enlazarValidacion` (`assets/js/validaciones.js`).
+ * @param {string} id @param {string} etiqueta @param {HTMLElement} control @param {string} [ayuda] @param {{ancho?: boolean}} [opciones] `ancho`: ocupa las 2 columnas (los `textarea` ya lo hacen solos).
  */
-export function campoDeAlta(id, etiqueta, control, ayuda) {
-  return h('div', { class: 'campo' }, [h('label', { for: id, text: etiqueta }), control, ayuda ? h('div', { class: 'mut', text: ayuda }) : null]);
+export function campoDeAlta(id, etiqueta, control, ayuda, opciones) {
+  const campo = h('div', { class: 'campo' + ((opciones && opciones.ancho) || control.tagName === 'TEXTAREA' ? ' ancho' : '') }, [
+    h('label', { for: id, text: etiqueta.replace(/ \*$/, '') }), control,
+    h('div', { class: 'ayuda', 'data-base': ayuda || '', hidden: ayuda ? null : 'hidden', text: ayuda || '' })]);
+  marcarObligatorio(campo, / \*$/.test(etiqueta));
+  return campo;
+}
+
+/**
+ * Pone o saca la marca de obligatorio (*) de un campo de `campoDeAlta` (para los que lo son solo a veces, como la U dentro de un rack).
+ * @param {HTMLElement} campo @param {boolean} si
+ */
+export function marcarObligatorio(campo, si) {
+  const label = campo.querySelector('label');
+  if (!label) return;
+  const marca = label.querySelector('.oblig');
+  if (si && !marca) label.appendChild(h('span', { class: 'oblig', title: 'Obligatorio', text: ' *' }));
+  else if (!si && marca) marca.remove();
 }
 
 // ---------------------------------------------------------------------------------------------

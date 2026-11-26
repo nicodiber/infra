@@ -12,19 +12,10 @@
 import * as repositorio from '../repositorio.js';
 import { h, normalizar } from '../utiles.js';
 import { ipANumero } from '../red.js';
-import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta } from '../altas.js';
+import { leerCidr, enlazarValidacion, validarNumeroVlan, validarCidr, validarGateway, validarRangoDhcp } from '../validaciones.js';
 
-/**
- * Red en CIDR → {base, tam} (base ya alineada a la red) o null si no es válida.
- * @param {string} cidr @returns {{base: number, tam: number}|null}
- */
-export function leerCidr(cidr) {
-  const m = /^\s*(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})\s*$/.exec(cidr || '');
-  const ip = m ? ipANumero(m[1]) : null;
-  if (!m || ip == null || Number(m[2]) > 32) return null;
-  const tam = Math.pow(2, 32 - Number(m[2]));
-  return { base: Math.floor(ip / tam) * tam, tam };
-}
+export { leerCidr };
+import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta } from '../altas.js';
 
 /**
  * Problemas de los datos de una VLAN (lista vacía = todo bien). Comprueba número 1 a 4094 y único en la organización, nombre,
@@ -81,14 +72,19 @@ registrarAlta('vlans', async ctx => {
   const cRango = campoDeAlta(ID_RANGO, 'Rango DHCP *', rango, 'Formato «IP inicial - IP final».');
   const alDhcp = () => { cRango.hidden = dhcp.value !== 'si'; };
   dhcp.addEventListener('change', alDhcp); alDhcp();
-  const dos = (/** @type {Node[]} */ ...c) => h('div', { class: 'rk-dos' }, c);
+  // Validación al salir de cada campo (QC78-A): número repetido, red en CIDR, gateway y rango DHCP dentro de la red.
+  const cNumero = campoDeAlta(ID_NUM, 'Número (1 a 4094) *', numero), cCidr = campoDeAlta(ID_CIDR, 'Red (CIDR)', cidr), cGw = campoDeAlta(ID_GW, 'Gateway', gateway);
+  enlazarValidacion(cNumero, () => validarNumeroVlan({ numero: numero.value, org: ctx.organizacion_id }));
+  enlazarValidacion(cCidr, () => validarCidr(cidr.value));
+  enlazarValidacion(cGw, () => validarGateway(gateway.value, cidr.value), { tambien: [cidr] });
+  enlazarValidacion(cRango, () => validarRangoDhcp(rango.value, cidr.value), { tambien: [cidr] });
 
   return abrirFormularioDeAlta({
     titulo: 'Nueva VLAN', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva VLAN' ? ctx.rotulo : null, textoGuardar: 'Crear VLAN', enfocar: numero,
     intro: v.duplicado_de ? 'Copia de «' + v.duplicado_de + '»: cambiá el número (tiene que ser distinto) y lo que haga falta. Los campos con * son obligatorios.' : undefined,
-    cuerpo: [dos(campoDeAlta(ID_NUM, 'Número (1 a 4094) *', numero), campoDeAlta(ID_NOM, 'Nombre *', nombre)),
-      dos(campoDeAlta(ID_CIDR, 'Red (CIDR)', cidr), campoDeAlta(ID_GW, 'Gateway', gateway)),
-      dos(campoDeAlta(ID_DHCP, 'DHCP activo', dhcp), cRango), campoDeAlta(ID_DESC, 'Uso', desc)],
+    secciones: [{ titulo: 'Identificación', cuerpo: [cNumero, campoDeAlta(ID_NOM, 'Nombre *', nombre)] },
+      { titulo: 'Red', cuerpo: [cCidr, cGw, campoDeAlta(ID_DHCP, 'DHCP activo', dhcp), cRango] }],
+    mas: { resumen: 'uso', cuerpo: [campoDeAlta(ID_DESC, 'Uso', desc)] },
     alGuardar: async () => {
       const activo = dhcp.value === 'si';
       const datos = { vlan_numero: numero.value.trim() === '' ? null : Number(numero.value), vlan_nombre: nombre.value.trim(), vlan_red_cidr: cidr.value.trim() || null,

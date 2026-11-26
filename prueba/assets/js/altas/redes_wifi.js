@@ -12,6 +12,7 @@ import { puede } from '../permisos.js';
 import { h, normalizar } from '../utiles.js';
 import { ROTULO_SEGURIDAD } from '../red.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear, multiConCrear, opcionesDe } from '../altas.js';
+import { enlazarValidacion, validarNombreUnico } from '../validaciones.js';
 
 registrarAlta('redes_wifi', async ctx => {
   const v = ctx.valores;
@@ -33,12 +34,14 @@ registrarAlta('redes_wifi', async ctx => {
   const cCred = cred ? campoDeAlta(ID_CRED, 'Credencial de la clave', cred, 'Sin clave si la red es abierta.') : null;
   const alSeg = () => { if (cCred) cCred.hidden = seg.value === 'abierta' || seg.value === 'portal'; };
   seg.addEventListener('change', alSeg); alSeg();
-  const dos = (/** @type {Node[]} */ ...c) => h('div', { class: 'rk-dos' }, c);
+  const cSsid = campoDeAlta(ID_SSID, 'SSID *', ssid);
+  enlazarValidacion(cSsid, () => validarNombreUnico({ coleccion: 'redes_wifi', campo: 'wifi_ssid', org, valor: ssid.value, articulo: 'una red Wi-Fi con el SSID' }));
   return abrirFormularioDeAlta({
     titulo: 'Nueva red Wi-Fi', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva red Wi-Fi' ? ctx.rotulo : null, textoGuardar: 'Crear red Wi-Fi', enfocar: ssid,
     intro: v.duplicado_de ? 'Copia de «' + v.duplicado_de + '»: el SSID tiene que ser distinto. Los campos con * son obligatorios.' : undefined,
-    cuerpo: [dos(campoDeAlta(ID_SSID, 'SSID *', ssid), campoDeAlta(ID_SEG, 'Seguridad *', seg)), dos(campoDeAlta(ID_VLAN, 'VLAN', vlan, 'La VLAN a la que cae la red.'), campoDeAlta(ID_OC, 'SSID oculto', oculta)),
-      cCred, h('div', { class: 'campo' }, [h('label', { text: 'Access points que la emiten' }), aps.nodo])],
+    secciones: [{ titulo: 'Identificación', cuerpo: [cSsid, campoDeAlta(ID_SEG, 'Seguridad *', seg), cCred] },
+      { titulo: 'Red', cuerpo: [campoDeAlta(ID_VLAN, 'VLAN', vlan, 'La VLAN a la que cae la red.'), campoDeAlta(ID_OC, 'SSID oculto', oculta)] },
+      { titulo: 'Access points', cuerpo: [h('div', { class: 'campo ancho' }, [h('label', { text: 'Access points que la emiten' }), aps.nodo])] }],
     alGuardar: async () => {
       const nom = ssid.value.trim();
       if (!nom) throw new Error('Falta el SSID.');

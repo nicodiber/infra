@@ -33,8 +33,8 @@ registrarAlta('mapeos_disco', async ctx => {
   aplica.addEventListener('change', ajustar); ajustar();
   return abrirFormularioDeAlta({
     titulo: 'Nuevo mapeo de disco', rotulo: ctx.rotulo && ctx.rotulo !== 'Nuevo mapeo de disco' ? ctx.rotulo : null, textoGuardar: 'Crear mapeo', enfocar: letra,
-    cuerpo: [campoDeAlta(id.letra, 'Letra de unidad *', letra), campoDeAlta(id.ruta, 'Ruta de red *', ruta), campoDeAlta(id.srv, 'Servidor que la comparte', servidor),
-      campoDeAlta(id.aplica, 'Se aplica a *', aplica), cGrupo, cPersona, campoDeAlta(id.metodo, 'Método *', metodo)],
+    secciones: [{ titulo: 'Qué se mapea', cuerpo: [campoDeAlta(id.letra, 'Letra de unidad *', letra), campoDeAlta(id.ruta, 'Ruta de red *', ruta), campoDeAlta(id.srv, 'Servidor que la comparte', servidor)] },
+      { titulo: 'A quién se aplica', cuerpo: [campoDeAlta(id.aplica, 'Se aplica a *', aplica), campoDeAlta(id.metodo, 'Método *', metodo), cGrupo, cPersona] }],
     alGuardar: async () => {
       const l = letra.value.trim().toUpperCase().replace(/[^A-Z:]/g, '');
       if (!/^[A-Z]:?$/.test(l)) throw new Error('La letra de unidad es una sola letra, por ejemplo «P:».');

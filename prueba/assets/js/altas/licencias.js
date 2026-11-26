@@ -31,10 +31,10 @@ registrarAlta('licencias', async ctx => {
     valoresAlta: valoresClave, rotuloOrigen: 'Nueva licencia' }) : null;
   return abrirFormularioDeAlta({
     titulo: 'Nueva licencia', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva licencia' ? ctx.rotulo : null, textoGuardar: 'Crear licencia', enfocar: producto,
-    cuerpo: [campoDeAlta(id.producto, 'Producto y edición *', producto), campoDeAlta(id.tipo, 'Tipo *', tipo), campoDeAlta(id.cantidad, 'Cantidad comprada *', cantidad), cVence,
-      campoDeAlta(id.proveedor, 'Proveedor', proveedor),
+    secciones: [{ titulo: 'Identificación', cuerpo: [campoDeAlta(id.producto, 'Producto y edición *', producto), campoDeAlta(id.tipo, 'Tipo *', tipo), campoDeAlta(id.cantidad, 'Cantidad comprada *', cantidad), cVence] }],
+    mas: { resumen: 'proveedor, clave', cuerpo: [campoDeAlta(id.proveedor, 'Proveedor', proveedor),
       clave ? campoDeAlta(id.clave, 'Clave (credencial)', clave, 'La clave se guarda como credencial de tipo «Clave de licencia»: queda oculta y se pide con registro. Las OEM atadas al equipo pueden no tenerla.')
-        : h('div', { class: 'mut', text: 'Tu rol no puede crear credenciales; pedile a quien las administre que cargue la clave y la vincule.' })],
+        : h('div', { class: 'mut', text: 'Tu rol no puede crear credenciales; pedile a quien las administre que cargue la clave y la vincule.' })] },
     alGuardar: async () => {
       const cant = Number(cantidad.value);
       if (!producto.value.trim()) throw new Error('Escribí el producto y la edición.');

@@ -13,6 +13,7 @@
 import * as repositorio from '../repositorio.js';
 import { h } from '../utiles.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear, rotuloDeRegistro } from '../altas.js';
+import { enlazarValidacion, siguienteNombreLibre } from '../validaciones.js';
 
 /**
  * Opciones de sedes de una organización (solo sedes).
@@ -50,11 +51,23 @@ registrarAlta('ubicaciones', async ctx => {
   const actualizar = () => { tipo = /** @type {'sede'|'sala'} */ (selTipo.value); cSede.hidden = tipo !== 'sala'; cDir.hidden = tipo !== 'sede'; };
   selTipo.addEventListener('change', actualizar);
   actualizar();
+  const cNombre = campoDeAlta(ID_AL_UB_NOMBRE, 'Nombre *', nombre);
+  // Una sede no puede repetirse en la organización; una sala, dentro de su sede (igual que `repositorio.guardar`).
+  enlazarValidacion(cNombre, async () => {
+    const nom = nombre.value.trim();
+    if (!nom) return null;
+    const todas = await repositorio.listar('ubicaciones', { organizacion_id: ctx.organizacion_id });
+    const hermanas = todas.filter((/** @type {any} */ u) => u.ubicacion_tipo === tipo && (tipo === 'sede' || u.ubicacion_padre_id === sede.value));
+    if (!hermanas.some((/** @type {any} */ u) => u.ubicacion_nombre.trim().toLowerCase() === nom.toLowerCase())) return null;
+    const sug = siguienteNombreLibre(nom, hermanas.map((/** @type {any} */ u) => u.ubicacion_nombre));
+    return { nivel: 'mal', mensaje: 'Ya hay ' + (tipo === 'sede' ? 'una sede' : 'una sala en esa sede') + ' llamada «' + nom + '».', sugerencia: { texto: 'Usar ' + sug, valor: sug } };
+  }, { tambien: [selTipo, sede] });
   const titulo = fijo === 'sede' ? 'Nueva sede' : fijo === 'sala' ? 'Nueva sala' : 'Nueva sede o sala';
 
   return abrirFormularioDeAlta({
     titulo, rotulo: ctx.rotulo, textoGuardar: fijo === 'sede' ? 'Crear sede' : fijo === 'sala' ? 'Crear sala' : 'Crear',
-    cuerpo: [fijo ? null : campoDeAlta(ID_AL_UB_TIPO, 'Tipo *', selTipo), campoDeAlta(ID_AL_UB_NOMBRE, 'Nombre *', nombre), cSede, cDir, campoDeAlta(ID_AL_UB_NOTAS, 'Notas', notas)],
+    secciones: [{ titulo: 'Identificación', cuerpo: [fijo ? null : campoDeAlta(ID_AL_UB_TIPO, 'Tipo *', selTipo), cNombre, cSede] }],
+    mas: { resumen: 'dirección, notas', cuerpo: [cDir, campoDeAlta(ID_AL_UB_NOTAS, 'Notas', notas)] },
     enfocar: nombre,
     alGuardar: async () => {
       const nom = nombre.value.trim();

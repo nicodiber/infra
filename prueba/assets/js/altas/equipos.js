@@ -12,6 +12,9 @@
  *  - `rack_id`, `rack_u_inicio`, `rack_u_alto`, `ubicacion_id`, `puesto_id`, `equipo_nombre`, `equipo_marca`, `equipo_modelo`,
  *    `equipo_estado`, `equipo_notas`, `equipo_campos` (campos del tipo), `titulo`, `duplicado_de`.
  * Rack, sede / sala, puesto, host y computadoras se eligen con `selectorConCrear` (se crean en el momento).
+ * v0.10: secciones (Identificación · Ubicación · Red · datos del tipo · «Más datos»), validación al salir de cada campo (nombre repetido,
+ * IP repetida, U ocupada, canal de NVR), sugerencias (nombre con numeración, marca y modelo más usados, «Igual que …») y, en los equipos que
+ * van en un rack, vista previa en vivo (U cercanas del rack y etiqueta).
  * `valoresParaDuplicar(equipo)` arma los valores de «Duplicar» (MJ48).
  */
 
@@ -19,13 +22,18 @@ import * as repositorio from '../repositorio.js';
 import { h, normalizar } from '../utiles.js';
 import { ROTULO_EQUIPO_TIPO, ROTULO_ESTADO_EQUIPO, CATEGORIA_NVR, esNvr } from '../modelos.js';
 import { CAMPOS_POR_TIPO, camposIniciales, camposDeCategoria, formulario } from '../red.js';
-import { ipValida, macValida, validarLugarEnRack, primeraUnidadLibre, ROTULO_VIRTUALIZACION } from '../racks.js';
-import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear, opcionesDe } from '../altas.js';
+import { ipValida, macValida, validarLugarEnRack, primeraUnidadLibre, rutaUbicacion, porId, ROTULO_VIRTUALIZACION } from '../racks.js';
+import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, marcarObligatorio, selectorConCrear, opcionesDe } from '../altas.js';
+import { enlazarValidacion, validarNombreUnico, validarIp, validarPosicion, validarCanalNvr } from '../validaciones.js';
+import { masUsados, siguienteEnSerie, ultimoCreado, chipsDeSugerencia, escribirEn } from '../sugerencias.js';
+import { qrSvg } from '../qr.js';
 
 /** @typedef {import('../red.js').Campo} Campo */
 
 const TIPOS = ['router', 'firewall', 'switch', 'access_point', 'servidor', 'patchera', 'ups', 'camara', 'otro'];
 const CATEGORIAS_SUGERIDAS = ['PC de escritorio', 'Notebook', 'Impresora de red', 'Impresora', 'Reloj de control de personal', 'HMI / terminal de planta', 'Terminal de balanza', 'NVR de cámaras', 'NAS'];
+/** Tipos que normalmente van en un rack: muestran la vista previa aunque todavía no se haya elegido el rack. */
+const VAN_EN_RACK = ['router', 'firewall', 'switch', 'servidor', 'patchera', 'ups'];
 /** Claves de `equipo_campos` que son una IP del propio equipo: no se copian al duplicar. */
 const CLAVES_IP = ['router_ip_lan', 'firewall_ip_lan', 'servidor_ip_ilo_idrac'];
 
@@ -85,7 +93,6 @@ registrarAlta('equipos', async ctx => {
     ser: idUnico('eq-ser'), mac: idUnico('eq-mac'), ip: idUnico('eq-ip'), est: idUnico('eq-est'), rack: idUnico('eq-rack'), ini: idUnico('eq-ini'), alto: idUnico('eq-alto'), ub: idUnico('eq-ub'), pu: idUnico('eq-pu'), notas: idUnico('eq-notas') };
   let tipo = tiposOk.includes(v.equipo_tipo) ? v.equipo_tipo : tiposOk[0];
   const titulo = v.titulo || (tipoFijo && tipo !== 'otro' ? (tipo === 'patchera' ? 'Nueva patchera' : tipo === 'camara' ? 'Nueva cámara' : 'Nuevo ' + ROTULO_EQUIPO_TIPO[tipo].toLowerCase()) : 'Nuevo equipo');
-  const dos = (/** @type {Node[]} */ ...c) => h('div', { class: 'rk-dos' }, c);
   const inp = (/** @type {string} */ id, /** @type {any} */ val, /** @type {Object<string,string>} */ ex) => { const i = /** @type {HTMLInputElement} */ (h('input', { id, type: 'text', ...(ex || {}) })); i.value = val == null ? '' : String(val); return i; };
 
   // ---- identidad
@@ -122,10 +129,9 @@ registrarAlta('equipos', async ctx => {
   const cIni = campoDeAlta(ID.ini, 'Posición (U) inicial (1 = abajo)', uIni), cAlto = campoDeAlta(ID.alto, 'Alto en U', uAlto);
   const cUb = campoDeAlta(ID.ub, 'Sede / sala', ubic);
   const cPu = campoDeAlta(ID.pu, 'Puesto de trabajo', puesto, 'Para PC, notebook, impresora o reloj: el lugar donde llega la boca de pared.');
-  const filaRack = h('div', { class: 'rk-tres' }, [cRack, cIni, cAlto]);
 
   // ---- campos propios del tipo
-  const zonaTipo = h('div');
+  const zonaTipo = h('section', { class: 'alta-seccion' });
   /** @type {null|ReturnType<typeof formulario>} */ let fTipo = null;
   /** @type {null|ReturnType<typeof formulario>} */ let fCat = null;
   /** @type {Object<string, HTMLSelectElement>} */ let selEquipos = {};
@@ -141,17 +147,23 @@ registrarAlta('equipos', async ctx => {
         const canal = fTipo && fTipo.ctl.camara_canal;
         if (!nvrId || !canal || canal.value.trim()) return;
         canal.value = String(await proximoCanalLibre(nvrId, org, null));
+        const cp = /** @type {any} */ (canal.closest('.campo'));
+        if (cp && cp.validar) cp.validar();
       };
       fTipo = formulario(campos, inicial, tipo === 'camara' ? { selectorEquipo: (c, val) => selectorDeNvr(c, val, org, titulo, id => { sugerirCanal(id); }) } : undefined);
       if (tipo === 'camara' && inicial.camara_nvr_id) sugerirCanal(inicial.camara_nvr_id);
-      zonaTipo.appendChild(h('h3', { text: 'Datos propios de ' + (tipo === 'otro' ? 'este equipo' : ROTULO_EQUIPO_TIPO[tipo].toLowerCase()), style: 'margin:10px 0 6px' })); zonaTipo.appendChild(fTipo.nodo);
+      const canal = fTipo.ctl.camara_canal, nvr = fTipo.ctl.camara_nvr_id;
+      if (tipo === 'camara' && canal && nvr) { // canal ocupado en ese NVR (QC74): propone el primero libre
+        enlazarValidacion(/** @type {HTMLElement} */ (canal.closest('.campo')), () => validarCanalNvr({ nvrId: nvr.value || null, canal: canal.value, org }), { controles: [canal], tambien: [nvr] });
+      }
+      zonaTipo.appendChild(h('h3', { text: 'Datos propios de ' + (tipo === 'otro' ? 'este equipo' : ROTULO_EQUIPO_TIPO[tipo].toLowerCase()) })); zonaTipo.appendChild(fTipo.nodo);
     }
     if (tipo === 'otro') {
       const cs = camposDeCategoria(categoria.value);
       if (cs.length) {
         const vals = { ...inicial }; if (!vals.impresora_conexion && cs.some(c => c.k === 'impresora_conexion')) vals.impresora_conexion = 'red';
         fCat = formulario(cs.filter(c => c.t !== 'equipo'), vals);
-        zonaTipo.appendChild(h('h3', { text: 'Datos propios de «' + categoria.value.trim() + '»', style: 'margin:10px 0 6px' })); zonaTipo.appendChild(fCat.nodo);
+        zonaTipo.appendChild(h('h3', { text: 'Datos propios de «' + categoria.value.trim() + '»' })); zonaTipo.appendChild(fCat.nodo);
         for (const c of cs.filter(x => x.t === 'equipo')) {
           const id = idUnico('eq-ref');
           const s = selectorConCrear({ desde: 'equipos', campo: 'equipo_campos.' + c.k, organizacion_id: org, valor: valoresCampos[c.k] || null, id, rotuloOrigen: titulo, cargarOpciones: pcs,
@@ -163,6 +175,7 @@ registrarAlta('equipos', async ctx => {
         if (con && pc) { const sync = () => { pc.disabled = con.value !== 'usb'; if (con.value !== 'usb') pc.value = ''; }; con.addEventListener('change', sync); sync(); }
       }
     }
+    zonaTipo.hidden = !zonaTipo.childNodes.length;
   };
 
   // ---- qué se ve según el tipo, y el lugar
@@ -170,8 +183,8 @@ registrarAlta('equipos', async ctx => {
     tipo = selTipo.value;
     const vm = esVM();
     selQue.parentElement && (selQue.parentElement.hidden = tipo !== 'servidor');
-    cHost.hidden = !vm; cCat.hidden = tipo !== 'otro'; filaRack.hidden = vm; cUb.hidden = vm; cPu.hidden = tipo !== 'otro' || vm;
-    pintarTipo(); sincronizar();
+    cHost.hidden = !vm; cCat.hidden = tipo !== 'otro'; cRack.hidden = vm; cIni.hidden = vm; cAlto.hidden = vm; cUb.hidden = vm; cPu.hidden = tipo !== 'otro' || vm;
+    pintarTipo(); renovarSugerencias(); sincronizar();
   };
   async function sincronizar() {
     const rk = rack.value, pu = tipo === 'otro' ? puesto.value : '';
@@ -182,31 +195,126 @@ registrarAlta('equipos', async ctx => {
       if (r) { await ubic.listo; ubic.value = r.ubicacion_id; }
       ubic.disabled = true;
       if (!uIni.value && r) { const montados = await repositorio.listar('equipos', { rack_id: rk }); const s = primeraUnidadLibre(r.rack_unidades_total, montados, parseInt(uAlto.value, 10) || 1); uIni.value = s == null ? '' : String(s); }
+      marcarObligatorio(cIni, true);
+      await /** @type {any} */ (cIni).validar();
     } else if (pu) {
       const p = await repositorio.obtener('puestos', pu);
       if (p) { await ubic.listo; ubic.value = p.ubicacion_id; }
       ubic.disabled = true;
     } else ubic.disabled = false;
+    if (!rk) { marcarObligatorio(cIni, false); cIni.classList.remove('ok', 'mal'); cIni.dataset.estado = ''; await /** @type {any} */ (cIni).validar(); }
+    pintarPrevia();
   }
   uAlto.addEventListener('change', () => { uIni.value = ''; sincronizar(); });
   selTipo.addEventListener('change', alTipo);
   selQue.addEventListener('change', alTipo);
-  categoria.addEventListener('change', () => { if (tipo === 'otro') { pintarTipo(); } });
+  categoria.addEventListener('change', () => { if (tipo === 'otro') { pintarTipo(); renovarSugerencias(); } });
 
   const cCat = campoDeAlta(ID.cat, 'Categoría *', categoria, 'Qué es. Las PC y notebooks se ven en «Equipos de escritorio».');
   cCat.appendChild(listaCat);
-  const cTipo = tipoFijo ? h('div', { class: 'mut', style: 'margin-top:8px', text: 'Tipo: ' + ROTULO_EQUIPO_TIPO[tipo] + '. No se puede cambiar después.' }) : campoDeAlta(ID.tipo, 'Tipo *', selTipo, 'No se puede cambiar después de creado.');
+  const cTipo = tipoFijo ? h('div', { class: 'mut', text: 'Tipo: ' + ROTULO_EQUIPO_TIPO[tipo] + '. No se puede cambiar después.' }) : campoDeAlta(ID.tipo, 'Tipo *', selTipo, 'No se puede cambiar después de creado.');
   const cQue = campoDeAlta(ID.que, 'Qué es', selQue);
+
+  // ---- campos de identificación con validación y sugerencias
+  const cNombre = campoDeAlta(ID.nom, 'Nombre *', nombre), cMarca = campoDeAlta(ID.marca, 'Marca', marca), cModelo = campoDeAlta(ID.mod, 'Modelo', modelo);
+  const cIp = campoDeAlta(ID.ip, 'IP de gestión', ip), cEstado = campoDeAlta(ID.est, 'Estado *', estado);
+  const cCodigo = campoDeAlta(ID.cod, 'Código', codigo, 'Vacío: se genera solo.');
+  const chMarca = chipsDeSugerencia(), chModelo = chipsDeSugerencia();
+  cMarca.appendChild(chMarca.nodo); cModelo.appendChild(chModelo.nodo);
+  /** Equipos de la organización (se leen una vez: alcanzan para sugerir y para la serie de nombres). */
+  const existentes = await repositorio.listar('equipos', { organizacion_id: org });
+  /** Equipos «parecidos»: mismo tipo (y categoría si es «otro»; físico o virtual si es servidor). @param {any} e */
+  const claveDe = e => e.equipo_tipo === 'otro' ? 'otro:' + normalizar(String((e.equipo_campos || {}).otro_categoria || '')) : e.equipo_tipo === 'servidor' ? 'servidor:' + ((e.equipo_campos || {}).host_id ? 'vm' : 'fisico') : e.equipo_tipo;
+  const claveActual = () => claveDe({ equipo_tipo: tipo, equipo_campos: { otro_categoria: categoria.value, host_id: esVM() ? 'x' : null } });
+  const parecidos = () => existentes.filter(e => claveDe(e) === claveActual());
+  let nombreTocado = !!v.equipo_nombre;
+  let propuesta = /** @type {{sugerido: string, ayuda: string}|null} */ (null);
+  nombre.addEventListener('input', () => { nombreTocado = true; }); // `renovarSugerencias` escribe el valor sin evento: solo cuenta lo que hace el usuario
+  function renovarSugerencias() {
+    const mismos = parecidos();
+    propuesta = siguienteEnSerie(mismos.map(e => String(e.equipo_nombre)));
+    if (!nombreTocado) { nombre.value = propuesta ? propuesta.sugerido : ''; }
+    /** @type {Array<import('../sugerencias.js').Sugerencia>} */
+    const lista = [];
+    const ultimo = ultimoCreado(mismos.filter(e => e.equipo_marca || e.equipo_modelo));
+    if (ultimo) lista.push({ texto: 'Igual que ' + ultimo.equipo_nombre, destacada: true, alElegir: () => { escribirEn(marca, ultimo.equipo_marca || ''); escribirEn(modelo, ultimo.equipo_modelo || ''); } });
+    for (const m of masUsados(mismos, e => e.equipo_marca, 4)) lista.push({ texto: m, alElegir: () => escribirEn(marca, m) });
+    chMarca.pintar(lista);
+    const delaMarca = marca.value.trim() ? mismos.filter(e => normalizar(e.equipo_marca) === normalizar(marca.value)) : mismos;
+    chModelo.pintar(masUsados(delaMarca, e => e.equipo_modelo, 3).map(m => ({ texto: m, alElegir: () => escribirEn(modelo, m) })));
+    /** @type {any} */ (cNombre).validar();
+    pintarPrevia();
+  }
+  marca.addEventListener('input', () => {
+    const delaMarca = marca.value.trim() ? parecidos().filter(e => normalizar(e.equipo_marca) === normalizar(marca.value)) : parecidos();
+    chModelo.pintar(masUsados(delaMarca, e => e.equipo_modelo, 3).map(m => ({ texto: m, alElegir: () => escribirEn(modelo, m) })));
+  });
+  enlazarValidacion(cNombre, async () => {
+    const r = await validarNombreUnico({ coleccion: 'equipos', campo: 'equipo_nombre', org, valor: nombre.value, articulo: 'un equipo' });
+    if (r) return r;
+    return propuesta && nombre.value.trim() === propuesta.sugerido ? { nivel: 'ok', mensaje: propuesta.ayuda } : null;
+  });
+  enlazarValidacion(cIp, () => validarIp({ ip: ip.value, org }));
+  enlazarValidacion(cIni, () => validarPosicion({ rackId: rack.value || null, inicio: parseInt(uIni.value, 10), alto: parseInt(uAlto.value, 10) || 1 }), { tambien: [rack, uAlto] });
+  uIni.addEventListener('input', () => pintarPrevia());
+  uAlto.addEventListener('input', () => pintarPrevia());
+  nombre.addEventListener('input', () => pintarPrevia());
+  codigo.addEventListener('input', () => pintarPrevia());
+
+  // ---- vista previa en vivo (opción C): U cercanas del rack y etiqueta. Solo equipos que van en un rack.
+  const previaRack = h('div'), previaEtiqueta = h('div');
+  const previa = h('aside', { 'aria-label': 'Vista previa del equipo', hidden: 'hidden' }, [h('h4', { text: 'Dónde queda' }), previaRack, h('h4', { text: 'Etiqueta que va a salir' }), previaEtiqueta]);
+  let turnoPrevia = 0;
+  function pintarPrevia() {
+    const mio = ++turnoPrevia;
+    const sirve = !esVM() && (VAN_EN_RACK.includes(tipo) || !!rack.value);
+    previa.hidden = !sirve;
+    if (!sirve) return;
+    (async () => {
+      const rk = rack.value ? await repositorio.obtener('racks', rack.value) : null;
+      const montados = rk ? await repositorio.listar('equipos', (/** @type {any} */ e) => e.rack_id === rk.id) : [];
+      const ubicaciones = rk ? await repositorio.listar('ubicaciones', { organizacion_id: org }) : [];
+      const codigoPrevisto = codigo.value.trim() || await repositorio.proximoCodigoDeEquipo({ organizacion_id: org, equipo_tipo: tipo, equipo_campos: { otro_categoria: categoria.value.trim(), host_id: esVM() ? 'x' : null } });
+      if (mio !== turnoPrevia) return; // llegó una actualización más nueva
+      const nom = nombre.value.trim() || 'Equipo nuevo';
+      const ini = parseInt(uIni.value, 10), alto = parseInt(uAlto.value, 10) || 1;
+      previaRack.textContent = '';
+      previaRack.appendChild(h('h4', { text: rk ? 'En el rack ' + rk.rack_nombre : 'Elegí un rack para ver dónde queda', style: 'margin-bottom:6px' }));
+      if (rk && ini >= 1) {
+        const hasta = Math.min(rk.rack_unidades_total, Math.max(ini + alto - 1 + 4, 8)), desde = Math.max(1, Math.min(ini - 3, hasta - 7));
+        const caja = h('div', { class: 'ap-rack' });
+        for (let u = hasta; u >= desde; u--) {
+          const ocupante = montados.find((/** @type {any} */ e) => e.rack_u_inicio != null && u >= e.rack_u_inicio && u <= e.rack_u_inicio + (e.rack_u_alto || 1) - 1);
+          const nuevo = u >= ini && u <= ini + alto - 1;
+          const arriba = (/** @type {number} */ x) => u === x;
+          const c = h('span', { class: 'c' + (nuevo ? ' nuevo' + (ocupante ? ' choque' : '') : ocupante ? ' ocu' : ''),
+            text: nuevo ? (arriba(ini + alto - 1) ? nom + (ocupante ? ' · choca' : ' · nuevo') : '') : ocupante && arriba(ocupante.rack_u_inicio + (ocupante.rack_u_alto || 1) - 1) ? ocupante.equipo_nombre : '' });
+          caja.appendChild(h('div', { class: 'ap-u' }, [h('span', { class: 'n', text: String(u) }), c]));
+        }
+        previaRack.appendChild(caja);
+      } else if (rk) previaRack.appendChild(h('div', { class: 'mut', text: 'Indicá la posición (U) para verlo en el rack.' }));
+      previaEtiqueta.textContent = '';
+      const sala = rk ? rutaUbicacion(rk.ubicacion_id, porId(ubicaciones)) : '';
+      previaEtiqueta.appendChild(h('div', { class: 'ap-etiq' }, [
+        h('div', null, [h('b', { text: codigoPrevisto }), h('span', { text: nom }), h('span', { text: rk ? (sala ? sala + ' · ' : '') + (ini >= 1 ? 'U' + ini : rk.rack_nombre) : 'Sin rack todavía' })]),
+        qrSvg('infradoc:' + codigoPrevisto, { margen: 1 })]));
+    })().catch(console.error);
+  }
   alTipo();
   await Promise.all([rack.listo, ubic.listo, puesto.listo]);
   await sincronizar();
 
+  pintarPrevia();
   return abrirFormularioDeAlta({
     titulo, rotulo: ctx.rotulo && ctx.rotulo !== titulo ? ctx.rotulo : null, textoGuardar: 'Crear', enfocar: nombre,
     intro: v.duplicado_de ? 'Copia de «' + v.duplicado_de + '». No se copian el número de serie, la MAC, las IP, el código, la posición en el rack, las conexiones de puertos ni las credenciales. Los campos con * son obligatorios.' : undefined,
-    cuerpo: [dos(cTipo, cQue), cCat, cHost, dos(campoDeAlta(ID.nom, 'Nombre *', nombre), campoDeAlta(ID.cod, 'Código', codigo)), dos(campoDeAlta(ID.marca, 'Marca', marca), campoDeAlta(ID.mod, 'Modelo', modelo)),
-      dos(campoDeAlta(ID.ser, 'Número de serie', serie), campoDeAlta(ID.mac, 'MAC', mac)), dos(campoDeAlta(ID.ip, 'IP de gestión', ip), campoDeAlta(ID.est, 'Estado *', estado)),
-      h('h3', { text: 'Dónde está', style: 'margin:10px 0 0' }), filaRack, cUb, cPu, zonaTipo, campoDeAlta(ID.notas, 'Notas', notas)],
+    secciones: [
+      { titulo: 'Identificación', cuerpo: [cTipo, cQue, cCat, cHost, cNombre, cMarca, cModelo, cEstado] },
+      { titulo: 'Ubicación', cuerpo: [cRack, cIni, cAlto, cUb, cPu] },
+      { titulo: 'Red', cuerpo: [cIp] },
+      zonaTipo],
+    mas: { resumen: 'código, serie, MAC, notas', cuerpo: [cCodigo, campoDeAlta(ID.ser, 'Número de serie', serie), campoDeAlta(ID.mac, 'MAC', mac), campoDeAlta(ID.notas, 'Notas', notas)] },
+    previa,
     alGuardar: async () => {
       const vm = esVM();
       const nom = nombre.value.trim();

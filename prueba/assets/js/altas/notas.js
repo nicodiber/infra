@@ -21,8 +21,8 @@ registrarAlta('notas', async ctx => {
   const contenido = areaTexto(id.contenido, v.nota_contenido, 10, { placeholder: 'Escribí la nota. Los saltos de línea se conservan.' });
   return abrirFormularioDeAlta({
     titulo: 'Nueva nota', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva nota' ? ctx.rotulo : null, textoGuardar: 'Crear nota', enfocar: titulo,
-    cuerpo: [h('div', { class: 'mut', text: 'De: ' + (entidad ? origen.etiqueta + ' · ' + origen.nombre : 'la organización') }),
-      campoDeAlta(id.titulo, 'Título *', titulo), campoDeAlta(id.contenido, 'Contenido * (sin contraseñas ni claves)', contenido, 'Para las claves están las Credenciales.')],
+    secciones: [{ cuerpo: [h('div', { class: 'mut', text: 'De: ' + (entidad ? origen.etiqueta + ' · ' + origen.nombre : 'la organización') }),
+      campoDeAlta(id.titulo, 'Título *', titulo), campoDeAlta(id.contenido, 'Contenido * (sin contraseñas ni claves)', contenido, 'Para las claves están las Credenciales.')] }],
     alGuardar: async () => {
       if (!titulo.value.trim()) throw new Error('Escribí un título para la nota.');
       if (!contenido.value.trim()) throw new Error('Escribí el contenido de la nota.');

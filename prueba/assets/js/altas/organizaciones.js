@@ -9,6 +9,7 @@ import { puede } from '../permisos.js';
 import { toast } from '../marco.js';
 import { normalizar } from '../utiles.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta } from '../altas.js';
+import { enlazarValidacion } from '../validaciones.js';
 import * as repositorio from '../repositorio.js';
 import { entrada, areaTexto } from './comunes.js';
 
@@ -20,9 +21,15 @@ registrarAlta('organizaciones', async ctx => {
   const rubro = entrada(id.rubro, v.organizacion_rubro, { maxlength: '80', placeholder: 'Ej.: Agroindustria' });
   const cuit = entrada(id.cuit, v.organizacion_cuit, { maxlength: '20', placeholder: '30-00000000-0' });
   const notas = areaTexto(id.notas, v.organizacion_notas, 3);
+  const cNombre = campoDeAlta(id.nombre, 'Nombre *', nombre);
+  enlazarValidacion(cNombre, async () => {
+    const igual = (await repositorio.listar('organizaciones', null, { incluirBajas: true })).find((/** @type {any} */ o) => normalizar(o.organizacion_nombre) === normalizar(nombre.value) && nombre.value.trim());
+    return igual ? { nivel: 'mal', mensaje: 'Ya existe una organización llamada «' + igual.organizacion_nombre + '»' + (igual.eliminado_en ? ' (dada de baja: se reactiva desde «Ver dadas de baja»)' : '') + '.' } : null;
+  });
   return abrirFormularioDeAlta({
     titulo: 'Nueva organización', rotulo: ctx.rotulo, textoGuardar: 'Crear organización', enfocar: nombre,
-    cuerpo: [campoDeAlta(id.nombre, 'Nombre *', nombre), campoDeAlta(id.rubro, 'Rubro', rubro), campoDeAlta(id.cuit, 'CUIT', cuit, 'En el prototipo, siempre ficticio.'), campoDeAlta(id.notas, 'Notas (sin secretos)', notas)],
+    secciones: [{ titulo: 'Identificación', cuerpo: [cNombre, campoDeAlta(id.rubro, 'Rubro', rubro)] }],
+    mas: { resumen: 'CUIT, notas', cuerpo: [campoDeAlta(id.cuit, 'CUIT', cuit, 'En el prototipo, siempre ficticio.'), campoDeAlta(id.notas, 'Notas (sin secretos)', notas)] },
     alGuardar: async () => {
       const nom = nombre.value.trim();
       if (!nom) throw new Error('Falta el nombre de la organización.');

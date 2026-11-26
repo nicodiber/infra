@@ -65,15 +65,14 @@ registrarAlta('configuraciones', async ctx => {
   const equipo = selectorConCrear({ desde: 'configuraciones', campo: 'equipo_id', organizacion_id: ctx.organizacion_id, valor: v.equipo_id || null, id: id.equipo,
     cargarOpciones: () => opcionesEquipos(ctx.organizacion_id), rotuloOrigen: 'Nueva configuración' });
   const reglas = editorReglas(Array.isArray(v.configuracion_datos) ? v.configuracion_datos : []);
-  const cReglas = h('div', { class: 'campo' }, [h('label', { text: 'Reglas de reenvío de puertos' }), reglas.nodo]);
+  const cReglas = h('div', { class: 'campo ancho' }, [h('label', { text: 'Reglas de reenvío de puertos' }), reglas.nodo]);
   const ajustar = () => { cReglas.hidden = tipo.value !== NAT; };
   tipo.addEventListener('change', ajustar); ajustar();
   return abrirFormularioDeAlta({
     titulo: 'Nueva configuración', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva configuración' ? ctx.rotulo : null, textoGuardar: 'Crear configuración', enfocar: titulo,
-    cuerpo: [campoDeAlta(id.titulo, 'Título *', titulo), campoDeAlta(id.tipo, 'Tipo *', tipo), campoDeAlta(id.equipo, 'Equipo', equipo), campoDeAlta(id.fecha, 'Fecha de la versión', fecha),
-      cReglas,
-      campoDeAlta(id.contenido, 'Contenido', contenido, 'Nunca escribas contraseñas acá: usá una línea «[ver credencial «Nombre»]» y cargá la contraseña en Credenciales.'),
-      campoDeAlta(id.notas, 'Notas', notas)],
+    secciones: [{ titulo: 'Identificación', cuerpo: [campoDeAlta(id.titulo, 'Título *', titulo), campoDeAlta(id.tipo, 'Tipo *', tipo), campoDeAlta(id.equipo, 'Equipo', equipo), campoDeAlta(id.fecha, 'Fecha de la versión', fecha)] },
+      { titulo: 'Contenido', cuerpo: [cReglas, campoDeAlta(id.contenido, 'Contenido', contenido, 'Nunca escribas contraseñas acá: usá una línea «[ver credencial «Nombre»]» y cargá la contraseña en Credenciales.')] }],
+    mas: { resumen: 'notas', cuerpo: [campoDeAlta(id.notas, 'Notas', notas)] },
     alGuardar: async () => {
       if (!titulo.value.trim()) throw new Error('Escribí el título de la configuración.');
       const datos = tipo.value === NAT ? reglas.leer() : null;

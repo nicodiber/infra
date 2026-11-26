@@ -8,6 +8,8 @@
 import * as repositorio from '../repositorio.js';
 import { h, normalizar } from '../utiles.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear } from '../altas.js';
+import { enlazarValidacion, validarNombreUnico } from '../validaciones.js';
+import { siguienteEnSerie } from '../sugerencias.js';
 
 registrarAlta('puestos', async ctx => {
   const ID_NP_BOCA = idUnico('np-boca');
@@ -21,10 +23,17 @@ registrarAlta('puestos', async ctx => {
   boca.value = v.puesto_boca_pared || '';
   const notas = /** @type {HTMLTextAreaElement} */ (h('textarea', { id: ID_NP_NOTAS, rows: '2' }));
   const lugar = selectorConCrear({ desde: 'puestos', campo: 'ubicacion_id', organizacion_id: ctx.organizacion_id, valor: v.ubicacion_id || null, obligatorio: true, id: ID_NP_UBIC, rotuloOrigen: 'Nuevo puesto' });
+  const serie = v.puesto_nombre ? null : siguienteEnSerie((await repositorio.listar('puestos', { organizacion_id: ctx.organizacion_id })).map((/** @type {any} */ p) => String(p.puesto_nombre)));
+  if (serie) nombre.value = serie.sugerido;
+  const cNombre = campoDeAlta(ID_NP_NOMBRE, 'Nombre *', nombre);
+  enlazarValidacion(cNombre, async () => (await validarNombreUnico({ coleccion: 'puestos', campo: 'puesto_nombre', org: ctx.organizacion_id, valor: nombre.value, articulo: 'un puesto' }))
+    || (serie && nombre.value.trim() === serie.sugerido ? { nivel: 'ok', mensaje: serie.ayuda } : null));
+  cNombre.validar();
   return abrirFormularioDeAlta({
     titulo: 'Nuevo puesto de trabajo', rotulo: ctx.rotulo && ctx.rotulo !== 'Nuevo puesto' ? ctx.rotulo : null, textoGuardar: 'Crear puesto', enfocar: nombre,
     intro: 'Un puesto es el lugar donde llega una boca de pared. La sede o sala es obligatoria; el resto se completa en la ficha.',
-    cuerpo: [campoDeAlta(ID_NP_NOMBRE, 'Nombre *', nombre), campoDeAlta(ID_NP_UBIC, 'Sede / sala *', lugar), campoDeAlta(ID_NP_BOCA, 'Boca de pared', boca), campoDeAlta(ID_NP_NOTAS, 'Notas', notas)],
+    secciones: [{ titulo: 'Identificación', cuerpo: [cNombre, campoDeAlta(ID_NP_UBIC, 'Sede / sala *', lugar)] }],
+    mas: { resumen: 'boca de pared, notas', cuerpo: [campoDeAlta(ID_NP_BOCA, 'Boca de pared', boca), campoDeAlta(ID_NP_NOTAS, 'Notas', notas)] },
     alGuardar: async () => {
       const nom = nombre.value.trim();
       if (!nom) throw new Error('Escribí el nombre del puesto.');

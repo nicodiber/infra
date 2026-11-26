@@ -8,6 +8,8 @@
 import * as repositorio from '../repositorio.js';
 import { h, normalizar } from '../utiles.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear } from '../altas.js';
+import { enlazarValidacion, validarNombreUnico } from '../validaciones.js';
+import { siguienteEnSerie } from '../sugerencias.js';
 
 registrarAlta('racks', async ctx => {
   const ID_RK_ALTO = idUnico('rk-alto');
@@ -25,12 +27,22 @@ registrarAlta('racks', async ctx => {
   const notas = /** @type {HTMLTextAreaElement} */ (h('textarea', { id: ID_RK_NOTAS, rows: '2' }));
   notas.value = v.rack_notas || '';
   const lugar = selectorConCrear({ desde: 'racks', campo: 'ubicacion_id', organizacion_id: ctx.organizacion_id, valor: v.ubicacion_id || null, obligatorio: true, id: ID_RK_UBIC, rotuloOrigen: 'Nuevo rack' });
-  const dos = (/** @type {Node[]} */ ...c) => h('div', { class: 'rk-dos' }, c);
+  // Nombre con numeración («RACK-PLA-03» detrás de «RACK-PLA-02») y aviso de nombre repetido con la corrección propuesta.
+  const existentes = (await repositorio.listar('racks', { organizacion_id: ctx.organizacion_id })).map((/** @type {any} */ r) => String(r.rack_nombre));
+  const serie = v.rack_nombre ? null : siguienteEnSerie(existentes);
+  if (serie) nombre.value = serie.sugerido;
+  const cNombre = campoDeAlta(ID_RK_NOMBRE, 'Nombre *', nombre);
+  enlazarValidacion(cNombre, async () => {
+    const r = await validarNombreUnico({ coleccion: 'racks', campo: 'rack_nombre', org: ctx.organizacion_id, valor: nombre.value, articulo: 'un rack' });
+    return r || (serie && nombre.value.trim() === serie.sugerido ? { nivel: 'ok', mensaje: serie.ayuda } : null);
+  });
+  cNombre.validar();
   return abrirFormularioDeAlta({
     titulo: 'Nuevo rack', rotulo: ctx.rotulo && ctx.rotulo !== 'Nuevo rack' ? ctx.rotulo : null, textoGuardar: 'Crear rack', enfocar: nombre,
     intro: v.duplicado_de ? 'Copia de «' + v.duplicado_de + '» (sin los equipos): el nombre tiene que ser distinto. Los campos con * son obligatorios.' : undefined,
-    cuerpo: [dos(campoDeAlta(ID_RK_NOMBRE, 'Nombre *', nombre), campoDeAlta(ID_RK_UBIC, 'Sede / sala *', lugar)),
-      dos(campoDeAlta(ID_RK_ALTO, 'Alto útil en U *', alto), campoDeAlta(ID_RK_PROF, 'Profundidad útil (mm)', prof)), campoDeAlta(ID_RK_NOTAS, 'Notas', notas)],
+    secciones: [{ titulo: 'Identificación', cuerpo: [cNombre, campoDeAlta(ID_RK_UBIC, 'Sede / sala *', lugar)] },
+      { titulo: 'Medidas', cuerpo: [campoDeAlta(ID_RK_ALTO, 'Alto útil en U *', alto)] }],
+    mas: { resumen: 'profundidad, notas', cuerpo: [campoDeAlta(ID_RK_PROF, 'Profundidad útil (mm)', prof), campoDeAlta(ID_RK_NOTAS, 'Notas', notas)] },
     alGuardar: async () => {
       const nom = nombre.value.trim();
       if (!nom) throw new Error('Falta el nombre del rack.');

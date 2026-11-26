@@ -272,7 +272,7 @@ export function formulario(campos, valores, opciones) {
       /** @type {HTMLInputElement} */ (e).value = v == null ? '' : String(v);
     }
     ctl[c.k] = /** @type {any} */ (e);
-    cont.appendChild(h('div', { class: 'campo', style: c.t === 'largo' ? 'grid-column:1/-1' : null }, [h('label', { text: c.r + (c.req ? ' *' : '') }), e]));
+    cont.appendChild(h('div', { class: 'campo', style: c.t === 'largo' ? 'grid-column:1/-1' : null }, [h('label', null, [c.r, c.req ? h('span', { class: 'oblig', title: 'Obligatorio', text: ' *' }) : null]), e]));
   }
   return {
     nodo: cont,

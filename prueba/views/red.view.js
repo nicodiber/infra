@@ -8,6 +8,7 @@ import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, toast } from '../assets/js/marco.js';
 import { abrirAlta } from '../assets/js/altas.js';
+import { botonCargarVarios } from '../assets/js/grilla.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import {
@@ -78,7 +79,7 @@ async function tabEquipos(ctx, racks, ubic) {
   const selT = h('select', { 'aria-label': 'Tipo de equipo' }, [h('option', { value: '', text: 'Todos los tipos' })].concat(TIPOS_RED.map(t => h('option', { value: t, text: ROTULO_EQUIPO_TIPO[t] }))));
   /** @type {HTMLSelectElement} */ (selT).value = filtroTipo;
   selT.addEventListener('change', () => { filtroTipo = /** @type {HTMLSelectElement} */ (selT).value; pintar(); });
-  raiz.appendChild(h('div', { class: 'herr' }, [inp, selT, h('span', { style: 'flex:1' }), botonAlta(ctx, 'equipos', 'Nuevo equipo', hashEquipo, r => r.equipo_nombre, { tipos: TIPOS_RED, equipo_tipo: 'switch' })]));
+  raiz.appendChild(h('div', { class: 'herr' }, [inp, selT, h('span', { style: 'flex:1' }), ctx.modifica ? botonCargarVarios('equipos_red', ctx.org) : null, botonAlta(ctx, 'equipos', 'Nuevo equipo', hashEquipo, r => r.equipo_nombre, { tipos: TIPOS_RED, equipo_tipo: 'switch' })]));
   raiz.appendChild(chipsCont); raiz.appendChild(tb); raiz.appendChild(cuenta);
   pintar();
   return raiz;
@@ -99,7 +100,7 @@ function botonAlta(ctx, coleccion, etiqueta, hash, nombre, valores) {
 /** @param {import('../assets/js/red.js').Contexto} ctx */
 async function tabVlan(ctx) {
   const vlans = (await repositorio.listar('vlans', { organizacion_id: ctx.org })).sort((a, b) => a.vlan_numero - b.vlan_numero);
-  const nuevo = botonAlta(ctx, 'vlans', 'Nueva VLAN', r => '#/vlan/' + r.id, r => 'VLAN ' + r.vlan_numero + ' · ' + r.vlan_nombre);
+  const nuevo = h('span', { class: 'herr' }, [ctx.modifica ? botonCargarVarios('vlans', ctx.org) : null, botonAlta(ctx, 'vlans', 'Nueva VLAN', r => '#/vlan/' + r.id, r => 'VLAN ' + r.vlan_numero + ' · ' + r.vlan_nombre)]);
   if (!vlans.length) return h('div', null, [h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }), nuevo]), h('div', { class: 'aviso' }, ['Esta organización todavía no tiene VLAN cargadas.' + (ctx.modifica ? ' Usá «Nueva VLAN» para cargar la primera: con número y nombre alcanza.' : '')])]);
   return h('div', null, [h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }), nuevo]), tabla(['VLAN', 'Nombre', 'Red', 'Gateway', 'DHCP', 'Verificado'],
     vlans.map(v => [String(v.vlan_numero), v.vlan_nombre, v.vlan_red_cidr || '—', v.vlan_gateway || '—', v.vlan_dhcp_activo ? 'Sí' + (v.vlan_dhcp_rango ? ' · ' + v.vlan_dhcp_rango : '') : 'No', indicadorVerificacion(v.verificado_en, ctx.umbrales, true)]),
@@ -251,10 +252,10 @@ async function tabPuestos(ctx, ubicaciones) {
   const cont = h('div');
   raiz.appendChild(cont);
 
-  const nuevo = ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo puesto', onclick: async () => {
+  const nuevo = ctx.modifica ? h('span', { class: 'herr' }, [botonCargarVarios('puestos', ctx.org), h('button', { type: 'button', class: 'primario', text: 'Nuevo puesto', onclick: async () => {
     const p = await abrirAlta('puestos', { organizacion_id: ctx.org, rotulo: 'Nuevo puesto' });
     if (p) { toast('Puesto «' + p.puesto_nombre + '» creado.'); ir('#/puesto/' + p.id); }
-  } }) : null;
+  } })]) : null;
   function pintar() {
     cont.textContent = '';
     cont.appendChild(vistaPuestos());

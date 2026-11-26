@@ -48,8 +48,9 @@ registrarAlta('asignaciones', async ctx => {
   Promise.all([persona.listo, equipo.listo]).then(revisar);
   return abrirFormularioDeAlta({
     titulo: 'Asignar un equipo a una persona', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva asignación' ? ctx.rotulo : null, textoGuardar: 'Asignar', enfocar: persona.value ? equipo : persona,
-    cuerpo: [campoDeAlta(id.persona, 'Persona *', persona), campoDeAlta(id.equipo, 'Equipo *', equipo), modo, aviso, campoDeAlta(id.desde, 'Desde *', desde),
-      campoDeAlta(id.motivo, 'Motivo', motivo), campoDeAlta(id.obs, 'Observaciones', obs, 'Estado, accesorios entregados.')],
+    secciones: [{ titulo: 'Quién y qué', cuerpo: [campoDeAlta(id.persona, 'Persona *', persona), campoDeAlta(id.equipo, 'Equipo *', equipo), modo, aviso] },
+      { titulo: 'Desde cuándo', cuerpo: [campoDeAlta(id.desde, 'Desde *', desde)] }],
+    mas: { resumen: 'motivo, observaciones', cuerpo: [campoDeAlta(id.motivo, 'Motivo', motivo), campoDeAlta(id.obs, 'Observaciones', obs, 'Estado, accesorios entregados.')] },
     alGuardar: async () => {
       if (!persona.value) throw new Error('Elegí la persona (si no está cargada, usá «+ Crear nueva persona…»).');
       if (!equipo.value) throw new Error('Elegí el equipo (si no está cargado, usá «+ Crear nuevo equipo…»).');

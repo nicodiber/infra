@@ -10,6 +10,7 @@ import { ir } from '../assets/js/marco.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { encabezado, leerRuta, pestanas, chipsEstado } from '../assets/js/red.js';
 import { crearYAbrir } from '../assets/js/altas/comunes.js';
+import { botonCargarVarios } from '../assets/js/grilla.js';
 import { cargarContextoPersonas, avisoPersonas, enlaceFila, nombreCuenta, hashDeEquipo, pillPersona, pillCuenta, alertaCuentaDeBaja } from '../assets/js/personas.js';
 
 // Filtros que se recuerdan al volver a la pantalla.
@@ -68,7 +69,7 @@ export async function renderVista(contenedor) {
     if (!personas.length) {
       zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [h('h2', { text: 'Todavía no hay personas cargadas' }),
         h('p', { text: 'Cargá a quienes trabajan en la organización para asignarles equipos y cuentas de dominio.' }),
-        ctx.modifica ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva persona', onclick: () => nuevaPersona() })]) : h('p', { class: 'mut', text: 'Tu rol no puede cargar personas: pedíselo a un técnico o gerente.' })]));
+        ctx.modifica ? h('div', { class: 'herr' }, [botonCargarVarios('personas', ctx.org), h('button', { type: 'button', class: 'primario', text: 'Nueva persona', onclick: () => nuevaPersona() })]) : h('p', { class: 'mut', text: 'Tu rol no puede cargar personas: pedíselo a un técnico o gerente.' })]));
       return;
     }
     const filas = base.filter(p => !filtro.personasChip || regla[filtro.personasChip](p));
@@ -130,6 +131,7 @@ export async function renderVista(contenedor) {
     zonaHerr.appendChild(sel);
   }
   zonaHerr.appendChild(h('span', { style: 'flex:1' }));
+  if (ctx.modifica && tab !== 'cuentas') zonaHerr.appendChild(botonCargarVarios('personas', ctx.org));
   if (ctx.modifica) zonaHerr.appendChild(h('button', { type: 'button', class: 'primario', text: tab === 'cuentas' ? 'Nueva cuenta' : 'Nueva persona', onclick: () => (tab === 'cuentas' ? nuevaCuenta() : nuevaPersona()) }));
   if (tab === 'cuentas') pintarCuentas(); else pintarPersonas();
 }

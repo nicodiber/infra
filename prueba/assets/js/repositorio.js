@@ -209,6 +209,14 @@ function siguienteCodigo(e) {
   return base + String(max + 1).padStart(3, '0');
 }
 
+/**
+ * Código que le tocaría a un equipo nuevo (por ejemplo `AGR-SW-004`), para mostrarlo en la vista previa de la etiqueta antes de crearlo.
+ * Es solo lectura: el código real lo asigna `guardar`.
+ * @param {{organizacion_id: string, equipo_tipo: string, equipo_campos?: Object<string, any>}} e
+ * @returns {Promise<string>}
+ */
+export async function proximoCodigoDeEquipo(e) { await iniciar(); return siguienteCodigo(e); }
+
 /** Da código a los equipos que no lo tienen (bases anteriores a la v0.4). Sin historial: es una migración. */
 async function completarCodigosDeEquipo() {
   const sin = Array.from(cache.equipos.values()).filter(e => !e.equipo_codigo).sort((a, b) => (a.creado_en < b.creado_en ? -1 : a.creado_en > b.creado_en ? 1 : 0));

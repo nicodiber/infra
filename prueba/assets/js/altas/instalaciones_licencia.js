@@ -38,9 +38,9 @@ registrarAlta('instalaciones_licencia', async ctx => {
     cargarOpciones: () => opcionesPersonas(ctx.organizacion_id, { soloActivas: true }), rotuloOrigen: 'Nueva instalación' }) : null;
   return abrirFormularioDeAlta({
     titulo: 'Instalar una licencia en un equipo', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva instalación' ? ctx.rotulo : null, textoGuardar: 'Agregar instalación', enfocar: lic.value ? equipo : lic,
-    cuerpo: [campoDeAlta(id.lic, 'Licencia *', lic), campoDeAlta(id.equipo, 'Equipo *', equipo), aviso, cuenta ? campoDeAlta(id.cuenta, 'Cuenta de dominio', cuenta) : null,
-      persona ? campoDeAlta(id.persona, 'Persona', persona) : null, campoDeAlta(id.desde, 'Instalada desde *', desde),
-      campoDeAlta(id.hasta, 'Retirada el', hasta, 'Vacío = sigue instalada.')],
+    secciones: [{ titulo: 'Qué se instala dónde', cuerpo: [campoDeAlta(id.lic, 'Licencia *', lic), campoDeAlta(id.equipo, 'Equipo *', equipo), aviso, campoDeAlta(id.desde, 'Instalada desde *', desde)] },
+      { titulo: 'Quién la usa', cuerpo: [cuenta ? campoDeAlta(id.cuenta, 'Cuenta de dominio', cuenta) : null, persona ? campoDeAlta(id.persona, 'Persona', persona) : null] }],
+    mas: { resumen: 'fecha de retiro', cuerpo: [campoDeAlta(id.hasta, 'Retirada el', hasta, 'Vacío = sigue instalada.')] },
     alGuardar: async () => {
       if (!lic.value) throw new Error('Elegí la licencia (si no está cargada, usá «+ Crear nueva licencia…»).');
       if (!equipo.value) throw new Error('Elegí el equipo donde está instalada.');

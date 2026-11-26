@@ -8,6 +8,7 @@ import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, toast } from '../assets/js/marco.js';
 import { abrirAlta } from '../assets/js/altas.js';
+import { botonCargarVarios } from '../assets/js/grilla.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import { CATEGORIAS_PUESTO, cargarContexto, encabezado, estadoPill, chipsEstado, avisoVista, hashEquipo, enlaceFila, cargarPersonas, abrirMoverEquipo } from '../assets/js/red.js';
@@ -66,7 +67,7 @@ export async function renderVista(contenedor) {
     const sel = h('select', { 'aria-label': 'Sede / sala' }, [h('option', { value: '', text: 'Todas las sedes y salas' })].concat(ubicaciones.slice().sort((a, b) => a.ubicacion_nombre.localeCompare(b.ubicacion_nombre, 'es', { numeric: true })).map(u => h('option', { value: u.id, text: u.ubicacion_nombre }))));
     /** @type {HTMLSelectElement} */ (sel).value = fUbic;
     sel.addEventListener('change', () => { fUbic = /** @type {HTMLSelectElement} */ (sel).value; pintar(); });
-    raiz.appendChild(h('div', { class: 'herr' }, [inp, sel, h('span', { style: 'flex:1' }), ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo equipo de escritorio', onclick: async () => {
+    raiz.appendChild(h('div', { class: 'herr' }, [inp, sel, h('span', { style: 'flex:1' }), ctx.modifica ? botonCargarVarios('escritorio', ctx.org) : null, ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo equipo de escritorio', onclick: async () => {
       const e = await abrirAlta('equipos', { organizacion_id: ctx.org, valores: { equipo_tipo: 'otro', tipos: ['otro'], categorias: ['PC de escritorio', 'Notebook'], otro_categoria: 'PC de escritorio', titulo: 'Nuevo equipo de escritorio' }, rotulo: null });
       if (e) { toast('«' + e.equipo_nombre + '» creado.'); ir(hashEquipo(e)); }
     } }) : null]));

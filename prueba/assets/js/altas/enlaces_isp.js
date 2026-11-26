@@ -12,6 +12,7 @@ import { h } from '../utiles.js';
 import { ROTULO_ENLACE_TIPO } from '../red.js';
 import { ipValida } from '../racks.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear, opcionesDe } from '../altas.js';
+import { enlazarValidacion } from '../validaciones.js';
 
 registrarAlta('enlaces_isp', async ctx => {
   const v = ctx.valores;
@@ -34,13 +35,15 @@ registrarAlta('enlaces_isp', async ctx => {
   const cli = txt(ID.cli, v.enlace_numero_cliente), tel = txt(ID.tel, v.enlace_telefono_soporte);
   const pri = /** @type {HTMLSelectElement} */ (h('select', { id: ID.pri }, [h('option', { value: 'si', text: 'Principal' }), h('option', { value: 'no', text: 'Respaldo' })]));
   pri.value = v.enlace_es_principal != null ? (v.enlace_es_principal ? 'si' : 'no') : (principal ? 'no' : 'si');
-  const dos = (/** @type {Node[]} */ ...c) => h('div', { class: 'rk-dos' }, c);
+  const cIp = campoDeAlta(ID.ip, 'IP pública', ip);
+  enlazarValidacion(cIp, () => (ip.value.trim() && !ipValida(ip.value.trim()) ? { nivel: 'mal', mensaje: 'La IP pública no es válida (por ejemplo 203.0.113.45).' } : null));
   return abrirFormularioDeAlta({
     titulo: 'Nuevo enlace a Internet', rotulo: ctx.rotulo && ctx.rotulo !== 'Nuevo enlace a Internet' ? ctx.rotulo : null, textoGuardar: 'Crear enlace', enfocar: prov,
-    cuerpo: [dos(campoDeAlta(ID.prov, 'Proveedor *', prov), campoDeAlta(ID.tipo, 'Medio *', tipo)), dos(campoDeAlta(ID.baja, 'Bajada contratada (Mbps)', baja), campoDeAlta(ID.sube, 'Subida contratada (Mbps)', sube)),
-      dos(campoDeAlta(ID.ip, 'IP pública', ip), campoDeAlta(ID.tip, 'Tipo de IP', tip)),
-      campoDeAlta(ID.eq, 'Termina en (router o firewall)', equipo), dos(campoDeAlta(ID.cli, 'N.º de cliente o de servicio', cli), campoDeAlta(ID.tel, 'Teléfono de soporte', tel)),
-      campoDeAlta(ID.pri, 'Rol *', pri, principal ? 'Ya hay un enlace principal («' + principal.enlace_proveedor + '»): este tiene que ser de respaldo.' : 'Máximo un enlace principal por organización.')],
+    secciones: [{ titulo: 'Identificación', cuerpo: [campoDeAlta(ID.prov, 'Proveedor *', prov), campoDeAlta(ID.tipo, 'Medio *', tipo),
+      campoDeAlta(ID.pri, 'Rol *', pri, principal ? 'Ya hay un enlace principal («' + principal.enlace_proveedor + '»): este tiene que ser de respaldo.' : 'Máximo un enlace principal por organización.')] },
+      { titulo: 'Velocidad e IP', cuerpo: [campoDeAlta(ID.baja, 'Bajada contratada (Mbps)', baja), campoDeAlta(ID.sube, 'Subida contratada (Mbps)', sube), cIp, campoDeAlta(ID.tip, 'Tipo de IP', tip)] },
+      { titulo: 'Conexión', cuerpo: [campoDeAlta(ID.eq, 'Termina en (router o firewall)', equipo)] }],
+    mas: { resumen: 'N.º de cliente, teléfono de soporte', cuerpo: [campoDeAlta(ID.cli, 'N.º de cliente o de servicio', cli), campoDeAlta(ID.tel, 'Teléfono de soporte', tel)] },
     alGuardar: async () => {
       const p = prov.value.trim();
       if (!p) throw new Error('Falta el proveedor.');

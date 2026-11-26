@@ -9,6 +9,8 @@ import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
 import { duplicar, selectorConCrear, abrirAlta } from '../assets/js/altas.js';
+import { enlazarValidacion, validarNombreUnico, validarIp, validarPosicion, validarCanalNvr } from '../assets/js/validaciones.js';
+import { masUsados, chipsDeSugerencia, escribirEn } from '../assets/js/sugerencias.js';
 import { valoresParaDuplicar, selectorDeNvr } from '../assets/js/altas/equipos.js';
 import { h, icono, tabla, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion, estadoVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO, ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, esImpresora, esNvr } from '../assets/js/modelos.js';
@@ -100,6 +102,8 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
   let leerForm = null;
   /** @type {HTMLElement|null} */
   let errorBox = null;
+  /** @type {HTMLElement|null} */
+  let btnGuardar = null;
   if (estado.editando) {
     /** Computadora con «+ Crear …» (impresora USB, reloj). @param {import('../assets/js/red.js').Campo} c @param {any} val */
     const selectorPc = (c, val) => c.k === 'camara_nvr_id' ? selectorDeNvr(c, val, ctx.org, 'Editar ' + e.equipo_nombre) : selectorConCrear({ desde: 'equipos', campo: 'equipo_campos.' + c.k, organizacion_id: ctx.org, valor: val || null, etiqueta: c.r, rotuloOrigen: 'Editar ' + e.equipo_nombre,
@@ -136,10 +140,31 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
     /** @type {HTMLInputElement} */ (uAlto).value = e.rack_u_alto == null ? '' : String(e.rack_u_alto);
     function alRack() { const r = racks.find(x => x.id === /** @type {HTMLSelectElement} */ (selRack).value); if (r) /** @type {HTMLSelectElement} */ (selUb).value = r.ubicacion_id; /** @type {HTMLSelectElement} */ (selUb).disabled = !!r; /** @type {HTMLInputElement} */ (uIni).disabled = !r; /** @type {HTMLInputElement} */ (uAlto).disabled = !r; }
     alRack();
+    /** @type {any} */ (selRack).listo.then(alRack); // las opciones del selector llegan después: sin esto, la U quedaba bloqueada hasta cambiar de rack
+    const cIni = h('div', { class: 'campo' }, [h('label', { text: 'U inicial (1 = abajo)' }), uIni]);
     const ubic = h('div', { class: 'datos', style: 'margin-top:8px' }, [
-      h('div', { class: 'campo' }, [h('label', { text: 'Rack' }), selRack]), h('div', { class: 'campo' }, [h('label', { text: 'U inicial (1 = abajo)' }), uIni]),
+      h('div', { class: 'campo' }, [h('label', { text: 'Rack' }), selRack]), cIni,
       h('div', { class: 'campo' }, [h('label', { text: 'Alto (U)' }), uAlto]), h('div', { class: 'campo' }, [h('label', { text: 'Sede / sala' }), selUb])]);
     errorBox = h('div', { class: 'rd-err', role: 'alert', 'aria-live': 'polite' });
+    // Validación al salir de cada campo (QC78-A) con las mismas funciones que los altas, y sugerencias de marca y modelo.
+    const campoDe = (/** @type {string} */ k) => /** @type {HTMLElement} */ (fc.ctl[k].closest('.campo'));
+    enlazarValidacion(campoDe('equipo_nombre'), () => validarNombreUnico({ coleccion: 'equipos', campo: 'equipo_nombre', org: ctx.org, valor: fc.ctl.equipo_nombre.value, exceptoId: e.id, articulo: 'otro equipo' }));
+    enlazarValidacion(campoDe('equipo_ip_gestion'), () => validarIp({ ip: fc.ctl.equipo_ip_gestion.value, org: ctx.org, exceptoId: e.id }));
+    enlazarValidacion(cIni, () => validarPosicion({ rackId: /** @type {HTMLSelectElement} */ (selRack).value || null, inicio: parseInt(/** @type {HTMLInputElement} */ (uIni).value, 10), alto: parseInt(/** @type {HTMLInputElement} */ (uAlto).value, 10) || 1, exceptoId: e.id }),
+      { tambien: [/** @type {HTMLElement} */ (selRack), /** @type {HTMLElement} */ (uAlto)] });
+    const canalCam = ft.ctl.camara_canal, nvrCam = ft.ctl.camara_nvr_id;
+    if (tipo === 'camara' && canalCam && nvrCam) enlazarValidacion(/** @type {HTMLElement} */ (canalCam.closest('.campo')), () => validarCanalNvr({ nvrId: nvrCam.value || null, canal: canalCam.value, org: ctx.org, exceptoId: e.id }), { controles: [canalCam], tambien: [nvrCam] });
+    const parecidos = Array.from(mapaEq.values()).filter(x => x.id !== e.id && x.equipo_tipo === e.equipo_tipo);
+    const chMarca = chipsDeSugerencia(), chModelo = chipsDeSugerencia();
+    campoDe('equipo_marca').appendChild(chMarca.nodo); campoDe('equipo_modelo').appendChild(chModelo.nodo);
+    const pintarModelos = () => {
+      const m = fc.ctl.equipo_marca.value.trim();
+      const base = m ? parecidos.filter(x => normalizar(x.equipo_marca) === normalizar(m)) : parecidos;
+      chModelo.pintar(masUsados(base, x => x.equipo_modelo, 3).map(t => ({ texto: t, alElegir: () => escribirEn(fc.ctl.equipo_modelo, t) })));
+    };
+    chMarca.pintar(masUsados(parecidos, x => x.equipo_marca, 4).map(t => ({ texto: t, alElegir: () => { escribirEn(fc.ctl.equipo_marca, t); pintarModelos(); } })));
+    fc.ctl.equipo_marca.addEventListener('input', pintarModelos);
+    pintarModelos();
     datos = h('div', { class: 'rd-edicion' }, [h('div', { class: 'mut', text: 'Tipo: ' + ROTULO_EQUIPO_TIPO[tipo] + ' (no se puede cambiar; si está mal cargado, dalo de baja y creá uno nuevo).' }), fc.nodo, ubic,
       camposTipo.length ? h('h3', { text: 'Datos propios de ' + (ROTULO_EQUIPO_TIPO[tipo] || tipo).toLowerCase(), style: 'margin:10px 0 6px' }) : null, ft.nodo, zonaCat, errorBox]);
     leerForm = () => {
@@ -175,7 +200,10 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
 
   const botones = /** @type {Node[]} */ ([]);
   if (estado.editando) {
-    botones.push(h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: async () => {
+    btnGuardar = h('button', { type: 'button', class: 'primario', text: 'Guardar', title: 'Ctrl+Enter', onclick: async () => {
+      // Antes de guardar se vuelven a correr las validaciones de pantalla (el usuario puede no haber salido del último campo).
+      await Promise.all(Array.from(datos.querySelectorAll('.campo')).map(c => (/** @type {any} */ (c).validar ? /** @type {any} */ (c).validar() : null)));
+      if (datos.querySelector('.campo[data-estado=mal]')) { /** @type {HTMLElement} */ (errorBox).textContent = 'Corregí los campos marcados en rojo.'; return; }
       const r = /** @type {() => any} */ (leerForm)();
       const v = r.valores;
       const errores = /** @type {string[]} */ (r.errores);
@@ -198,7 +226,10 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
       toast('Cambios guardados · verificado hoy (' + fmtFecha(ahoraISO()) + ')');
       estado.editando = false; history.replaceState(null, '', hashBaseConTab(hashBase, partes));
       await rearmar();
-    } }));
+    } });
+    botones.push(btnGuardar);
+    // Ctrl+Enter guarda desde cualquier campo (MJ60).
+    datos.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey) && btnGuardar) { ev.preventDefault(); btnGuardar.click(); } });
     botones.push(h('button', { type: 'button', text: 'Cancelar', onclick: async () => { estado.editando = false; history.replaceState(null, '', hashBaseConTab(hashBase, partes)); await rearmar(); } }));
   } else {
     if (ctx.modifica) botones.push(h('button', { type: 'button', text: 'Editar', onclick: async () => { estado.editando = true; await rearmar(); } }));

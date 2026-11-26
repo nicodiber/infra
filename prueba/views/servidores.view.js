@@ -9,6 +9,7 @@ import * as sesion from '../assets/js/sesion.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { abrirAlta } from '../assets/js/altas.js';
+import { botonCargarVarios } from '../assets/js/grilla.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import {
   bloqueSinPermiso, estadoVacio, estadoPill, chipsEstado, porId, rangoU, rutaEquipo
@@ -86,6 +87,7 @@ export async function renderVista(contenedor) {
 
   contenedor.appendChild(h('h1', { text: 'Servidores' }));
   contenedor.appendChild(h('div', { class: 'herr' }, [filtro, selTipo, h('span', { style: 'flex:1' }),
+    puedeModificar ? botonCargarVarios('servidores', org) : null,
     puedeModificar ? h('button', { type: 'button', class: 'primario', text: 'Nuevo servidor', onclick: async () => {
       const creado = await abrirAlta('equipos', { organizacion_id: org, valores: { equipo_tipo: 'servidor', tipos: ['servidor'] }, rotulo: null });
       if (creado) { toast('Servidor «' + creado.equipo_nombre + '» creado'); ir('#/servidor/' + creado.id); }

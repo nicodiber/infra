@@ -10,6 +10,7 @@ import * as repositorio from '../repositorio.js';
 import { h } from '../utiles.js';
 import { ROTULO_CUENTA_ESTADO } from '../modelos.js';
 import { idUnico, registrarAlta, abrirFormularioDeAlta, campoDeAlta, selectorConCrear } from '../altas.js';
+import { enlazarValidacion } from '../validaciones.js';
 import { entrada, selectorDeRotulos, opcionesPersonas } from './comunes.js';
 
 /**
@@ -54,13 +55,19 @@ registrarAlta('cuentas_dominio', async ctx => {
     cargarOpciones: () => opcionesPersonas(ctx.organizacion_id), rotuloOrigen: 'Nueva cuenta de dominio' });
   const cred = selectorConCrear({ desde: 'cuentas_dominio', campo: 'credencial_id', organizacion_id: ctx.organizacion_id, valor: v.credencial_id || null, id: id.cred,
     valoresAlta: { credencial_tipo: 'dominio' }, rotuloOrigen: 'Nueva cuenta de dominio' });
-  const cGrupos = h('div', { class: 'campo' }, [h('label', { text: 'Grupos' }), grupos.nodo]);
+  const cGrupos = h('div', { class: 'campo ancho' }, [h('label', { text: 'Grupos' }), grupos.nodo]);
+  const cUsuario = campoDeAlta(id.usuario, 'Usuario *', usuario);
+  enlazarValidacion(cUsuario, () => {
+    const dom = dominio.value.trim().toLowerCase(), usu = usuario.value.trim().toLowerCase();
+    return dom && usu && cuentas.some(c => c.cuenta_dominio.toLowerCase() === dom && c.cuenta_usuario.toLowerCase() === usu)
+      ? { nivel: 'mal', mensaje: 'Ya existe la cuenta ' + dominio.value.trim() + '\\' + usuario.value.trim() + ' en esta organización.' } : null;
+  }, { tambien: [dominio] });
   return abrirFormularioDeAlta({
     titulo: 'Nueva cuenta de dominio', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva cuenta de dominio' ? ctx.rotulo : null, textoGuardar: 'Crear cuenta', enfocar: usuario,
-    cuerpo: [campoDeAlta(id.dominio, 'Dominio *', dominio), campoDeAlta(id.usuario, 'Usuario *', usuario),
-      campoDeAlta(id.persona, 'Persona', persona, 'Si la cuenta no es de una persona (impresora, servicio, escáner), dejalo sin elegir: es una cuenta de servicio.'),
-      campoDeAlta(id.uo, 'Unidad organizativa', uo), cGrupos, campoDeAlta(id.estado, 'Estado *', estado),
-      campoDeAlta(id.cred, 'Credencial con la contraseña', cred, 'La contraseña no se carga acá: va como credencial.')],
+    secciones: [{ titulo: 'Identificación', cuerpo: [campoDeAlta(id.dominio, 'Dominio *', dominio), cUsuario, campoDeAlta(id.estado, 'Estado *', estado),
+      campoDeAlta(id.persona, 'Persona', persona, 'Si la cuenta no es de una persona (impresora, servicio, escáner), dejalo sin elegir: es una cuenta de servicio.')] }],
+    mas: { resumen: 'unidad organizativa, grupos, credencial con la contraseña', cuerpo: [campoDeAlta(id.uo, 'Unidad organizativa', uo), cGrupos,
+      campoDeAlta(id.cred, 'Credencial con la contraseña', cred, 'La contraseña no se carga acá: va como credencial.')] },
     alGuardar: async () => {
       const dom = dominio.value.trim(), usu = usuario.value.trim();
       if (!dom) throw new Error('Escribí el dominio.');

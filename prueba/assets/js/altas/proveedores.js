@@ -41,13 +41,13 @@ registrarAlta('proveedores', async ctx => {
   const texto = (/** @type {HTMLInputElement|HTMLTextAreaElement} */ x) => x.value.trim() || null;
   return abrirFormularioDeAlta({
     titulo: 'Nuevo proveedor', rotulo: ctx.rotulo && ctx.rotulo !== 'Nuevo proveedor' ? ctx.rotulo : null, textoGuardar: 'Crear proveedor', enfocar: nombre,
-    cuerpo: [campoDeAlta(id.nombre, 'Nombre *', nombre), h('div', { class: 'campo' }, [h('label', { for: id.rubro, text: 'Rubro' }), rubro, sugerencias]),
-      campoDeAlta(id.tel, 'Teléfono de soporte', tel), campoDeAlta(id.mail, 'Mail de soporte', mail), campoDeAlta(id.horario, 'Horario de soporte', horario),
-      campoDeAlta(id.cliente, 'N.º de cliente', cliente), campoDeAlta(id.contrato, 'N.º de contrato', contrato),
+    secciones: [{ titulo: 'Identificación', cuerpo: [campoDeAlta(id.nombre, 'Nombre *', nombre), h('div', { class: 'campo' }, [h('label', { for: id.rubro, text: 'Rubro' }), rubro, sugerencias])] },
+      { titulo: 'Soporte', cuerpo: [campoDeAlta(id.tel, 'Teléfono de soporte', tel), campoDeAlta(id.mail, 'Mail de soporte', mail), campoDeAlta(id.horario, 'Horario de soporte', horario)] }],
+    mas: { resumen: 'cliente, contrato, contacto comercial, portal, notas', cuerpo: [campoDeAlta(id.cliente, 'N.º de cliente', cliente), campoDeAlta(id.contrato, 'N.º de contrato', contrato),
       campoDeAlta(id.cNombre, 'Contacto comercial', cNombre), campoDeAlta(id.cTel, 'Teléfono comercial', cTel), campoDeAlta(id.cMail, 'Mail comercial', cMail),
       campoDeAlta(id.portal, 'Portal del proveedor (URL)', portal),
       cred ? campoDeAlta(id.cred, 'Acceso al portal (credencial)', cred, 'La contraseña del portal se carga en la credencial, no acá.') : null,
-      campoDeAlta(id.notas, 'Notas', notas)],
+      campoDeAlta(id.notas, 'Notas', notas)] },
     alGuardar: async () => {
       if (!nombre.value.trim()) throw new Error('Escribí el nombre del proveedor.');
       return repositorio.guardar('proveedores', { organizacion_id: ctx.organizacion_id, proveedor_nombre: nombre.value.trim(), proveedor_rubro: texto(rubro),

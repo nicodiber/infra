@@ -32,11 +32,11 @@ registrarAlta('credenciales', async ctx => {
     rotuloOrigen: 'Nueva credencial' });
   return abrirFormularioDeAlta({
     titulo: 'Nueva credencial', rotulo: ctx.rotulo && ctx.rotulo !== 'Nueva credencial' ? ctx.rotulo : null, textoGuardar: 'Crear credencial', enfocar: nombre,
-    cuerpo: [campoDeAlta(id.nombre, 'Nombre *', nombre), campoDeAlta(id.tipo, 'Tipo *', tipo), campoDeAlta(id.usuario, 'Usuario', usuario), campoDeAlta(id.host, 'Host o URL', host),
-      campoDeAlta(id.equipo, 'Equipo vinculado', equipo), campoDeAlta(id.config, 'Configuración vinculada', config), campoDeAlta(id.vence, 'Vence el', vence),
-      campoDeAlta(id.notas, 'Notas (sin la contraseña)', notas),
-      campoDeAlta(id.secreto, 'Contraseña *', h('div', null, [secreto, h('label', { for: id.ver, style: 'display:flex;gap:6px;align-items:center;margin-top:4px;font-size:12.5px' }, [ver, 'Mostrar mientras escribo'])]),
-        'Se guarda como secreto: después se ve solo con «Mostrar» y queda registrado.')],
+    secciones: [{ titulo: 'Identificación', cuerpo: [campoDeAlta(id.nombre, 'Nombre *', nombre), campoDeAlta(id.tipo, 'Tipo *', tipo),
+      campoDeAlta(id.secreto, 'Contraseña *', h('div', null, [secreto, h('label', { for: id.ver, style: 'display:flex;gap:6px;align-items:center;margin-top:4px;font-size:12.5px;font-weight:400' }, [ver, 'Mostrar mientras escribo'])]),
+        'Se guarda como secreto: después se ve solo con «Mostrar» y queda registrado.', { ancho: true }), campoDeAlta(id.usuario, 'Usuario', usuario), campoDeAlta(id.host, 'Host o URL', host)] },
+      { titulo: 'A qué pertenece', cuerpo: [campoDeAlta(id.equipo, 'Equipo vinculado', equipo), campoDeAlta(id.config, 'Configuración vinculada', config)] }],
+    mas: { resumen: 'vencimiento, notas', cuerpo: [campoDeAlta(id.vence, 'Vence el', vence), campoDeAlta(id.notas, 'Notas (sin la contraseña)', notas)] },
     alGuardar: async () => {
       if (!nombre.value.trim()) throw new Error('Escribí el nombre de la credencial.');
       if (!secreto.value) throw new Error('Escribí la contraseña de la credencial.');
