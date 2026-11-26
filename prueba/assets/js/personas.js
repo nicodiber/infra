@@ -13,6 +13,7 @@ import { ir, toast, abrirModal, cerrarModal } from './marco.js';
 import { h, tabla, fmtFecha, normalizar } from './utiles.js';
 import { ROTULO_EQUIPO_TIPO, ROTULO_PERSONA_ESTADO, ROTULO_CUENTA_ESTADO } from './modelos.js';
 import { seguro, CATEGORIAS_PUESTO } from './red.js';
+import { abrirAlta } from './altas.js';
 
 /** @typedef {import('./red.js').Contexto} Contexto */
 /** @typedef {import('./modelos.js').Equipo} Equipo */
@@ -79,92 +80,18 @@ export function alertaCuentaDeBaja() {
 }
 
 /**
- * Ventana para asignar un equipo a una persona. Con `equipo` fijo se elige la persona; con `persona` fija, el equipo.
- * Si el equipo ya tiene otras personas, ofrece «Reemplazar a …» (se les cierra la asignación hoy) o «Compartir con …»
- * (el equipo queda con varias personas a la vez, D-072).
+ * Asignar un equipo a una persona: abre el alta registrada de `asignaciones` (`assets/js/altas/asignaciones.js`) con la persona o el
+ * equipo ya elegidos. Ahí se puede crear la persona o el equipo que falte y se decide si reemplaza o comparte (D-072).
  * @param {Object} o
  * @param {Contexto} o.ctx
  * @param {Equipo} [o.equipo] @param {Persona} [o.persona]
  * @param {() => (void|Promise<void>)} o.alTerminar
  */
 export async function modalAsignar(o) {
-  const { ctx } = o;
-  const [personas, equipos, asignaciones] = await Promise.all([
-    repositorio.listar('personas', { organizacion_id: ctx.org }, { ordenarPor: 'persona_nombre' }),
-    repositorio.listar('equipos', { organizacion_id: ctx.org }, { ordenarPor: 'equipo_nombre' }),
-    repositorio.listar('asignaciones', { organizacion_id: ctx.org })]);
-  const nombrePersona = new Map(personas.map(p => [p.id, p.persona_nombre]));
-  /** @type {Map<string, string[]>} equipo_id → ids de las personas con el equipo hoy */
-  const titulares = new Map();
-  for (const a of asignaciones) if (!a.asignacion_hasta) titulares.set(a.equipo_id, (titulares.get(a.equipo_id) || []).concat([a.persona_id]));
-  const nombres = (/** @type {string[]} */ ids) => ids.map(id => nombrePersona.get(id) || 'otra persona').join(', ');
-  const porEquipo = !!o.equipo;
-  /** @type {Array<{id: string, rotulo: string, busca: string}>} */
-  const items = porEquipo
-    ? personas.filter(p => p.persona_estado !== 'baja').map(p => ({ id: p.id, rotulo: p.persona_nombre + (p.persona_sector ? ' · ' + p.persona_sector : ''), busca: normalizar(p.persona_nombre + ' ' + (p.persona_sector || '')) }))
-    : equipos.filter(e => e.equipo_estado !== 'baja').sort((a, b) => Number(esEquipoDeEscritorio(b)) - Number(esEquipoDeEscritorio(a))).map(e => {
-      const dueños = titulares.get(e.id) || [];
-      const dueno = dueños.length ? nombres(dueños) : null;
-      return { id: e.id, rotulo: e.equipo_nombre + ' · ' + tipoEquipo(e) + (dueno ? ' · asignado a ' + dueno : ''), busca: normalizar(e.equipo_nombre + ' ' + tipoEquipo(e) + ' ' + (e.equipo_ip_gestion || '') + ' ' + (dueno || '')) };
-    });
-  const titulo = o.equipo ? 'Asignar «' + o.equipo.equipo_nombre + '» a una persona' : 'Asignar un equipo a ' + (o.persona ? o.persona.persona_nombre : '');
-  const buscador = /** @type {HTMLInputElement} */ (h('input', { type: 'search', placeholder: porEquipo ? 'Buscar persona por nombre o sector…' : 'Buscar equipo por nombre, tipo, IP o persona…', 'aria-label': 'Buscar' }));
-  const lista = /** @type {HTMLSelectElement} */ (h('select', { size: '8', 'aria-label': porEquipo ? 'Personas' : 'Equipos' }));
-  const motivo = /** @type {HTMLInputElement} */ (h('input', { type: 'text', placeholder: 'Por ejemplo: ingreso, reemplazo, mudanza (opcional)', 'aria-label': 'Motivo' }));
-  const aviso = h('div', { class: 'msg', role: 'status', hidden: 'hidden' });
-  const error = h('div', { class: 'rd-err', role: 'alert' });
-  // Reemplazar o compartir: solo aparece cuando el equipo elegido ya lo tienen otras personas.
-  const rReemplazar = /** @type {HTMLInputElement} */ (h('input', { type: 'radio', name: 'asigModo', value: 'reemplazar', id: 'asigReemplazar' }));
-  const rCompartir = /** @type {HTMLInputElement} */ (h('input', { type: 'radio', name: 'asigModo', value: 'compartir', id: 'asigCompartir' }));
-  rReemplazar.checked = true;
-  const txtReemplazar = h('span'), txtCompartir = h('span');
-  const modo = h('fieldset', { class: 'bloque', style: 'margin-top:8px', hidden: 'hidden' }, [
-    h('legend', { text: 'El equipo ya lo tiene alguien más' }),
-    h('label', { for: 'asigReemplazar', style: 'display:flex;gap:8px;align-items:flex-start;cursor:pointer' }, [rReemplazar, txtReemplazar]),
-    h('label', { for: 'asigCompartir', style: 'display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-top:6px' }, [rCompartir, txtCompartir])]);
-  const pintar = () => {
-    const pal = normalizar(buscador.value).split(/\s+/).filter(Boolean);
-    lista.textContent = '';
-    const vis = items.filter(i => pal.every(p => i.busca.includes(p)));
-    for (const i of vis) lista.appendChild(h('option', { value: i.id, text: i.rotulo }));
-    if (!vis.length) lista.appendChild(h('option', { value: '', disabled: 'disabled', text: 'Nada coincide con la búsqueda.' }));
-    alElegir();
-  };
-  function alElegir() {
-    const equipoId = o.equipo ? o.equipo.id : lista.value, personaId = o.persona ? o.persona.id : lista.value;
-    const actuales = equipoId ? titulares.get(equipoId) || [] : [];
-    const ya = !!personaId && actuales.includes(personaId);
-    const otros = actuales.filter(id => id !== personaId);
-    modo.hidden = !(equipoId && personaId && !ya && otros.length);
-    if (!modo.hidden) {
-      txtReemplazar.textContent = 'Reemplazar a ' + nombres(otros) + ': se cierra su asignación hoy y queda en el historial.';
-      txtCompartir.textContent = 'Compartir con ' + nombres(otros) + ': el equipo queda asignado a varias personas a la vez.';
-    }
-    const textoAviso = ya ? (porEquipo ? 'Esta persona ya tiene el equipo asignado.' : 'Este equipo ya está asignado a esta persona.') : '';
-    aviso.textContent = textoAviso; aviso.hidden = !textoAviso;
-  }
-  lista.addEventListener('change', alElegir);
-  buscador.addEventListener('input', pintar);
-  const confirmar = async () => {
-    error.textContent = '';
-    if (!lista.value) { error.textContent = porEquipo ? 'Elegí la persona.' : 'Elegí el equipo.'; return; }
-    const compartir = !modo.hidden && rCompartir.checked;
-    const r = await seguro(() => repositorio.asignarEquipo({ equipoId: o.equipo ? o.equipo.id : lista.value, personaId: o.persona ? o.persona.id : lista.value, motivo: motivo.value, usuarioId: ctx.u.id, compartir }));
-    if (!r) return;
-    cerrarModal();
-    toast(compartir ? 'Equipo compartido · queda en el historial de asignaciones' : 'Equipo asignado · queda en el historial de asignaciones');
-    await o.alTerminar();
-  };
-  abrirModal(h('div', { class: 'pe-modal', role: 'dialog', 'aria-label': titulo }, [
-    h('h2', { text: titulo }),
-    !items.length ? h('div', { class: 'aviso', text: porEquipo ? 'No hay personas activas en esta organización. Cargá una desde «Nueva persona».' : 'No hay equipos cargados en esta organización.' }) : h('div', null, [buscador, lista]),
-    modo,
-    h('div', { class: 'campo' }, [h('label', { text: 'Motivo' }), motivo]),
-    aviso, error,
-    h('div', { class: 'herr', style: 'justify-content:flex-end' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }),
-      items.length ? h('button', { type: 'button', class: 'primario', text: 'Asignar', onclick: confirmar }) : null])]));
-  pintar();
-  buscador.focus();
+  const creada = await abrirAlta('asignaciones', { organizacion_id: o.ctx.org, valores: { equipo_id: o.equipo ? o.equipo.id : null, persona_id: o.persona ? o.persona.id : null } });
+  if (!creada) return;
+  toast('Equipo asignado · queda en el historial de asignaciones');
+  await o.alTerminar();
 }
 
 /**
@@ -315,7 +242,7 @@ export async function modalMudar(o) {
       atras ? h('button', { type: 'button', text: 'Atrás', onclick: () => { st.paso--; pintar(); } }) : null, sig]);
     cuerpo.appendChild(h('div', { class: 'mut', text: 'Paso ' + st.paso + ' de 3' }));
     if (st.paso === 1) {
-      const buscador = /** @type {HTMLInputElement} */ (h('input', { type: 'search', placeholder: 'Buscar por boca, ubicación o persona…', 'aria-label': 'Buscar puesto' }));
+      const buscador = /** @type {HTMLInputElement} */ (h('input', { type: 'search', placeholder: 'Buscar por boca, sede o sala o persona…', 'aria-label': 'Buscar puesto' }));
       const lista = /** @type {HTMLSelectElement} */ (h('select', { size: '8', 'aria-label': 'Puestos', style: 'height:190px' }));
       const llenar = () => {
         const pal = normalizar(buscador.value).split(/\s+/).filter(Boolean); lista.textContent = '';

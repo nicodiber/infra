@@ -6,12 +6,13 @@
 
 import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
-import { ir, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
+import { ir, toast } from '../assets/js/marco.js';
+import { abrirAlta } from '../assets/js/altas.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import {
   TIPOS_RED, CATEGORIAS_PUESTO, ROTULO_SEGURIDAD, ROTULO_ENLACE_TIPO, cargarContexto, leerRuta, encabezado, pestanas,
-  estadoPill, chipsEstado, enlace, avisoVista, textoUbicacion, crearEquipo, hashEquipo, crearPuesto, enlaceFila, cargarPersonas, textoVlan
+  estadoPill, chipsEstado, enlace, avisoVista, textoUbicacion, hashEquipo, enlaceFila, cargarPersonas, textoVlan
 } from '../assets/js/red.js';
 
 const TABS = /** @type {Array<[string, string, string]>} */ ([['equipos', 'Equipos de red', 'equipo'], ['vlan', 'VLAN', 'vlan'], ['wifi', 'Redes Wi-Fi', 'wifi'], ['isp', 'Enlaces ISP', 'equipo'], ['puestos', 'Puestos de trabajo', 'puesto'], ['fibra', 'Fibra', 'vlan'], ['topologia', 'Topología', 'vlan']]);
@@ -62,7 +63,7 @@ async function tabEquipos(ctx, racks, ubic) {
     chipsCont.appendChild(chipsEstado(ESTADOS, c => base.filter(e => e.equipo_estado === c).length, base.length, filtroEstado, v => { filtroEstado = v; pintar(); }));
     const f = base.filter(e => !filtroEstado || e.equipo_estado === filtroEstado);
     if (f.length) {
-      tb.appendChild(tabla(['Nombre', 'Tipo', 'IP de gestión', 'Ubicación / rack', 'Estado', 'Verificado'],
+      tb.appendChild(tabla(['Nombre', 'Tipo', 'IP de gestión', 'Sede / sala · rack', 'Estado', 'Verificado'],
         f.map(e => [e.equipo_nombre, ROTULO_EQUIPO_TIPO[e.equipo_tipo] + (e.equipo_tipo === 'otro' && e.equipo_campos.otro_categoria ? ' · ' + e.equipo_campos.otro_categoria : ''), e.equipo_ip_gestion || '—',
           textoUbicacion(e, racks, ubic), estadoPill(e.equipo_estado), indicadorVerificacion(e.verificado_en, ctx.umbrales, true)]),
         { tipo: 'equipo', onFila: (_, i) => ir(hashEquipo(f[i])) }));
@@ -77,42 +78,30 @@ async function tabEquipos(ctx, racks, ubic) {
   const selT = h('select', { 'aria-label': 'Tipo de equipo' }, [h('option', { value: '', text: 'Todos los tipos' })].concat(TIPOS_RED.map(t => h('option', { value: t, text: ROTULO_EQUIPO_TIPO[t] }))));
   /** @type {HTMLSelectElement} */ (selT).value = filtroTipo;
   selT.addEventListener('change', () => { filtroTipo = /** @type {HTMLSelectElement} */ (selT).value; pintar(); });
-  raiz.appendChild(h('div', { class: 'herr' }, [inp, selT, h('span', { style: 'flex:1' }), ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo equipo', onclick: () => abrirNuevo(ctx) }) : null]));
+  raiz.appendChild(h('div', { class: 'herr' }, [inp, selT, h('span', { style: 'flex:1' }), botonAlta(ctx, 'equipos', 'Nuevo equipo', hashEquipo, r => r.equipo_nombre, { tipos: TIPOS_RED, equipo_tipo: 'switch' })]));
   raiz.appendChild(chipsCont); raiz.appendChild(tb); raiz.appendChild(cuenta);
   pintar();
   return raiz;
 }
 
-/** @param {import('../assets/js/red.js').Contexto} ctx */
-function abrirNuevo(ctx) {
-  const tipo = h('select', { id: 'nvTipo', 'aria-label': 'Tipo de equipo' }, TIPOS_RED.map(t => h('option', { value: t, text: ROTULO_EQUIPO_TIPO[t] })));
-  const nombre = h('input', { id: 'nvNombre', type: 'text', placeholder: 'Ej.: SW-PISO2-01', style: 'width:100%', 'aria-label': 'Nombre del equipo' });
-  const err = h('div', { class: 'rd-err', role: 'alert' });
-  const crear = async () => {
-    const n = /** @type {HTMLInputElement} */ (nombre).value.trim();
-    if (!n) { err.textContent = 'Escribí el nombre del equipo.'; return; }
-    try {
-      const e = await crearEquipo(ctx, /** @type {HTMLSelectElement} */ (tipo).value, n);
-      cerrarModal();
-      toast('Equipo «' + n + '» creado. Completá sus datos y guardá.');
-      ir('#/equipo/' + e.id + '?editar=1');
-    } catch (x) { err.textContent = x instanceof Error ? x.message : 'No se pudo crear el equipo.'; }
-  };
-  nombre.addEventListener('keydown', ev => { if (/** @type {KeyboardEvent} */ (ev).key === 'Enter') crear(); });
-  abrirModal(h('div', { style: 'padding:18px 20px;width:420px', role: 'dialog', 'aria-label': 'Nuevo equipo' }, [
-    h('h2', { text: 'Nuevo equipo' }),
-    h('p', { class: 'mut', text: 'Elegí el tipo (no se puede cambiar después) y el nombre. Los demás datos los completás en la ficha.' }),
-    h('label', { for: 'nvTipo', text: 'Tipo', class: 'mut' }), tipo,
-    h('label', { for: 'nvNombre', text: 'Nombre', class: 'mut', style: 'display:block;margin-top:8px' }), nombre, err,
-    h('div', { class: 'herr', style: 'justify-content:flex-end;margin-top:12px' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }), h('button', { type: 'button', class: 'primario', text: 'Crear y abrir la ficha', onclick: crear })])]));
-  nombre.focus();
+/**
+ * «Nuevo …» de una pestaña: abre el alta completa y va a la ficha (o refresca la lista si no hay ficha).
+ * @param {import('../assets/js/red.js').Contexto} ctx @param {string} coleccion @param {string} etiqueta @param {(r: any) => string} hash @param {(r: any) => string} nombre
+ * @param {Object<string, any>} [valores]
+ */
+function botonAlta(ctx, coleccion, etiqueta, hash, nombre, valores) {
+  return ctx.modifica ? h('button', { type: 'button', class: 'primario', text: etiqueta, onclick: async () => {
+    const r = await abrirAlta(coleccion, { organizacion_id: ctx.org, valores, rotulo: null });
+    if (r) { toast('«' + nombre(r) + '» creado.'); ir(hash(r)); }
+  } }) : null;
 }
 
 /** @param {import('../assets/js/red.js').Contexto} ctx */
 async function tabVlan(ctx) {
   const vlans = (await repositorio.listar('vlans', { organizacion_id: ctx.org })).sort((a, b) => a.vlan_numero - b.vlan_numero);
-  if (!vlans.length) return h('div', { class: 'aviso' }, ['Esta organización todavía no tiene VLAN cargadas.']);
-  return h('div', null, [tabla(['VLAN', 'Nombre', 'Red', 'Gateway', 'DHCP', 'Verificado'],
+  const nuevo = botonAlta(ctx, 'vlans', 'Nueva VLAN', r => '#/vlan/' + r.id, r => 'VLAN ' + r.vlan_numero + ' · ' + r.vlan_nombre);
+  if (!vlans.length) return h('div', null, [h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }), nuevo]), h('div', { class: 'aviso' }, ['Esta organización todavía no tiene VLAN cargadas.' + (ctx.modifica ? ' Usá «Nueva VLAN» para cargar la primera: con número y nombre alcanza.' : '')])]);
+  return h('div', null, [h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }), nuevo]), tabla(['VLAN', 'Nombre', 'Red', 'Gateway', 'DHCP', 'Verificado'],
     vlans.map(v => [String(v.vlan_numero), v.vlan_nombre, v.vlan_red_cidr || '—', v.vlan_gateway || '—', v.vlan_dhcp_activo ? 'Sí' + (v.vlan_dhcp_rango ? ' · ' + v.vlan_dhcp_rango : '') : 'No', indicadorVerificacion(v.verificado_en, ctx.umbrales, true)]),
     { tipo: 'vlan', onFila: (_, i) => ir('#/vlan/' + vlans[i].id) }),
   h('div', { class: 'mut', style: 'margin-top:6px', text: 'Tocá una VLAN para ver su ficha con los puertos marcados en los switches.' })]);
@@ -121,10 +110,11 @@ async function tabVlan(ctx) {
 /** @param {import('../assets/js/red.js').Contexto} ctx */
 async function tabWifi(ctx) {
   const [wifis, vlans, equipos] = await Promise.all([repositorio.listar('redes_wifi', { organizacion_id: ctx.org }), repositorio.listar('vlans', { organizacion_id: ctx.org }), repositorio.listar('equipos', { organizacion_id: ctx.org, equipo_tipo: 'access_point' })]);
-  if (!wifis.length) return h('div', { class: 'aviso' }, ['Esta organización todavía no tiene redes Wi-Fi cargadas.']);
+  const nuevo = botonAlta(ctx, 'redes_wifi', 'Nueva red Wi-Fi', r => '#/wifi/' + r.id, r => r.wifi_ssid);
+  if (!wifis.length) return h('div', null, [h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }), nuevo]), h('div', { class: 'aviso' }, ['Esta organización todavía no tiene redes Wi-Fi cargadas.' + (ctx.modifica ? ' Usá «Nueva red Wi-Fi» para cargar la primera (la VLAN y los access points se pueden crear desde ahí mismo).' : '')])]);
   const mv = new Map(vlans.map(v => [v.id, v])), me = new Map(equipos.map(e => [e.id, e]));
   wifis.sort((a, b) => a.wifi_ssid.localeCompare(b.wifi_ssid));
-  return h('div', null, [tabla(['SSID', 'VLAN', 'Seguridad', 'Access points', 'Verificado'],
+  return h('div', null, [h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }), nuevo]), tabla(['SSID', 'VLAN', 'Seguridad', 'Access points', 'Verificado'],
     wifis.map(w => {
       const v = w.vlan_id ? mv.get(w.vlan_id) : null;
       const aps = w.access_point_ids.map((/** @type {string} */ id) => me.get(id)).filter(Boolean);
@@ -144,7 +134,8 @@ const corto = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
 /** @param {import('../assets/js/red.js').Contexto} ctx */
 async function tabIsp(ctx) {
   const enlaces = (await repositorio.listar('enlaces_isp', { organizacion_id: ctx.org })).sort((a, b) => Number(b.enlace_es_principal) - Number(a.enlace_es_principal));
-  if (!enlaces.length) return h('div', { class: 'aviso' }, ['Esta organización todavía no tiene enlaces a Internet cargados.']);
+  const nuevo = botonAlta(ctx, 'enlaces_isp', 'Nuevo enlace a Internet', r => '#/enlace/' + r.id, r => r.enlace_proveedor);
+  if (!enlaces.length) return h('div', null, [h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }), nuevo]), h('div', { class: 'aviso' }, ['Esta organización todavía no tiene enlaces a Internet cargados.' + (ctx.modifica ? ' Usá «Nuevo enlace a Internet» para cargar el primero.' : '')])]);
   const [equipos, puertos] = await Promise.all([repositorio.listar('equipos', { organizacion_id: ctx.org }), repositorio.listar('puertos')]);
   const me = new Map(equipos.map(e => [e.id, e]));
   const svg = esquemaIsp(enlaces, me, puertos);
@@ -157,6 +148,7 @@ async function tabIsp(ctx) {
       [e.enlace_telefono_soporte, e.enlace_numero_cliente ? 'cliente ' + e.enlace_numero_cliente : ''].filter(Boolean).join(' · ') || '—'];
   });
   return h('div', null, [
+    h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }), nuevo]),
     h('div', { class: 'bloque rd-isp', style: 'margin-bottom:10px' }, [h('h3', { text: 'Esquema de ISP' }), svg,
       h('div', { class: 'mut', text: 'Línea continua: enlace principal. Línea de trazos: respaldo. Se arma con los enlaces y las conexiones de puertos cargados; el detalle completo está en la tabla.' })]),
     tabla(['Proveedor', 'Rol', 'Servicio', 'IP pública', 'Termina en', 'Soporte'], filas, { tipo: 'equipo', onFila: (_, i) => ir('#/enlace/' + enlaces[i].id) }),
@@ -259,7 +251,10 @@ async function tabPuestos(ctx, ubicaciones) {
   const cont = h('div');
   raiz.appendChild(cont);
 
-  const nuevo = ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo puesto', onclick: () => abrirNuevoPuesto(ctx, ubicaciones) }) : null;
+  const nuevo = ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo puesto', onclick: async () => {
+    const p = await abrirAlta('puestos', { organizacion_id: ctx.org, rotulo: 'Nuevo puesto' });
+    if (p) { toast('Puesto «' + p.puesto_nombre + '» creado.'); ir('#/puesto/' + p.id); }
+  } }) : null;
   function pintar() {
     cont.textContent = '';
     cont.appendChild(vistaPuestos());
@@ -278,7 +273,7 @@ async function tabPuestos(ctx, ubicaciones) {
       chipsCont.appendChild(chipsEstado([['con', 'Con equipo'], ['sin', 'Sin equipo'], ['sinsw', 'Sin conexión a switch']], c => base.filter(pred[c]).length, base.length, pChip, v => { pChip = v; pintarTabla(); }));
       const f = base.filter(x => !pChip || pred[pChip](x));
       if (f.length) {
-        tb.appendChild(tabla(['Puesto', 'Ubicación', 'Persona', 'Equipos (IP)', 'Llega al switch', 'VLAN', 'Verificado'],
+        tb.appendChild(tabla(['Puesto', 'Sede / sala', 'Persona', 'Equipos (IP)', 'Llega al switch', 'VLAN', 'Verificado'],
           f.map(x => [h('span', null, [enlaceFila('#/puesto/' + x.pu.id, x.pu.puesto_nombre), x.pu.puesto_boca_pared ? h('div', { class: 'mut', text: 'Boca ' + x.pu.puesto_boca_pared }) : null]), x.ubicacion,
             !pers.ver ? h('span', { class: 'mut', text: '—' }) : x.gente.length ? h('span', { class: 'rd-lista-etq' }, x.gente.map(g => enlaceFila('#/persona/' + g.id, g.persona_nombre))) : h('span', { class: 'mut', text: 'Sin persona' }),
             x.eqs.length ? h('div', null, x.eqs.map(e => h('div', null, [enlaceFila(hashEquipo(e), e.equipo_nombre), ' (' + categoria(e) + ')', h('div', { class: 'mut', text: e.equipo_ip_gestion || 'Sin IP' })]))) : h('span', { class: 'mut', text: 'Sin equipo' }),
@@ -294,7 +289,7 @@ async function tabPuestos(ctx, ubicaciones) {
     };
     const inp = h('input', { placeholder: 'Filtrar por puesto, boca, equipo o switch…', 'aria-label': 'Filtrar puestos', value: pTexto, style: 'width:300px' });
     inp.addEventListener('input', () => { pTexto = /** @type {HTMLInputElement} */ (inp).value; pintarTabla(); });
-    const sel = h('select', { 'aria-label': 'Ubicación' }, [h('option', { value: '', text: 'Todas las ubicaciones' })].concat(ubicaciones.slice().sort((a, b) => a.ubicacion_nombre.localeCompare(b.ubicacion_nombre, 'es', { numeric: true })).map(u => h('option', { value: u.id, text: u.ubicacion_nombre }))));
+    const sel = h('select', { 'aria-label': 'Sede / sala' }, [h('option', { value: '', text: 'Todas las sedes y salas' })].concat(ubicaciones.slice().sort((a, b) => a.ubicacion_nombre.localeCompare(b.ubicacion_nombre, 'es', { numeric: true })).map(u => h('option', { value: u.id, text: u.ubicacion_nombre }))));
     /** @type {HTMLSelectElement} */ (sel).value = pUbic;
     sel.addEventListener('change', () => { pUbic = /** @type {HTMLSelectElement} */ (sel).value; pintarTabla(); });
     r.appendChild(h('div', { class: 'herr' }, [inp, sel, h('span', { style: 'flex:1' }), nuevo]));
@@ -305,33 +300,4 @@ async function tabPuestos(ctx, ubicaciones) {
 
   pintar();
   return raiz;
-}
-
-/** @param {import('../assets/js/red.js').Contexto} ctx @param {any[]} ubicaciones */
-function abrirNuevoPuesto(ctx, ubicaciones) {
-  const nombre = h('input', { id: 'npNombre', type: 'text', placeholder: 'Ej.: Puesto 15 · Administración', style: 'width:100%', 'aria-label': 'Nombre del puesto' });
-  const ub = h('select', { id: 'npUb', 'aria-label': 'Ubicación', style: 'width:100%' }, [h('option', { value: '', text: '— elegir —' })].concat(ubicaciones.slice().sort((a, b) => a.ubicacion_nombre.localeCompare(b.ubicacion_nombre, 'es', { numeric: true })).map(u => h('option', { value: u.id, text: u.ubicacion_nombre }))));
-  const boca = h('input', { id: 'npBoca', type: 'text', placeholder: 'Ej.: B-015 (opcional)', style: 'width:100%', 'aria-label': 'Boca de pared' });
-  const err = h('div', { class: 'rd-err', role: 'alert' });
-  const crear = async () => {
-    const n = /** @type {HTMLInputElement} */ (nombre).value.trim();
-    const u = /** @type {HTMLSelectElement} */ (ub).value;
-    if (!n) { err.textContent = 'Escribí el nombre del puesto.'; return; }
-    if (!u) { err.textContent = 'Elegí la ubicación del puesto.'; return; }
-    try {
-      const p = await crearPuesto(ctx, n, u, /** @type {HTMLInputElement} */ (boca).value.trim());
-      cerrarModal();
-      toast('Puesto «' + n + '» creado.');
-      ir('#/puesto/' + p.id);
-    } catch (x) { err.textContent = x instanceof Error ? x.message : 'No se pudo crear el puesto.'; }
-  };
-  nombre.addEventListener('keydown', ev => { if (/** @type {KeyboardEvent} */ (ev).key === 'Enter') crear(); });
-  abrirModal(h('div', { style: 'padding:18px 20px;width:420px', role: 'dialog', 'aria-label': 'Nuevo puesto' }, [
-    h('h2', { text: 'Nuevo puesto de trabajo' }),
-    h('p', { class: 'mut', text: 'Un puesto es el lugar donde llega una boca de pared. La ubicación es obligatoria; el resto lo completás en la ficha.' }),
-    h('label', { for: 'npNombre', text: 'Nombre', class: 'mut' }), nombre,
-    h('label', { for: 'npUb', text: 'Ubicación', class: 'mut', style: 'display:block;margin-top:8px' }), ub,
-    h('label', { for: 'npBoca', text: 'Boca de pared', class: 'mut', style: 'display:block;margin-top:8px' }), boca, err,
-    h('div', { class: 'herr', style: 'justify-content:flex-end;margin-top:12px' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }), h('button', { type: 'button', class: 'primario', text: 'Crear y abrir la ficha', onclick: crear })])]));
-  nombre.focus();
 }

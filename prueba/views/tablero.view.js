@@ -52,7 +52,7 @@ function describir(coleccion, r) {
     case 'vlans': return { nombre: 'VLAN ' + r.vlan_numero + ' · ' + r.vlan_nombre, tipo: 'VLAN', hash: '#/vlan/' + r.id };
     case 'redes_wifi': return { nombre: 'Wi-Fi ' + r.wifi_ssid, tipo: 'Red Wi-Fi', hash: '#/wifi/' + r.id };
     case 'enlaces_isp': return { nombre: 'Enlace ' + r.enlace_proveedor, tipo: 'Enlace ISP', hash: '#/red/isp' };
-    case 'ubicaciones': return { nombre: r.ubicacion_nombre, tipo: 'Ubicación', hash: '#/inicio' };
+    case 'ubicaciones': return { nombre: r.ubicacion_nombre, tipo: 'Sede / sala', hash: '#/inicio' };
     case 'usuarios': return { nombre: r.usuario_nombre, tipo: 'Usuario', hash: '#/usuario/' + r.id };
     case 'organizaciones': return { nombre: r.organizacion_nombre, tipo: 'Organización', hash: '#/inicio' };
     default: return { nombre: r.id, tipo: coleccion, hash: '#/inicio' };
@@ -351,7 +351,7 @@ async function bloquePendientesVerificar(u, orgId, umbrales, estado, rerender) {
 /** @type {Object<string, string>} */
 const ARTICULO_ENTIDAD = {
   Equipo: 'el equipo', Puerto: 'el puerto', Vlan: 'la VLAN', Credencial: 'la credencial', Configuracion: 'la configuración', Rack: 'el rack',
-  Ubicacion: 'la ubicación', Usuario: 'al usuario', Organizacion: 'la organización', EnlaceIsp: 'el enlace de Internet', RedWifi: 'la red Wi-Fi', Puesto: 'el puesto'
+  Ubicacion: 'la sede o sala', Usuario: 'al usuario', Organizacion: 'la organización', EnlaceIsp: 'el enlace de Internet', RedWifi: 'la red Wi-Fi', Puesto: 'el puesto'
 };
 
 /** @type {Object<string, string>} */

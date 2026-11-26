@@ -96,7 +96,7 @@ function ubicacionDeEquipo(c, e) {
 function datosRack(c, r) {
   return /** @type {DatosEtiqueta} */ ({
     clase: 'rack', codigo: r.rack_nombre, nombre: 'Rack',
-    lineas: [['Ubicación', rutaUbicacion(r.ubicacion_id, c.mapaUb) || '—'], ['Tamaño', r.rack_unidades_total + ' U']],
+    lineas: [['Sede / sala', rutaUbicacion(r.ubicacion_id, c.mapaUb) || '—'], ['Tamaño', r.rack_unidades_total + ' U']],
     url: urlFicha('#/rack/' + r.id), pie: c.orgNombre
   });
 }
@@ -116,7 +116,7 @@ function datosEquipo(c, e) {
   /** @type {Array<[string, string]>} */
   const lineas = [[ROTULO_EQUIPO_TIPO[e.equipo_tipo] || e.equipo_tipo, [e.equipo_marca, e.equipo_modelo].filter(Boolean).join(' ') || '—']];
   if (rack) lineas.push(['Rack', rack.rack_nombre + (e.rack_u_inicio != null ? ' · ' + rangoU(e) : '')]);
-  else lineas.push(['Ubicación', rutaUbicacion(ubicacionDeEquipo(c, e), c.mapaUb) || '—']);
+  else lineas.push(['Sede / sala', rutaUbicacion(ubicacionDeEquipo(c, e), c.mapaUb) || '—']);
   return /** @type {DatosEtiqueta} */ ({ clase: 'equipo', codigo: e.equipo_codigo, nombre: e.equipo_nombre, lineas, url: urlFicha(ruta), pie: c.orgNombre });
 }
 
@@ -330,7 +330,7 @@ async function renderLote(contenedor) {
   const puestos = await repositorio.listar('puestos', { organizacion_id: org });
   const mapaPu = porId(puestos);
   contenedor.appendChild(h('h1', { text: 'Etiquetas' }));
-  contenedor.appendChild(h('p', { class: 'mut', text: 'Elegí el tipo, filtrá por ubicación, tildá lo que querés imprimir y se imprime una etiqueta de 100 × 50 mm por página.' }));
+  contenedor.appendChild(h('p', { class: 'mut', text: 'Elegí el tipo, filtrá por sede o sala, tildá lo que querés imprimir y se imprime una etiqueta de 100 × 50 mm por página.' }));
   const zona = h('div');
   contenedor.appendChild(zona);
   contenedor.appendChild(notaQr());
@@ -365,7 +365,7 @@ async function renderLote(contenedor) {
 
     const selTipo = h('select', { 'aria-label': 'Tipo', onchange: (/** @type {Event} */ ev) => { fTipo = /** @type {HTMLSelectElement} */ (ev.target).value; marcadas = new Set(); dibujar(); } },
       tipos.map(t => h('option', { value: t[0], text: t[1], selected: t[0] === fTipo ? '' : null })));
-    const selUb = h('select', { 'aria-label': 'Ubicación', onchange: (/** @type {Event} */ ev) => { fUbic = /** @type {HTMLSelectElement} */ (ev.target).value; dibujar(); } },
+    const selUb = h('select', { 'aria-label': 'Sede / sala', onchange: (/** @type {Event} */ ev) => { fUbic = /** @type {HTMLSelectElement} */ (ev.target).value; dibujar(); } },
       [h('option', { value: '', text: 'Todas las ubicaciones' })].concat(ctx.ubicaciones.map(x => ({ id: x.id, t: rutaUbicacion(x.id, ctx.mapaUb) })).sort((a, b) => a.t.localeCompare(b.t, 'es'))
         .map(x => h('option', { value: x.id, text: x.t, selected: x.id === fUbic ? '' : null }))));
     const buscar = h('input', { type: 'search', placeholder: 'Código o nombre', value: fTexto, 'aria-label': 'Buscar', oninput: (/** @type {Event} */ ev) => { fTexto = /** @type {HTMLInputElement} */ (ev.target).value; dibujarLista(); } });
@@ -377,7 +377,7 @@ async function renderLote(contenedor) {
     const marcarTodas = h('button', { type: 'button', text: 'Marcar todas las visibles', onclick: () => { for (const x of lista) marcadas.add(x.id); dibujarLista(); } });
     const desmarcar = h('button', { type: 'button', text: 'Desmarcar', onclick: () => { marcadas = new Set(); dibujarLista(); } });
     zona.appendChild(h('div', { class: 'et-barra' }, [
-      h('div', null, [h('label', { text: 'Tipo' }), selTipo]), h('div', null, [h('label', { text: 'Ubicación' }), selUb]), h('div', null, [h('label', { text: 'Buscar' }), buscar]),
+      h('div', null, [h('label', { text: 'Tipo' }), selTipo]), h('div', null, [h('label', { text: 'Sede / sala' }), selUb]), h('div', null, [h('label', { text: 'Buscar' }), buscar]),
       h('div', { class: 'herr', style: 'margin:0' }, [marcarTodas, desmarcar, btnImp, cuenta])
     ]));
     const cajaLista = h('div', { class: 'et-lista' });
@@ -394,7 +394,7 @@ async function renderLote(contenedor) {
         const cab = [h('input', { type: 'checkbox', 'aria-label': 'Marcar todas', checked: act.every(x => marcadas.has(x.id)) ? '' : null, onchange: (/** @type {Event} */ ev) => {
           const on = /** @type {HTMLInputElement} */ (ev.target).checked; for (const x of act) on ? marcadas.add(x.id) : marcadas.delete(x.id); dibujarLista();
         } })];
-        const t = tabla(['', 'Código', 'Nombre', 'Tipo / tamaño', 'Ubicación', ''], act.map(x => [
+        const t = tabla(['', 'Código', 'Nombre', 'Tipo / tamaño', 'Sede / sala', ''], act.map(x => [
           h('input', { type: 'checkbox', 'aria-label': 'Marcar ' + x.codigo, checked: marcadas.has(x.id) ? '' : null, onclick: (/** @type {Event} */ ev) => ev.stopPropagation(), onchange: (/** @type {Event} */ ev) => {
             if (/** @type {HTMLInputElement} */ (ev.target).checked) marcadas.add(x.id); else marcadas.delete(x.id); actualizar();
           } }),

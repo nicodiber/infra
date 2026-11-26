@@ -44,6 +44,7 @@ const MENU = [
   ['Inicio', '#/inicio', 'inicio', null, 'inicio', null, 'ORG'],
   ['Red', '#/red', 'red', { modulo: 'red' }, 'red', 'equipo', 'ORG'],
   ['Servidores', '#/servidores', 'servidores', { modulo: 'servidores' }, 'servidor', 'servidor', 'ORG'],
+  ['Sedes y salas', '#/sedes', 'sedes', { modulo: 'organizacion' }, 'edificio', null, 'ORG'],
   ['Racks', '#/racks', 'racks', { modulo: 'racks' }, 'rack', 'rack', 'ORG'],
   ['Configuraciones', '#/configuraciones', 'configuraciones', { modulo: 'configuraciones' }, 'configuracion', 'configuracion', 'ORG'],
   ['Credenciales', '#/credenciales', 'credenciales', { modulo: 'credenciales' }, 'credencial', 'credencial', 'ORG'],
@@ -235,36 +236,70 @@ export function alternarMenuUsuario(alCambiarRol) {
 // Ventana superpuesta
 // ---------------------------------------------------------------------------------------------
 
-/** @type {Element|null} */
-let abridor = null;
-/** @type {(() => void)|null} */
-let alCerrarModal = null;
+/**
+ * Un diálogo abierto. El primero vive en `#velo` / `#modal` (index.html); los que se abren encima se crean aparte
+ * (`.velo-apilado` > `.modal-apilado`, hijos de `body`) y se sacan del DOM al cerrarse.
+ * @typedef {Object} NivelModal
+ * @property {HTMLElement} velo Fondo oscuro de este nivel.
+ * @property {HTMLElement} caja Contenedor del diálogo (donde está el nodo).
+ * @property {(() => void)|null} alCerrar Se llama al cerrarlo, por el motivo que sea (Esc, fondo, `cerrarModal`).
+ * @property {Element|null} abridor Elemento que tenía el foco al abrirlo, para devolvérselo al cerrarlo.
+ */
+
+/** Pila de diálogos: el último es el de arriba (el único que recibe teclado y clics). @type {NivelModal[]} */
+const pila = [];
 
 /**
- * Muestra un nodo en una ventana superpuesta.
+ * Muestra un nodo en una ventana superpuesta. Si ya hay un diálogo abierto, el nuevo se apila ENCIMA: el de abajo queda en el
+ * DOM con su estado intacto (lo escrito en sus campos no se pierde), tapado por el fondo y sin recibir foco ni clics (`inert`).
+ * `cerrarModal()` cierra solo el de arriba y deja el de abajo como estaba. El nodo debería llevar `role="dialog"` y `aria-label`.
+ * Pensado para «+ Crear nuevo» (QC55-B): ver `assets/js/altas.js` y `docs/desarrollo/guia-altas.md`.
  * @param {HTMLElement} nodo
  * @param {() => void} [alCerrar]
  */
 export function abrirModal(nodo, alCerrar) {
-  abridor = document.activeElement;
-  const m = el('modal');
-  m.textContent = '';
-  m.appendChild(nodo);
-  alCerrarModal = alCerrar || null;
-  el('velo').classList.add('abierto');
+  const abridor = document.activeElement;
+  /** @type {HTMLElement} */ let velo;
+  /** @type {HTMLElement} */ let caja;
+  if (!pila.length) {
+    velo = el('velo'); caja = el('modal');
+    caja.textContent = '';
+    velo.classList.add('abierto');
+  } else {
+    const debajo = pila[pila.length - 1];
+    debajo.caja.setAttribute('inert', ''); // sin foco, sin clics y fuera del árbol de accesibilidad mientras no sea el de arriba
+    caja = h('div', { class: 'modal-apilado' });
+    velo = h('div', { class: 'velo-apilado', style: 'z-index:' + (50 + pila.length) }, [caja]);
+    const cerrarSiEsElFondo = (/** @type {Event} */ e) => { if (e.target === velo && pila[pila.length - 1] && pila[pila.length - 1].velo === velo) cerrarModal(); };
+    velo.addEventListener('click', cerrarSiEsElFondo);
+    document.body.appendChild(velo);
+  }
+  caja.appendChild(nodo);
+  pila.push({ velo, caja, alCerrar: alCerrar || null, abridor });
 }
 
-export function modalAbierto() { return el('velo').classList.contains('abierto'); }
+/** ¿Hay algún diálogo abierto (de cualquier nivel)? */
+export function modalAbierto() { return pila.length > 0; }
 
+/** Cuántos diálogos hay apilados (0 = ninguno). */
+export function nivelesDeModal() { return pila.length; }
+
+/** Cierra SOLO el diálogo de arriba: el de abajo (si hay) queda como estaba y recupera el foco. No hace nada si no hay ninguno. */
 export function cerrarModal() {
-  const v = el('velo');
-  const estaba = v.classList.contains('abierto');
-  v.classList.remove('abierto');
-  el('modal').textContent = '';
-  if (estaba && alCerrarModal) alCerrarModal();
-  alCerrarModal = null;
-  if (estaba && abridor && /** @type {HTMLElement} */ (abridor).focus && document.contains(abridor)) /** @type {HTMLElement} */ (abridor).focus();
-  abridor = null;
+  const cerrado = pila.pop();
+  if (!cerrado) return;
+  if (!pila.length) {
+    cerrado.velo.classList.remove('abierto');
+    cerrado.caja.textContent = '';
+  } else {
+    cerrado.velo.remove();
+    const debajo = pila[pila.length - 1];
+    debajo.caja.removeAttribute('inert');
+  }
+  const profundidad = pila.length;
+  if (cerrado.alCerrar) cerrado.alCerrar();
+  // Si `alCerrar` abrió otro diálogo, el foco ya es de ese.
+  if (pila.length <= profundidad && cerrado.abridor && /** @type {HTMLElement} */ (cerrado.abridor).focus && document.contains(cerrado.abridor)) /** @type {HTMLElement} */ (cerrado.abridor).focus();
 }
 
 // ---------------------------------------------------------------------------------------------

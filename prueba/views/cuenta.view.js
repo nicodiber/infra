@@ -11,6 +11,9 @@ import { ir, toast, abrirModal, cerrarModal } from '../assets/js/marco.js';
 import { h, tabla, ahoraISO, fmtFecha, fmtFechaHora } from '../assets/js/utiles.js';
 import { ROTULO_CUENTA_ESTADO } from '../assets/js/modelos.js';
 import { encabezado, leerRuta, pestanas, campo, enlace, formulario, fichaCab, textoUltimoCambio, pedirBaja, seguro, valorHistorial } from '../assets/js/red.js';
+import { selectorConCrear } from '../assets/js/altas.js';
+import { editorGrupos } from '../assets/js/altas/cuentas_dominio.js';
+import { crearYAbrir, opcionesPersonas } from '../assets/js/altas/comunes.js';
 import { cargarContextoPersonas, avisoPersonas, nombreCuenta, pillCuenta, alertaCuentaDeBaja } from '../assets/js/personas.js';
 
 /** @typedef {import('../assets/js/red.js').Contexto} Contexto */
@@ -22,39 +25,6 @@ const CAMPOS = [
   { k: 'cuenta_unidad_organizativa', r: 'Unidad organizativa', t: 'texto' },
   { k: 'cuenta_estado', r: 'Estado', t: 'enum', req: true, op: [['habilitada', 'Habilitada'], ['deshabilitada', 'Deshabilitada']] }
 ];
-
-/**
- * Lista editable de grupos: chips con «×» y un campo para agregar.
- * @param {string[]} inicial
- * @returns {{nodo: HTMLElement, leer: () => string[]}}
- */
-function editorGrupos(inicial) {
-  /** @type {string[]} */
-  let grupos = inicial.slice();
-  const lista = h('div', { class: 'pe-grupos', role: 'list', 'aria-label': 'Grupos' });
-  const entrada = /** @type {HTMLInputElement} */ (h('input', { type: 'text', placeholder: 'Nombre del grupo y Enter', 'aria-label': 'Agregar grupo', style: 'max-width:260px' }));
-  const pintar = () => {
-    lista.textContent = '';
-    if (!grupos.length) lista.appendChild(h('span', { class: 'mut', text: 'Sin grupos.' }));
-    for (const g of grupos) lista.appendChild(h('span', { class: 'pe-grupo', role: 'listitem' }, [g, h('button', { type: 'button', 'aria-label': 'Quitar el grupo ' + g, title: 'Quitar', text: '×', onclick: () => { grupos = grupos.filter(x => x !== g); pintar(); } })]));
-  };
-  const agregar = () => {
-    const v = entrada.value.trim();
-    if (v && !grupos.some(x => x.toLowerCase() === v.toLowerCase())) grupos.push(v);
-    entrada.value = ''; pintar();
-  };
-  entrada.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); agregar(); } });
-  pintar();
-  return { nodo: h('div', null, [lista, h('div', { class: 'herr', style: 'margin:6px 0 0' }, [entrada, h('button', { type: 'button', class: 'chico', text: 'Agregar', onclick: agregar })])]), leer: () => { agregar(); return grupos.slice(); } };
-}
-
-/** @param {any[]} personas @param {string|null} actual */
-function selectorPersona(personas, actual) {
-  const sel = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Persona' }, [h('option', { value: '', text: 'Cuenta de servicio (sin persona)' })].concat(
-    personas.map(x => h('option', { value: x.id, text: x.persona_nombre + (x.persona_estado === 'baja' ? ' (en baja)' : '') })))));
-  sel.value = actual || '';
-  return sel;
-}
 
 /**
  * Comprueba que el usuario no esté repetido en el dominio. @param {string} dominio @param {string} usuario @param {string|null} idActual @param {string} org
@@ -75,7 +45,9 @@ export async function renderVista(contenedor) {
   if (!puede(ctx.u, 'ver', 'personas', ctx.org)) { avisoPersonas(contenedor, 'Tu rol no tiene acceso al módulo Personas.'); return; }
   if (nueva) {
     if (!ctx.modifica) { avisoPersonas(contenedor, 'Tu rol no puede cargar cuentas de dominio.', '#/personas/cuentas'); return; }
-    await dibujarAlta(contenedor, ctx, consulta.get('persona'));
+    ir('#/personas/cuentas');
+    const pid = consulta.get('persona');
+    await crearYAbrir('cuentas_dominio', r => '#/cuenta/' + r.id, { valores: pid ? { persona_id: pid } : {}, aviso: 'Cuenta creada' });
     return;
   }
   if (!cuenta || cuenta.organizacion_id !== ctx.org) { avisoPersonas(contenedor, 'No encontramos esa cuenta de dominio en esta organización (puede haberse eliminado).', '#/personas/cuentas'); return; }
@@ -90,38 +62,6 @@ export async function renderVista(contenedor) {
     if (scroller) scroller.scrollTop = y;
   };
   await dibujar(contenedor, ctx, cuenta, partes, editando, async v => { editando = v; await armar(); }, armar);
-}
-
-/** @param {HTMLElement} cont @param {Contexto} ctx @param {string|null} personaId */
-async function dibujarAlta(cont, ctx, personaId) {
-  const [personas, cuentas] = await Promise.all([repositorio.listar('personas', { organizacion_id: ctx.org }, { ordenarPor: 'persona_nombre' }), repositorio.listar('cuentas_dominio', { organizacion_id: ctx.org })]);
-  // Dominio sugerido: el más usado de la organización.
-  /** @type {Map<string, number>} */
-  const cuenta = new Map();
-  for (const c of cuentas) cuenta.set(c.cuenta_dominio, (cuenta.get(c.cuenta_dominio) || 0) + 1);
-  const dominio = Array.from(cuenta.entries()).sort((a, b) => b[1] - a[1])[0];
-  const f = formulario(CAMPOS, { cuenta_dominio: dominio ? dominio[0] : '', cuenta_estado: 'habilitada' });
-  const sel = selectorPersona(personas, personas.some(x => x.id === personaId) ? personaId : null);
-  const grupos = editorGrupos(['Usuarios del dominio']);
-  const err = h('div', { class: 'rd-err', role: 'alert' });
-  cont.appendChild(h('h1', { text: 'Nueva cuenta de dominio' }));
-  cont.appendChild(h('div', { class: 'bloque' }, [
-    h('div', { class: 'mut', style: 'margin-bottom:8px', text: 'Los campos con * son obligatorios. Si la cuenta no es de una persona (impresora, servicio, escáner), dejá «Cuenta de servicio». La contraseña no se carga acá: va como credencial.' }),
-    h('div', { class: 'rd-edicion' }, [f.nodo,
-      h('div', { class: 'campo', style: 'margin-top:8px;max-width:360px' }, [h('label', { text: 'Persona' }), sel]),
-      h('div', { class: 'campo', style: 'margin-top:8px' }, [h('label', { text: 'Grupos' }), grupos.nodo]), err]),
-    h('div', { class: 'herr' }, [
-      h('button', { type: 'button', class: 'primario', text: 'Crear cuenta', onclick: async () => {
-        const r = f.leer();
-        const errores = r.errores.slice();
-        if (!errores.length && await usuarioRepetido(r.valores.cuenta_dominio, r.valores.cuenta_usuario, null, ctx.org)) errores.push('Ya existe la cuenta ' + r.valores.cuenta_dominio + '\\' + r.valores.cuenta_usuario + ' en esta organización.');
-        if (errores.length) { err.textContent = errores.join(' '); return; }
-        const creada = await seguro(() => repositorio.guardar('cuentas_dominio', { organizacion_id: ctx.org, ...r.valores, persona_id: sel.value || null, cuenta_grupos: grupos.leer(), credencial_id: null }, ctx.u.id));
-        if (!creada) return;
-        toast('Cuenta «' + nombreCuenta(creada) + '» creada');
-        ir('#/cuenta/' + creada.id);
-      } }),
-      h('button', { type: 'button', text: 'Cancelar', onclick: () => (personaId ? ir('#/persona/' + personaId + '/cuentas') : ir('#/personas/cuentas')) })])]));
 }
 
 /**
@@ -140,14 +80,18 @@ async function dibujar(cont, ctx, c, partes, editando, cambiar, rearmar) {
   let leer = null;
   /** @type {HTMLSelectElement|null} */
   let selPersona = null;
+  /** @type {HTMLSelectElement|null} */
+  let selCred = null;
   /** @type {null|{nodo: HTMLElement, leer: () => string[]}} */
   let editor = null;
   const err = h('div', { class: 'rd-err', role: 'alert' });
   if (editando) {
     const f = formulario(CAMPOS, c);
-    selPersona = selectorPersona(personas, c.persona_id);
+    selPersona = selectorConCrear({ desde: 'cuentas_dominio', campo: 'persona_id', organizacion_id: ctx.org, valor: c.persona_id, etiqueta: 'Persona', cargarOpciones: () => opcionesPersonas(ctx.org), rotuloOrigen: 'Editar cuenta' });
+    if (verCred) selCred = selectorConCrear({ desde: 'cuentas_dominio', campo: 'credencial_id', organizacion_id: ctx.org, valor: c.credencial_id, etiqueta: 'Credencial con la contraseña', valoresAlta: { credencial_tipo: 'dominio' }, rotuloOrigen: 'Editar cuenta' });
     editor = editorGrupos(c.cuenta_grupos || []);
-    datos = h('div', { class: 'rd-edicion' }, [f.nodo, h('div', { class: 'campo', style: 'margin-top:8px;max-width:360px' }, [h('label', { text: 'Persona' }), selPersona]),
+    datos = h('div', { class: 'rd-edicion' }, [f.nodo, h('div', { class: 'campo', style: 'margin-top:8px;max-width:360px' }, [h('label', { text: 'Persona (sin elegir = cuenta de servicio)' }), selPersona]),
+      selCred ? h('div', { class: 'campo', style: 'margin-top:8px;max-width:360px' }, [h('label', { text: 'Credencial con la contraseña' }), selCred]) : null,
       h('div', { class: 'campo', style: 'margin-top:8px' }, [h('label', { text: 'Grupos' }), editor.nodo]), err]);
     leer = f.leer;
   } else {
@@ -168,7 +112,7 @@ async function dibujar(cont, ctx, c, partes, editando, cambiar, rearmar) {
       const errores = /** @type {string[]} */ (r.errores).slice();
       if (!errores.length && await usuarioRepetido(r.valores.cuenta_dominio, r.valores.cuenta_usuario, c.id, ctx.org)) errores.push('Ya existe la cuenta ' + r.valores.cuenta_dominio + '\\' + r.valores.cuenta_usuario + ' en esta organización.');
       if (errores.length) { err.textContent = errores.join(' '); return; }
-      const reg = { ...c, ...r.valores, persona_id: /** @type {HTMLSelectElement} */ (selPersona).value || null, cuenta_grupos: /** @type {any} */ (editor).leer() };
+      const reg = { ...c, ...r.valores, persona_id: /** @type {HTMLSelectElement} */ (selPersona).value || null, credencial_id: selCred ? selCred.value || null : c.credencial_id, cuenta_grupos: /** @type {any} */ (editor).leer() };
       if (!(await seguro(() => repositorio.guardar('cuentas_dominio', reg, ctx.u.id)))) return;
       toast('Cambios guardados · verificado hoy (' + fmtFecha(ahoraISO()) + ')'); await cambiar(false);
     } }), h('button', { type: 'button', text: 'Cancelar', onclick: () => cambiar(false) }));

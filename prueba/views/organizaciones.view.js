@@ -6,6 +6,7 @@ import * as sesion from '../assets/js/sesion.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, repintarMarco, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
 import { h, normalizar } from '../assets/js/utiles.js';
+import { abrirAlta } from '../assets/js/altas.js';
 
 /**
  * Formulario de alta o edición de una organización (solo superadmin). Nombre obligatorio y único (también entre las dadas de baja).
@@ -15,6 +16,10 @@ import { h, normalizar } from '../assets/js/utiles.js';
 export function abrirFormularioOrganizacion(org, alGuardar) {
   const u = /** @type {import('../assets/js/modelos.js').UsuarioSesion} */ (sesion.usuarioActual());
   if (!puede(u, 'ver_organizaciones')) { toast('Solo el superadmin gestiona organizaciones.'); return; }
+  if (!org) { // el alta vive en `assets/js/altas/organizaciones.js`; acá solo se edita
+    abrirAlta('organizaciones').then(async nueva => { if (nueva) { toast('Organización «' + nueva.organizacion_nombre + '» creada'); await alGuardar(nueva); } });
+    return;
+  }
   const inNombre = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'org-nombre', maxlength: '120' })); inNombre.value = org ? org.organizacion_nombre : '';
   const inRubro = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'org-rubro', maxlength: '80' })); inRubro.value = (org && org.organizacion_rubro) || '';
   const inCuit = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'org-cuit', maxlength: '20', placeholder: '30-00000000-0' })); inCuit.value = (org && org.organizacion_cuit) || '';
@@ -29,11 +34,10 @@ export function abrirFormularioOrganizacion(org, alGuardar) {
     const igual = todas.find(o => (!org || o.id !== org.id) && normalizar(o.organizacion_nombre) === normalizar(nom));
     if (igual) return falla('Ya existe una organización llamada «' + igual.organizacion_nombre + '»' + (igual.eliminado_en ? ' (dada de baja: podés reactivarla desde «Ver dadas de baja»)' : '') + '.');
     try {
-      const base = org || { organizacion_estado: 'activa' };
-      const guardada = await repositorio.guardar('organizaciones', { ...base, organizacion_nombre: nom, organizacion_rubro: inRubro.value.trim() || null,
+      const guardada = await repositorio.guardar('organizaciones', { ...org, organizacion_nombre: nom, organizacion_rubro: inRubro.value.trim() || null,
         organizacion_cuit: inCuit.value.trim() || null, organizacion_notas: inNotas.value.trim() || null }, u.id);
       cerrarModal();
-      toast(org ? 'Organización «' + nom + '» actualizada' : 'Organización «' + nom + '» creada');
+      toast('Organización «' + nom + '» actualizada');
       await alGuardar(guardada);
     } catch (e) { falla(e instanceof Error ? e.message : 'No se pudo guardar.'); }
   };

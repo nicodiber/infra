@@ -9,6 +9,9 @@ import { leerUltimoPerfil } from '../assets/js/preferencias.js';
 import { h, tabla } from '../assets/js/utiles.js';
 import { ROTULO_PERFIL } from '../assets/js/modelos.js';
 
+/** Avisa a las métricas (D-080) sin importarlas. @param {string} tipo @param {Object} detalle */
+const metrica = (tipo, detalle) => { try { window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo, detalle } })); } catch { /* nada */ } };
+
 /** @param {string} perfil */
 const destino = perfil => (perfil === 'superadmin' ? '#/organizaciones' : '#/inicio');
 
@@ -24,11 +27,12 @@ export async function renderVistaIngreso(contenedor) {
   if (avisoPrevio) err.appendChild(h('div', { class: 'msg mal', text: avisoPrevio }));
   const pwd = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'campoClave', autocomplete: 'off', placeholder: 'Contraseña de prueba', 'aria-label': 'Contraseña' }));
 
-  /** @param {string} usuarioId */
-  async function entrar(usuarioId) {
+  /** @param {string} usuarioId @param {string} [como] */
+  async function entrar(usuarioId, como = 'acceso_rapido') {
     err.textContent = '';
     try {
       const u = await sesion.ingresar(usuarioId);
+      metrica('ingreso', { rolElegido: u.usuario_perfil, como });
       ir(destino(u.usuario_perfil));
     } catch (e) { err.appendChild(h('div', { class: 'msg mal', text: e instanceof Error ? e.message : 'No se pudo ingresar.' })); }
   }
@@ -37,10 +41,11 @@ export async function renderVistaIngreso(contenedor) {
     err.textContent = '';
     const u = await repositorio.autenticar(usr.value, pwd.value);
     if (!u) {
+      metrica('ingreso_fallido', {});
       err.appendChild(h('div', { class: 'msg mal', text: 'Usuario o contraseña incorrectos.' }));
       return;
     }
-    await entrar(u.id);
+    await entrar(u.id, 'formulario');
   }
 
   const principales = ['superadmin', 'gerente', 'tecnico', 'operario'].map(perfil => usuarios.find(u => u.perfil === perfil)).filter(Boolean);
@@ -59,7 +64,7 @@ export async function renderVistaIngreso(contenedor) {
     .map(u => [ROTULO_PERFIL[u.perfil], u.nombre, h('code', { text: u.email }), h('code', { text: u.clave }), u.organizacion || 'Todas',
       u.organizacion_baja
         ? h('div', null, [h('button', { type: 'button', class: 'chico', text: 'Ingresar', disabled: true, 'aria-label': 'Ingresar como ' + u.nombre + '. ' + textoOrganizacionDeBaja(String(u.organizacion)) }), h('div', { class: 'mut', text: textoOrganizacionDeBaja(String(u.organizacion)) })])
-        : h('button', { type: 'button', class: 'chico', text: 'Ingresar', onclick: () => entrar(u.id), 'aria-label': 'Ingresar como ' + u.nombre })]);
+        : h('button', { type: 'button', class: 'chico', text: 'Ingresar', onclick: () => entrar(u.id, 'tabla'), 'aria-label': 'Ingresar como ' + u.nombre })]);
 
   contenedor.appendChild(h('div', { class: 'login' }, [
     h('div', { class: 'aviso-flujo' }, [h('b', { text: 'Prototipo con datos ficticios. ' }), 'No cargues datos reales: lo que cargues queda solo en este navegador y sin cifrar.']),

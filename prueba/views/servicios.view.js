@@ -12,6 +12,7 @@ import { ir, pantalla, migasRaiz } from '../assets/js/marco.js';
 import { h, tabla, fmtFecha, diasHasta, textoVence, indicadorVerificacion, normalizar, icono } from '../assets/js/utiles.js';
 import { ROTULO_SERVICIO_TIPO } from '../assets/js/modelos.js';
 import { sinPermiso, chips } from '../assets/js/credenciales.js';
+import { crearYAbrir } from '../assets/js/altas/comunes.js';
 
 
 
@@ -71,7 +72,7 @@ export async function renderVista(contenedor) {
     if (!lista.length) {
       zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [icono('configuracion'), h('h2', { text: 'Todavía no hay dominios ni servicios cargados' }),
         h('p', { text: 'Acá se documentan los dominios, el DNS, el hosting, los certificados SSL y el correo: a nombre de quién están, cuándo vencen, dónde está delegado el DNS y sus registros.' }),
-        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nuevo servicio', onclick: () => ir('#/servicio/nuevo') })]) : null]));
+        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nuevo servicio', onclick: () => crearYAbrir('servicios', r => '#/servicio/' + r.id, { aviso: 'Servicio creado' }) })]) : null]));
       return;
     }
     if (!filas.length) { zonaTabla.appendChild(h('div', { class: 'mut', style: 'padding:8px', text: 'Ningún servicio coincide con el filtro.' })); return; }
@@ -86,7 +87,7 @@ export async function renderVista(contenedor) {
   inp.addEventListener('input', () => { est.texto = inp.value; pintar(); });
   contenedor.appendChild(h('h1', { text: 'Dominios y servicios' }));
   contenedor.appendChild(h('div', { class: 'herr' }, [inp, h('span', { style: 'flex:1' }),
-    puedeCrear ? h('button', { type: 'button', class: 'primario', text: 'Nuevo servicio', onclick: () => ir('#/servicio/nuevo') }) : null]));
+    puedeCrear ? h('button', { type: 'button', class: 'primario', text: 'Nuevo servicio', onclick: () => crearYAbrir('servicios', r => '#/servicio/' + r.id, { aviso: 'Servicio creado' }) }) : null]));
   contenedor.appendChild(zonaChips);
   contenedor.appendChild(zonaTabla);
   contenedor.appendChild(h('div', { class: 'mut', style: 'margin-top:6px', text: 'Las contraseñas de los paneles nunca se muestran acá: están en una credencial vinculada, que se abre desde la ficha del servicio.' }));

@@ -343,7 +343,7 @@ export function unidadesOcupadas(equipos) { return equipos.reduce((n, e) => n + 
 
 /**
  * Botón «Dar de baja» (o aviso de baja pedida). Devuelve null si el rol no puede ni pedirla.
- * @param {{u: UsuarioSesion, org: string, modulo: 'servidores'|'racks', coleccion: string, registro: any, nombre: string, bloqueo: string|null, alTerminar: () => void}} o
+ * @param {{u: UsuarioSesion, org: string, modulo: import('./modelos.js').Modulo, coleccion: string, registro: any, nombre: string, bloqueo: string|null, alTerminar: () => void}} o
  * @returns {Promise<HTMLElement|null>}
  */
 export async function botonBaja(o) {

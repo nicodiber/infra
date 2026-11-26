@@ -1,13 +1,14 @@
 // @ts-check
 /**
  * Ficha de puesto de trabajo (D-047). Ruta: `#/puesto/<id>`.
- * Nombre, boca de pared, ubicación, recorrido inverso (puesto ← boca de patchera ← puerto del switch),
+ * Nombre, boca de pared, sede o sala, recorrido inverso (puesto ← boca de patchera ← puerto del switch),
  * equipos que hay en el puesto, verificación y edición en el lugar.
  */
 
 import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, toast } from '../assets/js/marco.js';
+import { abrirAlta, selectorConCrear } from '../assets/js/altas.js';
 import { h, tabla, ahoraISO, fmtFecha } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import { cargarContexto, leerRuta, encabezado, campo, pestanas, avisoVista, formulario, fichaCab, cadenaDePuerto, textoUltimoCambio, seguro, pedirBaja, estadoPill, hashEquipo, enlaceFila, cargarPersonas, textoVlan, abrirMoverEquipo } from '../assets/js/red.js';
@@ -56,12 +57,11 @@ async function dibujar(cont, ctx, pu, editando, cambiar) {
   let selUb = null;
   if (editando) {
     const f = formulario(CAMPOS, pu);
-    selUb = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Ubicación' }, ubicaciones.map(x => h('option', { value: x.id, text: x.ubicacion_nombre }))));
-    selUb.value = pu.ubicacion_id;
-    datos = h('div', { class: 'rd-edicion' }, [f.nodo, h('div', { class: 'campo', style: 'margin-top:8px;max-width:320px' }, [h('label', { text: 'Ubicación *' }), selUb]), err]);
+    selUb = selectorConCrear({ desde: 'puestos', campo: 'ubicacion_id', organizacion_id: ctx.org, valor: pu.ubicacion_id, obligatorio: true, etiqueta: 'Sede / sala', rotuloOrigen: 'Editar puesto' });
+    datos = h('div', { class: 'rd-edicion' }, [f.nodo, h('div', { class: 'campo', style: 'margin-top:8px;max-width:320px' }, [h('label', { text: 'Sede / sala *' }), selUb]), err]);
     leer = f.leer;
   } else {
-    datos = h('div', { class: 'datos' }, [campo('Nombre', pu.puesto_nombre), campo('Boca de pared', pu.puesto_boca_pared), campo('Ubicación', ub ? ub.ubicacion_nombre : null), campo('Equipos en el puesto', String(enPuesto.length)), campo('VLAN del puerto', vlanPuesto ? textoVlan(vlanPuesto) : null), campo('Notas', pu.puesto_notas)]);
+    datos = h('div', { class: 'datos' }, [campo('Nombre', pu.puesto_nombre), campo('Boca de pared', pu.puesto_boca_pared), campo('Sede / sala', ub ? ub.ubicacion_nombre : null), campo('Equipos en el puesto', String(enPuesto.length)), campo('VLAN del puerto', vlanPuesto ? textoVlan(vlanPuesto) : null), campo('Notas', pu.puesto_notas)]);
   }
   const botones = /** @type {Node[]} */ ([]);
   if (editando) {
@@ -105,8 +105,12 @@ async function dibujar(cont, ctx, pu, editando, cambiar) {
     cont.appendChild(pb);
   }
 
-  const eq = h('div', { class: 'bloque', style: 'margin-top:10px' }, [h('h3', { text: 'Equipos en el puesto' })]);
-  if (!enPuesto.length) eq.appendChild(h('div', { class: 'mut', text: 'No hay equipos cargados en este puesto.' + (ctx.modifica ? ' Un equipo de escritorio se mueve acá desde «Equipos de escritorio» con «Mover a otro puesto».' : '') }));
+  const eq = h('div', { class: 'bloque', style: 'margin-top:10px' }, [h('div', { class: 'herr', style: 'justify-content:space-between' }, [h('h3', { text: 'Equipos en el puesto' }),
+    ctx.modifica ? h('button', { type: 'button', text: 'Nuevo equipo en este puesto', onclick: async () => {
+      const n = await abrirAlta('equipos', { organizacion_id: ctx.org, valores: { equipo_tipo: 'otro', tipos: ['otro'], categorias: ['PC de escritorio', 'Notebook', 'Impresora de red', 'Impresora', 'Reloj de control de personal'], otro_categoria: 'PC de escritorio', puesto_id: pu.id, titulo: 'Nuevo equipo en ' + pu.puesto_nombre }, rotulo: null });
+      if (n) { toast('«' + n.equipo_nombre + '» creado en el puesto.'); await cambiar(false); }
+    } }) : null])]);
+  if (!enPuesto.length) eq.appendChild(h('div', { class: 'mut', text: 'No hay equipos cargados en este puesto.' + (ctx.modifica ? ' Creá uno con «Nuevo equipo en este puesto» o mové uno existente desde «Equipos de escritorio» con «Mover a otro puesto».' : '') }));
   else {
     const cab = ['Nombre', 'Tipo', 'IP', 'Asignado a', 'Estado'];
     if (ctx.modifica) cab.push('');

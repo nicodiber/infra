@@ -8,6 +8,8 @@
 import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, abrirModal, cerrarModal, toast } from '../assets/js/marco.js';
+import { duplicar, selectorConCrear } from '../assets/js/altas.js';
+import { valoresParaDuplicar } from '../assets/js/altas/equipos.js';
 import { h, icono, tabla, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion, estadoVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO, ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, esImpresora } from '../assets/js/modelos.js';
 import {
@@ -96,7 +98,11 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
   /** @type {HTMLElement|null} */
   let errorBox = null;
   if (estado.editando) {
-    const fc = formulario(CAMPOS_COMUNES, e), ft = formulario(camposTipo, e.equipo_campos || {}, { equipos: pcOpciones });
+    /** Computadora con «+ Crear …» (impresora USB, reloj). @param {import('../assets/js/red.js').Campo} c @param {any} val */
+    const selectorPc = (c, val) => selectorConCrear({ desde: 'equipos', campo: 'equipo_campos.' + c.k, organizacion_id: ctx.org, valor: val || null, etiqueta: c.r, rotuloOrigen: 'Editar ' + e.equipo_nombre,
+      cargarOpciones: async () => pcOpciones.map(o => ({ valor: o[0], texto: o[1] })), valoresAlta: { equipo_tipo: 'otro', tipos: ['otro'], categorias: ['PC de escritorio', 'Notebook'], otro_categoria: 'PC de escritorio', titulo: 'Nueva computadora' },
+      alCambiar: (id, reg) => { if (reg) pcOpciones.push([reg.id, reg.equipo_nombre]); } });
+    const fc = formulario(CAMPOS_COMUNES, e), ft = formulario(camposTipo, e.equipo_campos || {}, { equipos: pcOpciones, selectorEquipo: selectorPc });
     // Campos de la categoría (impresora, reloj…): se arman al cambiar la categoría de un equipo «otro».
     /** @type {null|ReturnType<typeof formulario>} */
     let fCat = null;
@@ -108,7 +114,7 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
       if (!cs.length) { fCat = null; return; }
       const vals = { ...(e.equipo_campos || {}) };
       if (esImpresora({ equipo_tipo: 'otro', equipo_campos: { otro_categoria: cat } }) && !vals.impresora_conexion) vals.impresora_conexion = 'red';
-      fCat = formulario(cs, vals, { equipos: pcOpciones });
+      fCat = formulario(cs, vals, { equipos: pcOpciones, selectorEquipo: selectorPc });
       zonaCat.appendChild(h('h3', { text: 'Datos propios de «' + cat.trim() + '»', style: 'margin:10px 0 6px' }));
       zonaCat.appendChild(fCat.nodo);
       const con = fCat.ctl.impresora_conexion, pc = fCat.ctl.impresora_pc_id;
@@ -119,18 +125,17 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
     };
     if (tipo === 'otro' && ft.ctl.otro_categoria) ft.ctl.otro_categoria.addEventListener('change', pintarCat);
     pintarCat();
-    const selUb = h('select', { 'aria-label': 'Ubicación' }, [h('option', { value: '', text: '—' })].concat(ubicaciones.map(x => h('option', { value: x.id, text: x.ubicacion_nombre }))));
-    const selRack = h('select', { 'aria-label': 'Rack' }, [h('option', { value: '', text: 'Sin rack' })].concat(racks.map(x => h('option', { value: x.id, text: x.rack_nombre }))));
+    const selUb = selectorConCrear({ desde: 'equipos', campo: 'ubicacion_id', organizacion_id: ctx.org, valor: e.ubicacion_id || null, etiqueta: 'Sede / sala', rotuloOrigen: 'Editar ' + e.equipo_nombre });
+    const selRack = selectorConCrear({ desde: 'equipos', campo: 'rack_id', organizacion_id: ctx.org, valor: e.rack_id || null, etiqueta: 'Rack', rotuloOrigen: 'Editar ' + e.equipo_nombre,
+      alCambiar: (_id, reg) => { if (reg) racks.push(reg); alRack(); } });
     const uIni = h('input', { type: 'number', min: '1', 'aria-label': 'U inicial' }), uAlto = h('input', { type: 'number', min: '1', 'aria-label': 'Alto en U' });
-    /** @type {HTMLSelectElement} */ (selUb).value = e.ubicacion_id || '';
-    /** @type {HTMLSelectElement} */ (selRack).value = e.rack_id || '';
     /** @type {HTMLInputElement} */ (uIni).value = e.rack_u_inicio == null ? '' : String(e.rack_u_inicio);
     /** @type {HTMLInputElement} */ (uAlto).value = e.rack_u_alto == null ? '' : String(e.rack_u_alto);
-    const alRack = () => { const r = racks.find(x => x.id === /** @type {HTMLSelectElement} */ (selRack).value); if (r) /** @type {HTMLSelectElement} */ (selUb).value = r.ubicacion_id; /** @type {HTMLSelectElement} */ (selUb).disabled = !!r; /** @type {HTMLInputElement} */ (uIni).disabled = !r; /** @type {HTMLInputElement} */ (uAlto).disabled = !r; };
-    selRack.addEventListener('change', alRack); alRack();
+    function alRack() { const r = racks.find(x => x.id === /** @type {HTMLSelectElement} */ (selRack).value); if (r) /** @type {HTMLSelectElement} */ (selUb).value = r.ubicacion_id; /** @type {HTMLSelectElement} */ (selUb).disabled = !!r; /** @type {HTMLInputElement} */ (uIni).disabled = !r; /** @type {HTMLInputElement} */ (uAlto).disabled = !r; }
+    alRack();
     const ubic = h('div', { class: 'datos', style: 'margin-top:8px' }, [
       h('div', { class: 'campo' }, [h('label', { text: 'Rack' }), selRack]), h('div', { class: 'campo' }, [h('label', { text: 'U inicial (1 = abajo)' }), uIni]),
-      h('div', { class: 'campo' }, [h('label', { text: 'Alto (U)' }), uAlto]), h('div', { class: 'campo' }, [h('label', { text: 'Ubicación' }), selUb])]);
+      h('div', { class: 'campo' }, [h('label', { text: 'Alto (U)' }), uAlto]), h('div', { class: 'campo' }, [h('label', { text: 'Sede / sala' }), selUb])]);
     errorBox = h('div', { class: 'rd-err', role: 'alert', 'aria-live': 'polite' });
     datos = h('div', { class: 'rd-edicion' }, [h('div', { class: 'mut', text: 'Tipo: ' + ROTULO_EQUIPO_TIPO[tipo] + ' (no se puede cambiar; si está mal cargado, dalo de baja y creá uno nuevo).' }), fc.nodo, ubic,
       camposTipo.length ? h('h3', { text: 'Datos propios de ' + (ROTULO_EQUIPO_TIPO[tipo] || tipo).toLowerCase(), style: 'margin:10px 0 6px' }) : null, ft.nodo, zonaCat, errorBox]);
@@ -151,7 +156,7 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
   } else {
     /** @type {Array<[string, Node|string|null|undefined]>} */
     const pares = [['Nombre', e.equipo_nombre], ['Tipo', ROTULO_EQUIPO_TIPO[tipo]], ['Marca', e.equipo_marca], ['Modelo', e.equipo_modelo], ['IP de gestión', e.equipo_ip_gestion],
-      ['MAC', e.equipo_mac], ['Número de serie', e.equipo_numero_serie], ['Estado', estadoPill(e.equipo_estado)], ['Rack / unidad', uTexto], ['Ubicación', ub ? ub.ubicacion_nombre : null]];
+      ['MAC', e.equipo_mac], ['Número de serie', e.equipo_numero_serie], ['Estado', estadoPill(e.equipo_estado)], ['Rack / unidad', uTexto], ['Sede / sala', ub ? ub.ubicacion_nombre : null]];
     for (const c of campos) {
       const val = (e.equipo_campos || {})[c.k];
       if (c.k === 'impresora_pc_id' && (e.equipo_campos || {}).impresora_conexion !== 'usb') continue;
@@ -159,7 +164,7 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
       else pares.push([c.r, textoValor(c, val)]);
     }
     if (e.equipo_notas) pares.push(['Notas', e.equipo_notas]);
-    const compactos = tab === 'vinculos' ? ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'MAC', 'Número de serie', 'Estado', 'Rack / unidad', 'Ubicación', 'Categoría', 'Conexión', 'Conectada a']
+    const compactos = tab === 'vinculos' ? ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'MAC', 'Número de serie', 'Estado', 'Rack / unidad', 'Sede / sala', 'Categoría', 'Conexión', 'Conectada a']
       : ['Tipo', 'Marca', 'Modelo', 'IP de gestión', 'Rack / unidad', 'Estado'];
     const visibles = compacta ? pares.filter(p => compactos.includes(p[0])) : pares;
     datos = h('div', { class: 'datos' }, visibles.map(p => campo(p[0], p[1])));
@@ -194,6 +199,10 @@ async function dibujar(cont, ctx, e, partes, estado, rearmar) {
     botones.push(h('button', { type: 'button', text: 'Cancelar', onclick: async () => { estado.editando = false; history.replaceState(null, '', hashBaseConTab(hashBase, partes)); await rearmar(); } }));
   } else {
     if (ctx.modifica) botones.push(h('button', { type: 'button', text: 'Editar', onclick: async () => { estado.editando = true; await rearmar(); } }));
+    if (ctx.modifica) botones.push(h('button', { type: 'button', text: 'Duplicar', title: 'Crear otro equipo con estos datos (sin serie, MAC, IP, código ni conexiones)', onclick: async () => {
+      const c = await duplicar('equipos', e, valoresParaDuplicar(e), e.equipo_nombre);
+      if (c) { toast('«' + c.equipo_nombre + '» creado a partir de la copia.'); ir(hashEquipo(c)); }
+    } }));
     botones.push(h('button', { type: 'button', text: 'Etiqueta', title: 'Imprimir la etiqueta con QR de este equipo', onclick: () => ir('#/etiqueta/equipos/' + e.id) }));
     if (ctx.baja) botones.push(h('button', { type: 'button', text: 'Dar de baja', onclick: () => confirmarBaja(ctx, e) }));
     else if (ctx.pideBaja) botones.push(h('button', { type: 'button', text: 'Pedir la baja', title: 'Lo confirma el superadmin', onclick: () => pedirBaja(ctx, 'equipos', e.id) }));
@@ -268,7 +277,7 @@ async function cuerpoHistorial(ctx, e) {
   const cs = await repositorio.listar('cambios', c => c.cambio_entidad === 'Equipo' && c.entidad_id === e.id, { ordenarPor: 'cambio_fecha', descendente: true });
   if (!cs.length) return h('div', { class: 'aviso' }, ['Este equipo todavía no tiene cambios registrados.']);
   const rot = new Map(CAMPOS_COMUNES.concat(CAMPOS_POR_TIPO[e.equipo_tipo] || []).map(c => [c.k, c.r]));
-  rot.set('ubicacion_id', 'Ubicación'); rot.set('rack_id', 'Rack'); rot.set('rack_u_inicio', 'U inicial'); rot.set('rack_u_alto', 'Alto (U)');
+  rot.set('ubicacion_id', 'Sede / sala'); rot.set('rack_id', 'Rack'); rot.set('rack_u_inicio', 'Posición (U)'); rot.set('rack_u_alto', 'Alto (U)');
   const nombres = new Map([...(await repositorio.listar('racks', { organizacion_id: ctx.org })).map(r => /** @type {[string, string]} */ ([r.id, r.rack_nombre])), ...(await repositorio.listar('ubicaciones', { organizacion_id: ctx.org })).map(u => /** @type {[string, string]} */ ([u.id, u.ubicacion_nombre]))]);
   /** @param {string|null} v */
   const val = v => { const t = valorHistorial(v); return nombres.get(t) || t; };
@@ -502,13 +511,14 @@ async function cuerpoPuertos(ctx, e, partes, rearmar) {
     const modo = h('select', { 'aria-label': 'Modo' }, [h('option', { value: '', text: '—' }), h('option', { value: 'acceso', text: 'Acceso' }), h('option', { value: 'troncal', text: 'Troncal' })]);
     const estadoS = h('select', { 'aria-label': 'Estado' }, ['activo', 'libre', 'deshabilitado'].map(k => h('option', { value: k, text: ROTULO_ESTADO_PUERTO[k] })));
     const vel = h('input', { type: 'text', 'aria-label': 'Velocidad' });
-    const nativa = h('select', { 'aria-label': 'VLAN nativa' }, [h('option', { value: '', text: '—' })].concat(vlans.map(v => h('option', { value: v.id, text: v.vlan_numero + ' · ' + v.vlan_nombre }))));
+    const nativa = selectorConCrear({ desde: 'puertos', campo: 'vlan_nativa_id', organizacion_id: ctx.org, valor: p.vlan_nativa_id || null, etiqueta: 'VLAN nativa', rotuloOrigen: 'Editar puerto ' + n,
+      alCambiar: (_id, reg) => { if (reg) { vlans.push(reg); mv.set(reg.id, reg); } } });
     const desc = h('input', { type: 'text', 'aria-label': 'Destino en texto libre' });
     const selIsp = h('select', { 'aria-label': 'Enlace a Internet' }, [h('option', { value: '', text: '—' })].concat(enlacesIsp.map(l => h('option', { value: l.id, text: l.enlace_proveedor + (l.enlace_ip_publica ? ' · ' + l.enlace_ip_publica : '') + (l.enlace_es_principal ? ' (principal)' : ' (respaldo)') }))));
     /** @type {HTMLSelectElement} */ (selIsp).value = p.enlace_isp_id || '';
     const notas = h('input', { type: 'text', 'aria-label': 'Notas' });
     /** @type {HTMLSelectElement} */ (modo).value = p.puerto_modo || ''; /** @type {HTMLSelectElement} */ (estadoS).value = p.puerto_estado; /** @type {HTMLInputElement} */ (vel).value = p.puerto_velocidad || '';
-    /** @type {HTMLSelectElement} */ (nativa).value = p.vlan_nativa_id || ''; /** @type {HTMLInputElement} */ (desc).value = p.conectado_a_descripcion || ''; /** @type {HTMLInputElement} */ (notas).value = p.puerto_notas || '';
+    /** @type {HTMLInputElement} */ (desc).value = p.conectado_a_descripcion || ''; /** @type {HTMLInputElement} */ (notas).value = p.puerto_notas || '';
     if (p.conectado_a_puerto_id) { /** @type {HTMLInputElement} */ (desc).disabled = true; /** @type {HTMLInputElement} */ (desc).title = 'Este puerto está conectado a otro puerto cargado.'; }
     /** @type {Map<string, HTMLInputElement>} */
     const chks = new Map();

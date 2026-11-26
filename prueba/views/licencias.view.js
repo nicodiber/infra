@@ -12,6 +12,7 @@ import { ir, pantalla, migasRaiz } from '../assets/js/marco.js';
 import { h, tabla, fmtFecha, diasHasta, textoVence, indicadorVerificacion, normalizar, icono } from '../assets/js/utiles.js';
 import { ROTULO_LICENCIA_TIPO } from '../assets/js/modelos.js';
 import { sinPermiso, chips } from '../assets/js/credenciales.js';
+import { crearYAbrir } from '../assets/js/altas/comunes.js';
 
 
 
@@ -86,7 +87,7 @@ export async function renderVista(contenedor) {
     if (!lista.length) {
       zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [icono('licencia'), h('h2', { text: 'Todavía no hay licencias cargadas' }),
         h('p', { text: 'Acá se documentan las licencias de software: cuántas se compraron, cuántas están instaladas, cuándo vencen y dónde está la clave.' }),
-        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva licencia', onclick: () => ir('#/licencia/nueva') })]) : null]));
+        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva licencia', onclick: () => crearYAbrir('licencias', r => '#/licencia/' + r.id, { aviso: 'Licencia creada' }) })]) : null]));
       return;
     }
     if (!filas.length) { zonaTabla.appendChild(h('div', { class: 'mut', style: 'padding:8px', text: 'Ninguna licencia coincide con el filtro.' })); return; }
@@ -102,7 +103,7 @@ export async function renderVista(contenedor) {
   sel.addEventListener('change', () => { est.tipo = sel.value; pintar(); });
   contenedor.appendChild(h('h1', { text: 'Licencias' }));
   contenedor.appendChild(h('div', { class: 'herr' }, [inp, sel, h('span', { style: 'flex:1' }),
-    puedeCrear ? h('button', { type: 'button', class: 'primario', text: 'Nueva licencia', onclick: () => ir('#/licencia/nueva') }) : null]));
+    puedeCrear ? h('button', { type: 'button', class: 'primario', text: 'Nueva licencia', onclick: () => crearYAbrir('licencias', r => '#/licencia/' + r.id, { aviso: 'Licencia creada' }) }) : null]));
   contenedor.appendChild(zonaChips);
   contenedor.appendChild(zonaTabla);
   contenedor.appendChild(h('div', { class: 'mut', style: 'margin-top:6px', text: 'Las claves nunca se muestran en el listado: están en una credencial vinculada, que se abre desde la ficha de la licencia.' }));

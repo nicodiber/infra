@@ -17,7 +17,7 @@ import { h, icono, resaltar, normalizar, fmtFechaHora, fmtFecha, indicadorVerifi
 /** @type {Object<string, string>} */
 const ROTULO_TIPO_RESULTADO = {
   Equipos: 'Equipo', Puertos: 'Puerto de un equipo', Servidores: 'Servidor', Puestos: 'Puesto de trabajo', Racks: 'Rack', Configuraciones: 'Configuración',
-  Credenciales: 'Credencial', 'Red (VLAN y Wi-Fi)': 'VLAN, Wi-Fi o enlace'
+  Credenciales: 'Credencial', 'Red (VLAN y Wi-Fi)': 'VLAN, Wi-Fi o enlace', 'Sedes y salas': 'Sede o sala'
 };
 const EJEMPLOS = ['ilo srv', 'vpn admin', '10.10.10.', 'wifi'];
 const TOPE_POR_GRUPO = 40;
@@ -34,6 +34,7 @@ function rutaDe(r) {
     case 'vlans': return '#/vlan/' + r.id;
     case 'redes_wifi': return '#/wifi/' + r.id;
     case 'puestos': return '#/puesto/' + r.id;
+    case 'ubicaciones': return '#/ubicacion/' + r.id;
     case 'puertos': return '#/equipo/' + r.equipo_id + '/puertos/' + r.puerto_numero;
     case 'personas': return '#/persona/' + r.id;
     case 'cuentas_dominio': return '#/cuenta/' + r.id;
@@ -45,12 +46,52 @@ function rutaDe(r) {
   }
 }
 
+/** Ícono de un tipo de resultado: las sedes y salas usan el del edificio; el Wi-Fi, el suyo. @param {string} tipo */
+const iconoDe = tipo => icono(tipo === 'ubicacion' ? 'edificio' : tipo);
+
+/** Avisa a las métricas (D-080) sin importarlas. @param {string} tipo @param {Object} detalle */
+const metrica = (tipo, detalle) => { try { window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo, detalle } })); } catch { /* nada */ } };
+
+/** Cómo se abrió el buscador: se anota el último Ctrl K o clic en «Buscar» (por si app.js no lo informa). */
+let origenAbierto = { como: 'desconocido', cuando: 0 };
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') origenAbierto = { como: 'ctrl_k', cuando: Date.now() }; }, true);
+document.addEventListener('click', e => { if (e.target instanceof Element && e.target.closest('#btnBuscar')) origenAbierto = { como: 'boton', cuando: Date.now() }; }, true);
+
+/**
+ * Estado de la búsqueda abierta para las métricas.
+ * @type {{t0: number, q: string, qEnviado: string, resultados: number, filtros: Object, elegido: boolean, temporizador: number}|null}
+ */
+let estadoMetrica = null;
+
+/** Envía `busqueda_texto` si el texto cambió desde el último envío. */
+function enviarTextoBusqueda() {
+  const m = estadoMetrica;
+  if (!m) return;
+  clearTimeout(m.temporizador);
+  if (m.q === m.qEnviado) return;
+  m.qEnviado = m.q;
+  metrica('busqueda_texto', { texto: m.q, resultados: m.resultados, filtros: m.filtros });
+}
+
+/** Al cerrarse la ventana: si no se eligió nada, `busqueda_cerrada`. */
+function cerroBuscador() {
+  const m = estadoMetrica;
+  if (!m) return;
+  enviarTextoBusqueda();
+  estadoMetrica = null;
+  if (!m.elegido) metrica('busqueda_cerrada', { texto: m.q, resultados: m.resultados, ms: Math.round(performance.now() - m.t0) });
+}
+
 /** Abre el buscador superpuesto (botón «Buscar» o Ctrl K) desde cualquier pantalla. */
 export async function abrirBuscador() {
   if (!sesion.usuarioActual()) return;
   const caja = h('div');
+  const como = Date.now() - origenAbierto.cuando < 1500 ? origenAbierto.como : 'desconocido';
+  estadoMetrica = { t0: performance.now(), q: '', qEnviado: '', resultados: 0, filtros: {}, elegido: false, temporizador: 0 };
   await renderVistaBuscador(caja);
-  abrirModal(caja);
+  if (estadoMetrica) estadoMetrica.t0 = performance.now();
+  metrica('busqueda_abierta', { como });
+  abrirModal(caja, cerroBuscador);
   const campo = caja.querySelector('input[role=combobox]');
   if (campo) /** @type {HTMLInputElement} */ (campo).focus();
 }
@@ -84,7 +125,7 @@ export async function renderVistaBuscador(contenedor) {
     role: 'combobox', 'aria-expanded': 'true', 'aria-controls': 'lista', 'aria-autocomplete': 'list', 'aria-label': 'Buscar' }));
   const chipOrgCont = h('span');
   const ejemplos = h('div', { class: 'ejemplos' }, [h('span', { text: 'Probá con' })].concat(EJEMPLOS.map(q =>
-    h('button', { type: 'button', class: 'chip-ej', text: q, onclick: () => { busq.q = q; campoQ.value = q; busq.idx = 0; campoQ.focus(); refrescar(false); } }))));
+    h('button', { type: 'button', class: 'chip-ej', text: q, onclick: () => { busq.q = q; campoQ.value = q; busq.idx = 0; campoQ.focus(); refrescar(false); if (estadoMetrica) { estadoMetrica.q = q; clearTimeout(estadoMetrica.temporizador); estadoMetrica.temporizador = window.setTimeout(enviarTextoBusqueda, 800); } } }))));
   const fTipos = h('div');
   const fOrgs = h('div', { role: 'radiogroup', 'aria-label': 'Organización' });
   const btnQuitar = h('button', { type: 'button', class: 'btn-quitar', text: 'Quitar filtros', hidden: 'hidden' });
@@ -139,7 +180,15 @@ export async function renderVistaBuscador(contenedor) {
   });
 
   /** @param {ResultadoBusqueda} r */
-  const abrirFicha = r => { cerrarModal(); ir(rutaDe(r)); };
+  const abrirFicha = r => {
+    if (estadoMetrica) {
+      enviarTextoBusqueda();
+      estadoMetrica.elegido = true;
+      metrica('busqueda_resultado_elegido', { tipo: r.tipo, grupo: r.grupo, posicion: plano.indexOf(r) + 1, texto: busq.q, ms: Math.round(performance.now() - estadoMetrica.t0) });
+    }
+    cerrarModal();
+    ir(rutaDe(r));
+  };
 
   // ---- vista previa
   /** @param {ResultadoBusqueda|undefined} r */
@@ -151,7 +200,7 @@ export async function renderVistaBuscador(contenedor) {
     const dl = h('dl');
     for (const x of r.previa) { dl.appendChild(h('dt', { text: x[0] })); dl.appendChild(h('dd', null, [resaltar(x[1], palabras)])); }
     const pie = h('div', { class: 'pv-pie' }, [h('span', { text: 'Cambió el ' + fmtFechaHora(r.actualizado_en) }), indicadorVerificacion(r.verificado_en, umbrales, false)]);
-    const dentro = h('div', { class: 'pv-in' }, [h('div', { class: 'eyebrow' }, [icono(r.tipo === 'wifi' ? 'wifi' : r.tipo), ROTULO_TIPO_RESULTADO[r.grupo] || r.grupo]),
+    const dentro = h('div', { class: 'pv-in' }, [h('div', { class: 'eyebrow' }, [iconoDe(r.tipo), ROTULO_TIPO_RESULTADO[r.grupo] || r.grupo]),
       h('h2', { text: r.titulo }), h('p', { class: 'pv-sub', text: r.subtitulo }), h('span', { class: 'badge', text: r.organizacion_nombre }), dl]);
     if (r.coleccion === 'credenciales') dentro.appendChild(bloqueSecreto(r));
     dentro.appendChild(pie);
@@ -230,6 +279,7 @@ export async function renderVistaBuscador(contenedor) {
     const baseOrg = base.filter(r => !busq.org || r.organizacion_id === busq.org);
     const baseTipo = base.filter(r => !busq.tiposOff.has(r.grupo));
     const visibles = baseOrg.filter(r => !busq.tiposOff.has(r.grupo));
+    if (estadoMetrica) { estadoMetrica.resultados = visibles.length; estadoMetrica.filtros = { tiposOcultos: Array.from(busq.tiposOff), organizacion: busq.org ? (orgsTodas.find(x => x.id === busq.org) || { organizacion_nombre: '' }).organizacion_nombre : null }; }
     const tope = palabras.length ? TOPE_POR_GRUPO : TOPE_POR_GRUPO_VACIO;
     const grupos = repositorio.GRUPOS_BUSQUEDA.map(g => ({ g, items: visibles.filter(r => r.grupo === g.nombre) })).filter(x => x.items.length);
     const selAnterior = plano[busq.idx];
@@ -272,11 +322,11 @@ export async function renderVistaBuscador(contenedor) {
     let idx = 0;
     for (const { g, items } of grupos) {
       const grupo = h('div', { role: 'group', 'aria-label': g.nombre, class: 't-' + g.tipo });
-      grupo.appendChild(h('div', { class: 'grupo-cab', 'aria-hidden': 'true' }, [icono(g.tipo), g.nombre, h('span', { class: 'n', text: String(items.length) })]));
+      grupo.appendChild(h('div', { class: 'grupo-cab', 'aria-hidden': 'true' }, [iconoDe(g.tipo), g.nombre, h('span', { class: 'n', text: String(items.length) })]));
       for (const r of items.slice(0, tope)) {
         const i = idx++;
         const el = h('div', { class: 'res t-' + r.tipo, role: 'option', id: 'res-' + i, 'aria-selected': 'false', title: 'Doble clic para abrir la ficha' }, [
-          h('span', { class: 'res-ico' }, [icono(r.tipo)]),
+          h('span', { class: 'res-ico' }, [iconoDe(r.tipo)]),
           h('div', { class: 'res-cuerpo' }, [
             h('div', { class: 'res-tit' }, [resaltar(r.titulo, palabras)]), h('div', { class: 'res-sub' }, [resaltar(r.subtitulo, palabras)]),
             h('div', { class: 'res-meta' }, [h('span', { class: 'badge', text: r.organizacion_nombre }), h('span', { text: 'Cambió el ' + fmtFechaHora(r.actualizado_en) }), indicadorVerificacion(r.verificado_en, umbrales, true)])])]);
@@ -294,7 +344,10 @@ export async function renderVistaBuscador(contenedor) {
     seleccionar(k, false);
   }
 
-  campoQ.addEventListener('input', () => { panel.classList.remove('ver-prev'); busq.q = campoQ.value; busq.idx = 0; refrescar(false); });
+  campoQ.addEventListener('input', () => {
+    panel.classList.remove('ver-prev'); busq.q = campoQ.value; busq.idx = 0; refrescar(false);
+    if (estadoMetrica) { estadoMetrica.q = busq.q; clearTimeout(estadoMetrica.temporizador); estadoMetrica.temporizador = window.setTimeout(enviarTextoBusqueda, 800); }
+  });
   campoQ.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); if (plano.length) seleccionar((busq.idx + 1) % plano.length, true); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (plano.length) seleccionar((busq.idx - 1 + plano.length) % plano.length, true); }

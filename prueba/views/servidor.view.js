@@ -9,6 +9,8 @@ import * as repositorio from '../assets/js/repositorio.js';
 import * as sesion from '../assets/js/sesion.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
+import { abrirAlta, duplicar, selectorConCrear } from '../assets/js/altas.js';
+import { valoresParaDuplicar } from '../assets/js/altas/equipos.js';
 import { h, tabla, fmtFechaHora, indicadorVerificacion, icono } from '../assets/js/utiles.js';
 import { ROTULO_CREDENCIAL_TIPO } from '../assets/js/modelos.js';
 import { pintarNotas } from '../assets/js/notas.js';
@@ -21,7 +23,7 @@ import {
 
 /** @type {Object<string, string>} */
 const ETIQUETAS = { equipo_nombre: 'Nombre', equipo_marca: 'Marca', equipo_modelo: 'Modelo', equipo_numero_serie: 'Número de serie', equipo_mac: 'MAC', equipo_ip_gestion: 'IP de gestión',
-  equipo_estado: 'Estado', equipo_notas: 'Notas', rack_id: 'Rack', rack_u_inicio: 'U de inicio', rack_u_alto: 'Alto en U', ubicacion_id: 'Ubicación', puesto_id: 'Puesto' };
+  equipo_estado: 'Estado', equipo_notas: 'Notas', rack_id: 'Rack', rack_u_inicio: 'Posición (U)', rack_u_alto: 'Alto en U', ubicacion_id: 'Sede / sala', puesto_id: 'Puesto' };
 
 /**
  * @param {HTMLElement} contenedor
@@ -93,7 +95,7 @@ export async function renderVista(contenedor) {
     if (esVM) {
       datos.appendChild(h('div', { class: 'campo' }, [h('label', { text: 'Corre en el host' }), h('div', null, [host ? h('a', { href: rutaEquipo(host), text: host.equipo_nombre }) : '—'])]));
     } else if (editando) {
-      selRack = /** @type {HTMLSelectElement} */ (h('select', { id: 'ficha-rack' }, [h('option', { value: '', text: 'Sin rack' })].concat(racks.map(r => h('option', { value: r.id, text: r.rack_nombre, selected: r.id === eq.rack_id ? 'selected' : null })))));
+      selRack = selectorConCrear({ desde: 'equipos', campo: 'rack_id', organizacion_id: org, valor: eq.rack_id || null, id: 'ficha-rack', rotuloOrigen: 'Editar ' + eq.equipo_nombre, alCambiar: (_i, reg) => { if (reg) racks.push(reg); } });
       inUIni = /** @type {HTMLInputElement} */ (h('input', { id: 'ficha-uini', type: 'number', min: '1' })); inUIni.value = eq.rack_u_inicio == null ? '' : String(eq.rack_u_inicio);
       inUAlto = /** @type {HTMLInputElement} */ (h('input', { id: 'ficha-ualto', type: 'number', min: '1' })); inUAlto.value = eq.rack_u_alto == null ? '' : String(eq.rack_u_alto);
       datos.appendChild(h('div', { class: 'campo' }, [h('label', { for: 'ficha-rack', text: 'Rack' }), selRack]));
@@ -101,7 +103,7 @@ export async function renderVista(contenedor) {
       datos.appendChild(h('div', { class: 'campo' }, [h('label', { for: 'ficha-ualto', text: 'Alto en U' }), inUAlto]));
     } else {
       datos.appendChild(h('div', { class: 'campo' }, [h('label', { text: 'Rack / unidad' }), h('div', null, [rack ? h('a', { href: '#/rack/' + rack.id + '?resaltar=' + eq.id, text: rack.rack_nombre + ' · ' + rangoU(eq) }) : '—'])]));
-      datos.appendChild(h('div', { class: 'campo' }, [h('label', { text: 'Ubicación' }), h('div', { text: eq.ubicacion_id ? rutaUbicacion(eq.ubicacion_id, ubic) || '—' : '—' })]));
+      datos.appendChild(h('div', { class: 'campo' }, [h('label', { text: 'Sede / sala' }), h('div', { text: eq.ubicacion_id ? rutaUbicacion(eq.ubicacion_id, ubic) || '—' : '—' })]));
     }
     /** @type {HTMLTextAreaElement|null} */ let notas = null;
     if (editando) {
@@ -142,6 +144,10 @@ export async function renderVista(contenedor) {
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }), h('button', { type: 'button', text: 'Cancelar', onclick: () => { editando = false; errorForm = null; pintar(); } })]
       : [h('button', { type: 'button', text: 'Etiqueta', title: 'Imprimir la etiqueta con QR', onclick: () => { location.hash = '#/etiqueta/equipos/' + eq.id; } }),
         puedeModificar ? h('button', { type: 'button', text: 'Editar', onclick: () => { editando = true; errorForm = null; pintar(); } }) : null,
+        puedeModificar ? h('button', { type: 'button', text: 'Duplicar', title: 'Crear otro servidor con estos datos (sin serie, MAC, IP, código ni posición en el rack)', onclick: async () => {
+          const c = await duplicar('equipos', eq, valoresParaDuplicar(eq), eq.equipo_nombre);
+          if (c) { toast('«' + c.equipo_nombre + '» creado a partir de la copia'); ir('#/servidor/' + c.id); }
+        } }) : null,
         rack ? h('button', { type: 'button', text: 'Ver en rack', onclick: () => ir('#/rack/' + rack.id + '?resaltar=' + eq.id) }) : null];
 
     if (!editando) {
@@ -165,7 +171,7 @@ export async function renderVista(contenedor) {
     if (tab === 'vinculos') pintarVinculos(cuerpo, eq, vinc);
     else if (tab === 'red') await pestanaRed(cuerpo, eq, host, org);
     else if (tab === 'credenciales') await pestanaCredenciales(cuerpo, eq, u, org);
-    else if (tab === 'vms') pestanaVMs(cuerpo, eq, vms, umbrales);
+    else if (tab === 'vms') pestanaVMs(cuerpo, eq, vms, umbrales, puedeModificar);
     else if (tab === 'host') pestanaHost(cuerpo, host);
     else if (tab === 'notas') await pintarNotas(cuerpo, { entidad: 'Equipo', entidadId: eq.id, organizacionId: org });
     else if (tab === 'relaciones') await (await import('../assets/js/relaciones.js')).pintarRelaciones(cuerpo, { entidad: 'Equipo', entidadId: eq.id, organizacionId: org });
@@ -225,10 +231,14 @@ async function pestanaCredenciales(cuerpo, eq, u, org) {
   cuerpo.appendChild(h('div', { class: 'mut', style: 'margin-top:6px', text: 'Nunca se muestran contraseñas acá: se piden desde la ficha de la credencial.' }));
 }
 
-/** @param {HTMLElement} cuerpo @param {any} eq @param {any[]} vms @param {import('../assets/js/utiles.js').Umbrales} umbrales */
-function pestanaVMs(cuerpo, eq, vms, umbrales) {
+/** @param {HTMLElement} cuerpo @param {any} eq @param {any[]} vms @param {import('../assets/js/utiles.js').Umbrales} umbrales @param {boolean} puedeNueva */
+function pestanaVMs(cuerpo, eq, vms, umbrales, puedeNueva) {
   cuerpo.appendChild(h('div', { class: 'mut', style: 'margin-bottom:6px', text: eq.equipo_nombre + ' es host' + (eq.equipo_campos.servidor_virtualizacion !== 'ninguna' ? ' (' + textoCampo(eq, /** @type {any} */ (CAMPOS_SERVIDOR.find(f => f.k === 'servidor_virtualizacion'))) + ')' : '') + '.' }));
-  if (!vms.length) { cuerpo.appendChild(h('div', { class: 'aviso', text: 'Todavía no hay máquinas virtuales documentadas en este host. Se agregan desde «Nuevo servidor» eligiendo «Máquina virtual».' })); return; }
+  if (puedeNueva) cuerpo.appendChild(h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva máquina virtual en este host', onclick: async () => {
+    const c = await abrirAlta('equipos', { organizacion_id: eq.organizacion_id, valores: { equipo_tipo: 'servidor', tipos: ['servidor'], es_vm: true, host_id: eq.id, titulo: 'Nueva máquina virtual' }, rotulo: null });
+    if (c) { toast('«' + c.equipo_nombre + '» creada'); ir('#/servidor/' + c.id); }
+  } })]));
+  if (!vms.length) { cuerpo.appendChild(h('div', { class: 'aviso', text: 'Todavía no hay máquinas virtuales documentadas en este host.' + (puedeNueva ? ' Usá «Nueva máquina virtual en este host».' : '') })); return; }
   cuerpo.appendChild(tabla(['Máquina virtual', 'Rol', 'Sistema operativo', 'RAM', 'IP de gestión', 'Estado', 'Verificado'],
     vms.map(v => { const c = v.equipo_campos || {}; return [v.equipo_nombre, c.servidor_rol || '—', c.servidor_sistema_operativo || '—', c.servidor_ram_gb ? c.servidor_ram_gb + ' GB' : '—', v.equipo_ip_gestion || '—', estadoPill(v.equipo_estado), indicadorVerificacion(v.verificado_en, umbrales, true)]; }),
     { tipo: 'servidor', onFila: (_f, i) => ir('#/servidor/' + vms[i].id) }));

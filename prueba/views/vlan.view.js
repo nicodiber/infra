@@ -8,6 +8,8 @@
 import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, toast } from '../assets/js/marco.js';
+import { duplicar } from '../assets/js/altas.js';
+import { problemasDeVlan } from '../assets/js/altas/vlans.js';
 import { h, tabla, ahoraISO, fmtFecha, normalizar } from '../assets/js/utiles.js';
 import { cargarContexto, leerRuta, encabezado, campo, avisoVista, formulario, fichaCab, textoUltimoCambio, seguro, enlace, pestanas, calcularIpsDeVlan, numeroAIp, hashEquipo, ROTULO_SEGURIDAD } from '../assets/js/red.js';
 
@@ -53,15 +55,18 @@ async function dibujar(cont, ctx, v, editando, cambiar) {
     botones.push(h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: async () => {
       const r = /** @type {Function} */ (leer)();
       const errores = /** @type {string[]} */ (r.errores);
-      const n = r.valores.vlan_numero;
-      if (n != null && (n < 1 || n > 4094)) errores.push('El número de VLAN va de 1 a 4094.');
-      if (r.valores.vlan_dhcp_activo && !r.valores.vlan_dhcp_rango) errores.push('Si el DHCP está activo, indicá el rango.');
-      if (n != null && (await repositorio.listar('vlans', x => x.organizacion_id === ctx.org && x.id !== v.id && x.vlan_numero === n)).length) errores.push('Ya existe la VLAN ' + n + ' en esta organización.');
+      errores.push(...(await problemasDeVlan({ ...v, ...r.valores }, { orgId: ctx.org, idActual: v.id })).filter(m => !errores.includes(m)));
       if (errores.length) { err.textContent = errores.join(' '); return; }
       if (!(await seguro(() => repositorio.guardar('vlans', { ...v, ...r.valores }, ctx.u.id)))) return;
       toast('Cambios guardados · verificado hoy (' + fmtFecha(ahoraISO()) + ')'); await cambiar(false);
     } }), h('button', { type: 'button', text: 'Cancelar', onclick: () => cambiar(false) }));
-  } else if (ctx.modifica) botones.push(h('button', { type: 'button', text: 'Editar', onclick: () => cambiar(true) }));
+  } else if (ctx.modifica) {
+    botones.push(h('button', { type: 'button', text: 'Editar', onclick: () => cambiar(true) }));
+    botones.push(h('button', { type: 'button', text: 'Duplicar', title: 'Crear otra VLAN con estos datos (el número tiene que ser distinto)', onclick: async () => {
+      const c = await duplicar('vlans', v, { vlan_nombre: v.vlan_nombre + ' (copia)', vlan_red_cidr: v.vlan_red_cidr, vlan_gateway: v.vlan_gateway, vlan_dhcp_activo: v.vlan_dhcp_activo, vlan_dhcp_rango: v.vlan_dhcp_rango, vlan_descripcion: v.vlan_descripcion }, 'VLAN ' + v.vlan_numero + ' · ' + v.vlan_nombre);
+      if (c) { toast('VLAN ' + c.vlan_numero + ' creada a partir de la copia.'); ir('#/vlan/' + c.id); }
+    } }));
+  }
   cont.appendChild(fichaCab({ ctx, tipo: 'vlan', etiqueta: 'vlan', titulo: 'VLAN ' + v.vlan_numero + ' · ' + v.vlan_nombre, datos, botones, editando, registro: v, coleccion: 'vlans',
     ultimoCambio: await textoUltimoCambio(ctx, 'Vlan', v), alConfirmar: () => cambiar(editando) }));
   if (editando) return;

@@ -34,6 +34,7 @@ import { hoyISO } from './utiles.js';
  * @property {string} [ayuda]
  * @property {(e: any) => boolean} [aplica] Solo campos de equipo: si corresponde al tipo/categoría.
  * @property {string} [segun] En `refDin`: la columna que dice a qué tipo de ficha apunta.
+ * @property {string[]} [alias] Rótulos anteriores de la columna: se siguen reconociendo al importar planillas viejas.
  */
 
 /** @typedef {Object} Hoja
@@ -46,6 +47,7 @@ import { hoyISO } from './utiles.js';
  * @property {boolean} [sinOrg] La hoja no tiene columna Organización.
  * @property {Object<string, any>} ejemplo Fila de ejemplo ficticia (valores como se ven en la planilla).
  * @property {boolean} [dns] Hoja de registros DNS (agrega registros a un servicio).
+ * @property {string[]} [alias] Nombres anteriores de la hoja: se siguen reconociendo al importar planillas viejas.
  */
 
 // ---------------------------------------------------------------------------------------------
@@ -62,7 +64,7 @@ const NOTAS = (k = 'notas') => C(k, 'Notas', 'largo');
 
 /** Nombre de la entidad → rótulo, para las notas colgadas de una ficha. */
 const FICHAS_NOTA = /** @type {Array<[string, string]>} */ ([
-  ['Ubicacion', 'Ubicación'], ['Rack', 'Rack'], ['Equipo', 'Equipo'], ['Puesto', 'Puesto'], ['Vlan', 'VLAN'], ['RedWifi', 'Red Wi-Fi'],
+  ['Ubicacion', 'Sede / sala'], ['Rack', 'Rack'], ['Equipo', 'Equipo'], ['Puesto', 'Puesto'], ['Vlan', 'VLAN'], ['RedWifi', 'Red Wi-Fi'],
   ['EnlaceIsp', 'Enlace a Internet'], ['Configuracion', 'Configuración'], ['Credencial', 'Credencial'], ['Persona', 'Persona'],
   ['CuentaDominio', 'Cuenta de dominio'], ['Licencia', 'Licencia'], ['MapeoDisco', 'Mapeo de disco'], ['Servicio', 'Servicio'], ['TramoFibra', 'Tramo de fibra']
 ]);
@@ -104,15 +106,16 @@ export const ESQUEMA = [
     cols: [C('organizacion_nombre', 'Nombre', 'texto', { req: true }), C('organizacion_rubro', 'Rubro', 'texto'), C('organizacion_cuit', 'CUIT', 'texto'), NOTAS('organizacion_notas'),
       C('organizacion_estado', 'Estado', 'enum', { req: true, def: 'activa', op: [['activa', 'Activa'], ['inactiva', 'Inactiva']] })],
     ejemplo: { organizacion_nombre: 'Organización Ejemplo S.A.', organizacion_rubro: 'Servicios', organizacion_cuit: '30-00000000-0', organizacion_estado: 'Activa' } },
-  { id: 'ubicaciones', nombre: 'Ubicaciones', col: 'ubicaciones', desc: 'Sedes, edificios, salas y oficinas. «Ubicación superior» es la que la contiene (vacía en la sede).',
+  { id: 'ubicaciones', nombre: 'Sedes y salas', alias: ['Ubicaciones'], col: 'ubicaciones', desc: 'Sedes y salas (D-081). Una sede pertenece a la organización; una sala pertenece a una sede (columna «Sede (para salas)»). Una sala sin sede indicada queda en la sede provisoria «Sin sede».',
     claveCols: ['ubicacion_nombre', 'ubicacion_padre_id'],
     cols: [ORG, C('ubicacion_nombre', 'Nombre', 'texto', { req: true }),
-      C('ubicacion_tipo', 'Tipo', 'enum', { req: true, op: [['sede', 'Sede'], ['edificio', 'Edificio'], ['sala', 'Sala'], ['oficina', 'Oficina']] }),
-      C('ubicacion_padre_id', 'Ubicación superior', 'ref', { ref: 'ubicaciones', ayuda: 'Si hay dos con el mismo nombre, escribí «Sede / Sala».' }), C('ubicacion_direccion', 'Dirección', 'texto')],
+      C('ubicacion_tipo', 'Tipo', 'enum', { req: true, op: [['sede', 'Sede'], ['sala', 'Sala']] }),
+      C('ubicacion_padre_id', 'Sede (para salas)', 'ref', { ref: 'ubicaciones', alias: ['Ubicación superior'], ayuda: 'Solo en las salas: la sede a la que pertenecen (vacía en las sedes). Si no existe, se crea. Si hay dos con el mismo nombre, escribí «Sede / Sala».' }),
+      C('ubicacion_direccion', 'Dirección', 'texto'), C('ubicacion_notas', 'Notas', 'largo')],
     ejemplo: { organizacion_id: 'Organización Ejemplo S.A.', ubicacion_nombre: 'Sala de servidores', ubicacion_tipo: 'Sala', ubicacion_padre_id: 'Sede central', ubicacion_direccion: '' } },
   { id: 'racks', nombre: 'Racks', col: 'racks', desc: 'Gabinetes. Los equipos se montan en un rack indicando la U inicial y cuántas U ocupan (hoja Equipos).',
     claveCols: ['rack_nombre'],
-    cols: [ORG, C('rack_nombre', 'Nombre', 'texto', { req: true }), C('ubicacion_id', 'Ubicación', 'ref', { ref: 'ubicaciones', req: true }),
+    cols: [ORG, C('rack_nombre', 'Nombre', 'texto', { req: true }), C('ubicacion_id', 'Sede / sala', 'ref', { ref: 'ubicaciones', req: true, alias: ['Ubicación'], ayuda: 'Sede o sala donde está. Si no existe, se crea.' }),
       C('rack_unidades_total', 'Unidades (U) totales', 'entero', { req: true }), C('rack_profundidad', 'Profundidad útil (mm)', 'entero'), NOTAS('rack_notas')],
     ejemplo: { organizacion_id: 'Organización Ejemplo S.A.', rack_nombre: 'RACK-EJ-01', ubicacion_id: 'Sala de servidores', rack_unidades_total: 42, rack_profundidad: 800 } },
   { id: 'equipos', nombre: 'Equipos', col: 'equipos', desc: 'Todo lo físico: routers, firewalls, switches, access points, servidores, patcheras, UPS y «otro» (PC, notebook, impresora, reloj, NAS…). Las columnas con el nombre del tipo por delante («Switch · Capa») solo se completan para ese tipo.',
@@ -121,8 +124,8 @@ export const ESQUEMA = [
       C('equipo_nombre', 'Nombre', 'texto', { req: true }), C('equipo_codigo', 'Código', 'texto', { ayuda: 'Vacío al crear: se genera solo (por ejemplo AGR-SW-001).' }),
       C('equipo_marca', 'Marca', 'texto'), C('equipo_modelo', 'Modelo', 'texto'), C('equipo_numero_serie', 'N.º de serie', 'texto'), C('equipo_mac', 'MAC', 'texto'), C('equipo_ip_gestion', 'IP de gestión', 'texto'),
       C('equipo_estado', 'Estado', 'enum', { req: true, def: 'en_uso', op: pares(ROTULO_ESTADO_EQUIPO) }),
-      C('ubicacion_id', 'Ubicación', 'ref', { ref: 'ubicaciones', ayuda: 'Si está en un rack, es la del rack.' }), C('rack_id', 'Rack', 'ref', { ref: 'racks' }),
-      C('rack_u_inicio', 'U inicial en el rack', 'entero', { ayuda: '1 = la de abajo. Obligatoria si hay rack.' }), C('rack_u_alto', 'U que ocupa', 'entero', { ayuda: 'Obligatoria si hay rack.' }),
+      C('ubicacion_id', 'Sede / sala', 'ref', { ref: 'ubicaciones', alias: ['Ubicación'], ayuda: 'Si está en un rack, es la del rack.' }), C('rack_id', 'Rack', 'ref', { ref: 'racks', ayuda: 'Si el rack no existe, se crea (de 42 U).' }),
+      C('rack_u_inicio', 'Posición (U)', 'entero', { alias: ['U inicial en el rack'], ayuda: 'U inicial en el rack; 1 = la de abajo. Obligatoria si hay rack.' }), C('rack_u_alto', 'U que ocupa', 'entero', { ayuda: 'Obligatoria si hay rack.' }),
       C('puesto_id', 'Puesto', 'ref', { ref: 'puestos', ayuda: 'Dónde está un equipo de escritorio (PC, impresora, reloj).' }), NOTAS('equipo_notas'), ...columnasCampos()],
     ejemplo: { organizacion_id: 'Organización Ejemplo S.A.', equipo_tipo: 'Switch', equipo_nombre: 'SW-EJ-01', equipo_marca: 'Marca Demo', equipo_modelo: 'Modelo-24', equipo_ip_gestion: '10.0.0.2', equipo_estado: 'En uso',
       rack_id: 'RACK-EJ-01', rack_u_inicio: 20, rack_u_alto: 1, switch_puertos_total: 24, switch_puertos_sfp: 2, switch_administrable: 'Sí', switch_stack: 'No' } },
@@ -159,7 +162,7 @@ export const ESQUEMA = [
     ejemplo: { organizacion_id: 'Organización Ejemplo S.A.', enlace_proveedor: 'Proveedor Demo', enlace_tipo: 'Fibra', enlace_velocidad_bajada_mbps: 300, enlace_velocidad_subida_mbps: 100, enlace_ip_publica: '203.0.113.10', enlace_tipo_ip: 'Fija', enlace_es_principal: 'Sí' } },
   { id: 'puestos', nombre: 'Puestos', col: 'puestos', desc: 'Lugares de trabajo con su boca de pared.',
     claveCols: ['puesto_nombre', 'ubicacion_id'],
-    cols: [ORG, C('puesto_nombre', 'Nombre', 'texto', { req: true }), C('ubicacion_id', 'Ubicación', 'ref', { ref: 'ubicaciones', req: true }), C('puesto_boca_pared', 'Boca de pared', 'texto'), NOTAS('puesto_notas')],
+    cols: [ORG, C('puesto_nombre', 'Nombre', 'texto', { req: true }), C('ubicacion_id', 'Sede / sala', 'ref', { ref: 'ubicaciones', req: true, alias: ['Ubicación'], ayuda: 'Sede o sala donde está. Si no existe, se crea.' }), C('puesto_boca_pared', 'Boca de pared', 'texto'), NOTAS('puesto_notas')],
     ejemplo: { organizacion_id: 'Organización Ejemplo S.A.', puesto_nombre: 'Puesto 01 · Administración', ubicacion_id: 'Sala de servidores', puesto_boca_pared: 'B-001' } },
   { id: 'personas', nombre: 'Personas', col: 'personas', desc: 'Personas de la organización (no son usuarios de Infradoc).',
     claveCols: ['persona_nombre'],
@@ -217,9 +220,9 @@ export const ESQUEMA = [
     cols: [ORG, C('servicio_id', 'Servicio', 'ref', { ref: 'servicios', req: true, virtual: true }), C('registro_tipo', 'Tipo de registro', 'enum', { req: true, virtual: true, op: TIPOS_REGISTRO_DNS.map(x => /** @type {[string, string]} */ ([x, x])) }),
       C('registro_nombre', 'Nombre', 'texto', { req: true, virtual: true, ayuda: '«@» = el dominio mismo.' }), C('registro_valor', 'Valor', 'texto', { req: true, virtual: true }), C('registro_prioridad', 'Prioridad', 'entero', { virtual: true, ayuda: 'Solo MX.' })],
     ejemplo: { organizacion_id: 'Organización Ejemplo S.A.', servicio_id: 'ejemplo.example', registro_tipo: 'MX', registro_nombre: '@', registro_valor: 'mail.ejemplo.example.', registro_prioridad: 10 } },
-  { id: 'tramos', nombre: 'Tramos de fibra', col: 'tramos_fibra', desc: 'Fibra óptica entre dos ubicaciones, con las patcheras de cada punta si están cargadas.',
+  { id: 'tramos', nombre: 'Tramos de fibra', col: 'tramos_fibra', desc: 'Fibra óptica entre dos sedes o salas, con las patcheras de cada punta si están cargadas.',
     claveCols: ['tramo_nombre'],
-    cols: [ORG, C('tramo_nombre', 'Nombre', 'texto', { req: true }), C('tramo_origen_ubicacion_id', 'Origen: ubicación', 'ref', { ref: 'ubicaciones', req: true }), C('tramo_destino_ubicacion_id', 'Destino: ubicación', 'ref', { ref: 'ubicaciones', req: true }),
+    cols: [ORG, C('tramo_nombre', 'Nombre', 'texto', { req: true }), C('tramo_origen_ubicacion_id', 'Origen: sede / sala', 'ref', { ref: 'ubicaciones', req: true, alias: ['Origen: ubicación'] }), C('tramo_destino_ubicacion_id', 'Destino: sede / sala', 'ref', { ref: 'ubicaciones', req: true, alias: ['Destino: ubicación'] }),
       C('tramo_origen_equipo_id', 'Origen: patchera', 'ref', { ref: 'equipos' }), C('tramo_destino_equipo_id', 'Destino: patchera', 'ref', { ref: 'equipos' }), C('tramo_pelos', 'Cantidad de pelos', 'entero', { req: true }),
       C('tramo_tipo', 'Tipo de fibra', 'enum', { req: true, op: pares(ROTULO_FIBRA_TIPO) }), C('tramo_conector', 'Conector', 'enum', { req: true, op: CONECTORES_FIBRA.map(x => /** @type {[string, string]} */ ([x, x])) }),
       C('tramo_longitud_m', 'Longitud (m)', 'numero'), C('tramo_pelos_usados', 'Pelos usados', 'pelos', { ayuda: 'Una línea por pelo: «1: Troncal core (Tx)».' }),
@@ -238,7 +241,7 @@ const ORDEN_APLICAR = ['organizaciones', 'ubicaciones', 'racks', 'puestos', 'vla
 
 /** Cómo se nombra cada colección en un mensaje de error. @type {Object<string, string>} */
 const NOMBRE_REF = {
-  organizaciones: 'la organización', ubicaciones: 'la ubicación', racks: 'el rack', equipos: 'el equipo', puestos: 'el puesto', personas: 'la persona', cuentas_dominio: 'la cuenta de dominio',
+  organizaciones: 'la organización', ubicaciones: 'la sede o sala', racks: 'el rack', equipos: 'el equipo', puestos: 'el puesto', personas: 'la persona', cuentas_dominio: 'la cuenta de dominio',
   vlans: 'la VLAN', enlaces_isp: 'el enlace a Internet', redes_wifi: 'la red Wi-Fi', configuraciones: 'la configuración', credenciales: 'la credencial', licencias: 'la licencia',
   servicios: 'el servicio', mapeos_disco: 'el mapeo', tramos_fibra: 'el tramo'
 };
@@ -581,6 +584,7 @@ async function leerXlsx(buffer) {
  * @property {Map<string, string>} puertoPorNumero «equipoId|número» → id de puerto.
  * @property {Map<string, string>} codigos Código de equipo (normalizado, por organización) → id; incluye las bajas.
  * @property {Set<string>} existentes ids que ya existían.
+ * @property {Map<string, Auto>} autos Lo que se va a crear porque una fila lo menciona y no existe (QC58-A), por id.
  */
 
 /** @param {Mundo} m @param {string} col @param {any} r */
@@ -636,7 +640,7 @@ function buscar(m, col, org, texto) {
 /** Carga el estado actual desde el repositorio. @returns {Promise<Mundo>} */
 async function cargarMundo() {
   /** @type {Mundo} */
-  const m = { cols: {}, idx: {}, claves: {}, puertoPorNumero: new Map(), codigos: new Map(), existentes: new Set() };
+  const m = { cols: {}, idx: {}, claves: {}, puertoPorNumero: new Map(), codigos: new Map(), existentes: new Set(), autos: new Map() };
   for (const c of COLS_MUNDO) { m.cols[c] = new Map(); m.idx[c] = new Map(); m.claves[c] = new Map(); }
   for (const c of COLS_MUNDO) {
     for (const r of await repositorio.listar(c)) { m.cols[c].set(r.id, r); m.existentes.add(r.id); }
@@ -969,10 +973,12 @@ function xmlInstrucciones(vacia, conSecretos) {
   lin('Cómo se usa', EST.seccion);
   lin('1. Completá las hojas (una por tipo de dato). La fila 1 de cada hoja son los nombres de columna: no la cambies, ni cambies los nombres de las hojas. Las columnas naranjas son obligatorias.');
   lin('2. Guardala como .xlsx y, en Infradoc, entrá a «Datos» y usá «Importar planilla» (solo el superadmin). Antes de aplicar nada ves una vista previa: cuántas filas se crean, cuántas se actualizan y los errores fila por fila.');
-  lin('3. No hace falta completar todo ni respetar el orden de las hojas, pero conviene cargar en este orden porque cada hoja apunta a las anteriores: Organizaciones, Ubicaciones, Racks, Equipos, Puertos y conexiones, VLAN, Redes Wi-Fi, Enlaces ISP, Puestos, Personas, Cuentas de dominio, Asignaciones, Configuraciones, Mapeos de discos, Credenciales, Licencias, Instalaciones, Servicios, Registros DNS, Tramos de fibra, Notas.');
+  lin('3. No hace falta completar todo ni respetar el orden de las hojas, pero conviene cargar en este orden porque cada hoja apunta a las anteriores: Organizaciones, Sedes y salas, Racks, Equipos, Puertos y conexiones, VLAN, Redes Wi-Fi, Enlaces ISP, Puestos, Personas, Cuentas de dominio, Asignaciones, Configuraciones, Mapeos de discos, Credenciales, Licencias, Instalaciones, Servicios, Registros DNS, Tramos de fibra, Notas.');
   lin('');
   lin('Reglas', EST.seccion);
-  lin('• Las referencias van por NOMBRE, no por código interno: «Rack» = nombre del rack, «Ubicación» = nombre de la ubicación, etc. Tiene que existir en la hoja correspondiente (o ya estar cargado en Infradoc) y ser de la misma organización de la fila. Si hay dos con el mismo nombre se usa el nombre completo: «Sede / Sala» para ubicaciones, «Nombre (sector)» para personas, «Nombre (Tipo)» para credenciales, licencias y servicios; y si aun así no alcanza (dos personas con el mismo nombre y sector), el id de la fila. De un equipo sirve también su código.');
+  lin('• Las referencias van por NOMBRE, no por código interno: «Rack» = nombre del rack, «Sede / sala» = nombre de la sede o sala, etc. Tiene que existir en la hoja correspondiente (o ya estar cargado en Infradoc) y ser de la misma organización de la fila. Si hay dos con el mismo nombre se usa el nombre completo: «Sede / Sala» para las salas, «Nombre (sector)» para personas, «Nombre (Tipo)» para credenciales, licencias y servicios; y si aun así no alcanza (dos personas con el mismo nombre y sector), el id de la fila. De un equipo sirve también su código.');
+  lin('• Si una fila nombra algo que no existe (un rack en una sala que no cargaste, una persona, una VLAN, la sede de una sala…), Infradoc lo CREA con los datos mínimos que se deducen (el nombre y poco más) y recién después importa la fila. Lo ves antes de importar, en «Se va a crear». Un nombre de sala suelto, sin su sede, crea la sala dentro de la sede provisoria «Sin sede» (una por organización, marcada «para revisar»); un rack nuevo es de 42 U. Lo que no se puede deducir con seguridad (por ejemplo de qué tipo es un equipo) sigue siendo un error de la fila.');
+  lin('• Esta planilla reconoce también el formato anterior: hoja «Ubicaciones», columna «Ubicación superior» y tipos Edificio / Oficina (Oficina pasa a Sala; un Edificio con sede arriba se une a su sede y sus salas pasan a ella; un Edificio sin sede queda como sede).');
   lin('• La columna «id» es opcional. Vacía: Infradoc busca el registro por su nombre dentro de la organización (si existe lo actualiza y si no lo crea). Con un id que ya existe, actualiza ese registro (así se puede renombrar).');
   lin('• Una celda vacía NUNCA pisa un dato que ya está cargado: solo cambian las celdas con algo escrito. Para vaciar un dato, hacelo en la ficha.');
   lin('• Fechas: DD/MM/AAAA (por ejemplo 31/12/2026). También se aceptan las fechas de Excel.');
@@ -1029,6 +1035,14 @@ function xmlInstrucciones(vacia, conSecretos) {
  * @property {string[]} avisos
  */
 
+/** @typedef {Object} Estado Una hoja leída de la planilla.
+ * @property {Hoja} h
+ * @property {ResultadoHoja} res
+ * @property {Fila[]} filas
+ * @property {Map<string, number>} cols
+ * @property {boolean} [viejo] La hoja traía un nombre del formato anterior («Ubicaciones»).
+ */
+
 /** @typedef {Object} Plan
  * @property {ResultadoHoja[]} hojas
  * @property {number} errores
@@ -1037,6 +1051,17 @@ function xmlInstrucciones(vacia, conSecretos) {
  * @property {string[]} avisos
  * @property {any[]} acciones
  * @property {Array<{a: string, b: string, fila: string}>} conexiones
+ * @property {Creacion[]} creaciones Lo que se crea además de las filas, porque alguna fila lo menciona y no existe (QC58-A).
+ * @property {any[]} acciones_auto Lo mismo, listo para guardar (se aplica antes que la hoja correspondiente).
+ */
+
+/** @typedef {Object} Creacion
+ * @property {string} tipo Qué es («Sala», «Rack», «Persona»…).
+ * @property {string} nombre
+ * @property {string} detalle Con qué datos se crea.
+ * @property {string} organizacion
+ * @property {Array<{hoja: string, fila: number, columna: string|null}>} desde Las primeras filas que lo piden.
+ * @property {number} total Cuántas filas lo piden.
  */
 
 /** @type {Plan|null} */
@@ -1062,20 +1087,22 @@ export async function analizarPlanilla(buffer, usuario) {
   planPendiente = null;
   const leidas = await leerXlsx(buffer);
   const porNombre = new Map(leidas.map(x => [nrm(x.nombre), x]));
-  if (!ESQUEMA.some(h => porNombre.has(nrm(h.nombre)))) throw new Error('El archivo no tiene ninguna de las hojas de la planilla de Infradoc (Organizaciones, Equipos, etc.). Descargá la planilla vacía y usá esa.');
+  const hojaLeida = (/** @type {Hoja} */ h) => porNombre.get(nrm(h.nombre)) || (h.alias || []).map(a => porNombre.get(nrm(a))).find(Boolean);
+  if (!ESQUEMA.some(h => hojaLeida(h))) throw new Error('El archivo no tiene ninguna de las hojas de la planilla de Infradoc (Organizaciones, Equipos, etc.). Descargá la planilla vacía y usá esa.');
   const m = await cargarMundo();
   /** @type {Plan} */
-  const plan = { hojas: [], errores: 0, validas: 0, contrasenas: 0, avisos: [], acciones: [], conexiones: [] };
+  const plan = { hojas: [], errores: 0, validas: 0, contrasenas: 0, avisos: [], acciones: [], conexiones: [], creaciones: [], acciones_auto: [] };
 
-  /** @type {Map<string, {h: Hoja, res: ResultadoHoja, filas: Fila[], cols: Map<string, number>}>} */
+  /** @type {Map<string, Estado>} */
   const estados = new Map();
   for (const h of ESQUEMA) {
     /** @type {ResultadoHoja} */
     const res = { nombre: h.nombre, presente: false, filas: 0, crear: 0, actualizar: 0, sinCambios: 0, errores: [], avisos: [] };
     plan.hojas.push(res);
-    const x = porNombre.get(nrm(h.nombre));
+    const x = hojaLeida(h);
     if (!x) continue;
     res.presente = true;
+    const nombreViejo = nrm(x.nombre) !== nrm(h.nombre);
     const cab = x.filas.find(f => f.n === 1);
     /** @type {Map<string, number>} */
     const cols = new Map();
@@ -1085,7 +1112,7 @@ export async function analizarPlanilla(buffer, usuario) {
         const s = String(t).trim();
         const mk = /\(([A-Za-z0-9_]+)\)\s*$/.exec(s);
         const clave = nrm(s) === 'id' ? 'id' : mk ? mk[1] : null;
-        const col = clave && (clave === 'id' || h.cols.some(c => c.k === clave)) ? clave : (h.cols.find(c => nrm(c.r) === nrm(s)) || { k: '' }).k;
+        const col = clave && (clave === 'id' || h.cols.some(c => c.k === clave)) ? clave : (h.cols.find(c => nrm(c.r) === nrm(s) || (c.alias || []).some(a => nrm(a) === nrm(s))) || { k: '' }).k;
         if (col) cols.set(col, j); else res.avisos.push('La columna «' + s + '» no se reconoce y se ignora.');
       });
     }
@@ -1102,8 +1129,11 @@ export async function analizarPlanilla(buffer, usuario) {
     }
     res.filas = filas.length;
     if (filas.length) for (const c of h.cols) if (c.req && !cols.has(c.k) && !c.campo && c.def === undefined) res.errores.push({ n: 1, col: c.r, mensaje: 'falta la columna «' + encabezado(c) + '» (obligatoria)' });
-    estados.set(h.id, { h, res, filas, cols });
+    estados.set(h.id, { h, res, filas, cols, viejo: nombreViejo });
   }
+  // Planillas del formato anterior (hoja «Ubicaciones», Edificio / Oficina): se leen como «Sedes y salas».
+  adaptarSedesYSalas(estados, m);
+  for (const e of estados.values()) e.res.filas = e.filas.length;
 
   const orden = ORDEN_APLICAR.filter(id => estados.has(id));
   // Pasada A: identidad de cada fila (existente o nueva) y alta provisoria en el índice, así las referencias entre hojas (en cualquier orden) se pueden resolver.
@@ -1127,13 +1157,14 @@ export async function analizarPlanilla(buffer, usuario) {
     }
   }
   aplicarDns(estados, m, plan);
+  cerrarCreaciones(m, plan);
   for (const r of plan.hojas) { r.errores.sort((a, b) => a.n - b.n); plan.errores += r.errores.length; }
   plan.validas = plan.acciones.length;
   planPendiente = plan;
   return plan;
 }
 
-/** @param {{h: Hoja, res: ResultadoHoja, filas: Fila[], cols: Map<string, number>}} est @param {Mundo} m */
+/** @param {Estado} est @param {Mundo} m */
 function pasadaA(est, m) {
   const { h, filas } = est;
   /** @type {Map<string, number>} */
@@ -1170,7 +1201,12 @@ function pasadaA(est, m) {
     for (const k of h.claveCols) {
       const c = /** @type {Col} */ (h.cols.find(x => x.k === k));
       const raw = celda(f, k);
-      if (raw === undefined) { partes.push(''); if (c.req) faltan.push(c.r); continue; }
+      if (raw === undefined) {
+        // Una sala que no dice su sede es de la sede provisoria «Sin sede» (así se reconoce al volver a importar).
+        partes.push(h.id === 'ubicaciones' && k === 'ubicacion_padre_id' && f.vals.ubicacion_tipo === 'sala' ? nrm(NOMBRE_SIN_SEDE) : '');
+        if (c.req) faltan.push(c.r);
+        continue;
+      }
       if (c.t === 'ref') {
         const col = /** @type {string} */ (c.ref);
         const ids = buscar(m, col, f.org || '', raw);
@@ -1233,7 +1269,7 @@ function revisarClaveFinal(m, h, f) {
   }
 }
 
-/** @param {{h: Hoja, res: ResultadoHoja, filas: Fila[], cols: Map<string, number>}} est @param {Mundo} m @param {Plan} plan */
+/** @param {Estado} est @param {Mundo} m @param {Plan} plan */
 function pasadaB(est, m, plan) {
   const { h, filas } = est;
   if (h.dns) return;
@@ -1259,14 +1295,25 @@ function pasadaB(est, m, plan) {
       const ids = [];
       for (const t of textos) {
         const r = buscar(m, col, org || '', t);
-        if (r.length === 0) err(c.r, NOMBRE_REF[col] + ' «' + t + '» no existe en ' + (orgNombre(f.org) || 'la organización') + (HOJA_DE_COLECCION[col] ? ' (ni en la hoja ' + HOJA_DE_COLECCION[col] + ')' : ''));
+        if (r.length === 0) {
+          // No existe ni en Infradoc ni en otra hoja: si se sabe con seguridad qué es, se crea con los datos mínimos (QC58-A).
+          const a = intentarCrear(m, est, f, c, org || '', t);
+          if (a && a.id) ids.push(a.id);
+          else err(c.r, mensajeNoExiste(col, t, orgNombre(f.org), a ? a.error : undefined));
+        }
         else if (r.length > 1) err(c.r, NOMBRE_REF[col] + ' «' + t + '» es ambigua: hay ' + r.length + ' con ese nombre; escribí el nombre completo o su id');
-        else ids.push(r[0]);
+        else { ids.push(r[0]); if (m.autos.has(r[0])) anotarOrigen(m, r[0], { hoja: h.nombre, fila: f.n, col: c.r, f }); }
       }
       if (ids.length === textos.length) {
         f.vals[c.k] = c.t === 'listaRef' ? ids : ids[0];
         for (const id of ids) f.refs.add(id);
       }
+    }
+    // Una sala nueva que no dice su sede queda en la sede provisoria «Sin sede» (única por organización, para revisar).
+    if (h.id === 'ubicaciones' && !f.existente && f.vals.ubicacion_tipo === 'sala' && celda(f, 'ubicacion_padre_id') === undefined && org) {
+      const id = sinSede(m, org, { hoja: h.nombre, fila: f.n, col: 'Sede (para salas)', f });
+      f.vals.ubicacion_padre_id = id;
+      f.refs.add(id);
     }
     // Registro final
     const ex = f.existente;
@@ -1340,15 +1387,414 @@ function cascada(estados) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Planillas del formato anterior: «Ubicaciones» con Edificio / Oficina (D-081, QC66-A)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Lee la hoja «Ubicaciones» del formato anterior como «Sedes y salas», con las mismas reglas que la migración del modelo 2 → 3
+ * (`migrarUbicacionesASedesYSalas` en modelos.js): Oficina → Sala; un Edificio con sede arriba desaparece y sus salas pasan a esa
+ * sede; un Edificio sin sede queda como sede; una sala sin sede arriba se convierte en sede. Lo que otras hojas decían del edificio
+ * («Edificio Administración», «Planta / Edificio Administración / Sala 1») se redirige a donde quedó. En el formato nuevo, una sala
+ * sin sede indicada no se toca acá: queda en «Sin sede» más adelante (`pasadaB`).
+ * @param {Map<string, Estado>} estados @param {Mundo} m
+ */
+function adaptarSedesYSalas(estados, m) {
+  const est = estados.get('ubicaciones');
+  if (!est) return;
+  const { filas, res } = est;
+  /** @param {Fila} f */
+  const tipoTxt = f => { const v = celda(f, 'ubicacion_tipo'); return v === undefined ? '' : nrm(v); };
+  const viejo = !!est.viejo || filas.some(f => ['edificio', 'oficina'].includes(tipoTxt(f)));
+  if (!viejo) return;
+
+  /** @typedef {{f: Fila, org: string, nombre: string, tipo: string, padreTxt: string, actual: string, quitada: any, padre: any}} Info */
+  /** @type {Info[]} */
+  const infos = filas.map(f => {
+    const t = tipoTxt(f);
+    const pv = celda(f, 'ubicacion_padre_id');
+    return { f, org: nrm(celda(f, 'organizacion_id') ?? ''), nombre: String(celda(f, 'ubicacion_nombre') ?? '').trim(), tipo: t === 'oficina' ? 'sala' : t,
+      padreTxt: pv === undefined ? '' : String(pv).trim(), actual: t === 'oficina' ? 'sala' : t, quitada: null, padre: null };
+  });
+  /** @type {Map<string, Info[]>} */
+  const porNombre = new Map();
+  for (const i of infos) if (i.nombre) { const k = i.org + '|' + nrm(i.nombre); if (!porNombre.has(k)) porNombre.set(k, []); /** @type {Info[]} */ (porNombre.get(k)).push(i); }
+  const ultimo = (/** @type {string} */ t) => { const p = t.split(/\s*\/\s*/).filter(Boolean); return p.length ? p[p.length - 1] : ''; };
+  /** Superior de una fila: otra fila de la hoja, un texto externo (algo ya cargado, o que se creará) o nada. @param {Info} i @returns {{info: Info|null, ext: string}|null} */
+  const superiorDe = i => {
+    if (!i.padreTxt) return null;
+    const partes = i.padreTxt.split(/\s*\/\s*/).filter(Boolean);
+    let cand = (porNombre.get(i.org + '|' + nrm(ultimo(i.padreTxt))) || []).filter(x => x !== i);
+    if (cand.length > 1 && partes.length > 1) cand = cand.filter(x => nrm(ultimo(x.padreTxt)) === nrm(partes[partes.length - 2]));
+    return cand.length === 1 ? { info: cand[0], ext: '' } : { info: null, ext: i.padreTxt };
+  };
+  /** Sede más cercana por encima (cuenta el tipo `actual`). @param {Info} i @returns {{info: Info|null, ext: string}|null} */
+  const sedeArriba = i => {
+    let p = superiorDe(i);
+    for (let v = 0; p && v < 50; v++) {
+      if (!p.info) return p;
+      if (p.info.actual === 'sede') return p;
+      p = superiorDe(p.info);
+    }
+    return null;
+  };
+  // 1) Edificios: se eliminan (o se quedan como sede si no hay sede arriba).
+  const edificios = infos.filter(i => i.tipo === 'edificio');
+  for (const e of edificios) e.quitada = sedeArriba(e);
+  for (const e of edificios) if (!e.quitada) { e.actual = 'sede'; e.padre = null; }
+  // 2) Salas: cuelgan de la sede más cercana; sin sede, pasan a ser sede. Las sedes no tienen superior.
+  let aSede = 0;
+  for (const i of infos) {
+    if (i.quitada || i.actual === 'sede' || !['sala', 'oficina'].includes(i.tipo)) continue;
+    const p = superiorDe(i);
+    if (p && (!p.info || p.info.actual === 'sede')) { i.padre = p; continue; }
+    const d = sedeArriba(i);
+    if (d) i.padre = d; else { i.actual = 'sede'; i.padre = null; aSede++; }
+  }
+  // Escribir lo adaptado en las filas y sacar los edificios que se eliminan.
+  /** @param {Info} i @returns {string} */
+  const refNueva = i => (i.quitada ? (i.quitada.info ? refNueva(i.quitada.info) : i.quitada.ext) : i.actual === 'sede' ? i.nombre : (i.padre ? (i.padre.info ? i.padre.info.nombre : ultimo(i.padre.ext)) + ' / ' + i.nombre : i.nombre));
+  /** @type {Map<string, string>} */
+  const redirigir = new Map();
+  /** @param {Info} i */
+  const rutaVieja = i => { const n = [i.nombre]; let p = superiorDe(i); for (let v = 0; p && p.info && v < 20; v++) { n.unshift(p.info.nombre); p = superiorDe(p.info); } return n.join(' / '); };
+  let sedesDeEdificio = 0, edificiosQuitados = 0, oficinas = 0;
+  for (const i of infos) {
+    if (!i.nombre) continue;
+    if (i.tipo === 'oficina' || tipoTxt(i.f) === 'oficina') oficinas++;
+    const nueva = refNueva(i);
+    if (i.quitada) redirigir.set(i.org + '|' + nrm(i.nombre), nueva);
+    const vieja = rutaVieja(i);
+    if (vieja.includes(' / ') && nrm(vieja) !== nrm(nueva)) redirigir.set(i.org + '|' + nrm(vieja), nueva);
+    if (i.quitada) { edificiosQuitados++; continue; }
+    if (i.tipo === 'edificio') sedesDeEdificio++;
+    if (!i.tipo) continue;
+    i.f.cel.set('ubicacion_tipo', i.actual === 'sede' ? 'Sede' : 'Sala');
+    i.f.cel.set('ubicacion_padre_id', i.actual === 'sede' || !i.padre ? null : (i.padre.info ? i.padre.info.nombre : ultimo(i.padre.ext)));
+  }
+  for (let k = filas.length - 1; k >= 0; k--) if (infos[k].quitada) filas.splice(k, 1);
+  // Las otras hojas que nombran una sede o sala: se redirige lo que decía de un edificio o de una ruta vieja.
+  if (redirigir.size) {
+    for (const o of estados.values()) {
+      for (const c of o.h.cols) {
+        const esUb = c.ref === 'ubicaciones';
+        const esNota = o.h.id === 'notas' && c.t === 'refDin';
+        if (!(esUb || esNota) || o.h.id === 'ubicaciones') continue;
+        for (const f of o.filas) {
+          const v = celda(f, c.k);
+          if (v === undefined || (esNota && nrm(celda(f, 'entidad') ?? '') !== 'ubicacion')) continue;
+          const nuevo = redirigir.get(nrm(celda(f, 'organizacion_id') ?? '') + '|' + nrm(v));
+          if (nuevo) f.cel.set(c.k, nuevo);
+        }
+      }
+    }
+  }
+  const partes = [];
+  if (oficinas) partes.push(oficinas + ' oficina' + (oficinas === 1 ? '' : 's') + ' pasan a ser sala' + (oficinas === 1 ? '' : 's'));
+  if (edificiosQuitados) partes.push(edificiosQuitados + ' edificio' + (edificiosQuitados === 1 ? '' : 's') + ' con sede arriba se unen a su sede (sus salas pasan a ella)');
+  if (sedesDeEdificio) partes.push(sedesDeEdificio + ' edificio' + (sedesDeEdificio === 1 ? '' : 's') + ' sin sede arriba queda' + (sedesDeEdificio === 1 ? '' : 'n') + ' como sede');
+  if (aSede) partes.push(aSede + ' sala' + (aSede === 1 ? '' : 's') + ' sin sede arriba pasa' + (aSede === 1 ? '' : 'n') + ' a ser sede');
+  res.avisos.push('Planilla del formato anterior: la hoja «Ubicaciones» (columna «Ubicación superior») se leyó como «Sedes y salas»' + (partes.length ? ': ' + partes.join('; ') : '') + '. Las mismas reglas que la migración de los datos.');
+}
+
+// ---------------------------------------------------------------------------------------------
+// Crear lo que falta (D-083, QC58-A)
+// ---------------------------------------------------------------------------------------------
+
+/** @typedef {{hoja: string, fila: number, col: string|null, f: Fila}} Origen La fila y columna que pide algo que no existe. */
+
+/** @typedef {Object} Auto Algo que se crea porque una fila lo menciona y no existe.
+ * @property {string} id
+ * @property {string} col Colección.
+ * @property {string} hojaId Hoja de la planilla donde se cargaría (decide cuándo se guarda).
+ * @property {any} rec
+ * @property {string} tipo Qué es («Sala», «Rack»…).
+ * @property {string} nombre
+ * @property {string} detalle Con qué datos se crea.
+ * @property {Origen[]} origenes Las filas que lo piden.
+ * @property {string[]} deps Otras creaciones automáticas de las que depende (si esta se crea, esas también).
+ */
+
+/** Nombre de la sede provisoria donde cae lo que no dice a qué sede pertenece (única por organización, «para revisar»). */
+const NOMBRE_SIN_SEDE = 'Sin sede';
+const NOTA_AUTO = 'Creado automáticamente al importar una planilla de Excel porque otra fila lo mencionaba y no existía. Completá sus datos y revisalo.';
+const NOTA_SIN_SEDE = 'PARA REVISAR. Sede provisoria creada al importar una planilla de Excel: agrupa las salas, racks y puestos que no decían a qué sede pertenecen. Pasá cada uno a su sede real y después dala de baja.';
+/** Alto (U) de un rack que se crea solo, porque la planilla no lo dice. */
+const ALTO_RACK_POR_DEFECTO = 42;
+/** Texto de un campo obligatorio que no se puede deducir (servidor creado solo). */
+const A_COMPLETAR = 'A completar';
+
+/** Qué se crea solo cuando una referencia no existe: hoja → columna → qué. Lo demás sigue siendo un error de la fila. @type {Object<string, Object<string, string>>} */
+const CREABLE = {
+  ubicaciones: { ubicacion_padre_id: 'sede' },
+  racks: { ubicacion_id: 'ubicacion' },
+  puestos: { ubicacion_id: 'ubicacion' },
+  equipos: { ubicacion_id: 'ubicacion', rack_id: 'rack', puesto_id: 'puesto', host_id: 'servidor', impresora_pc_id: 'pc', reloj_pc_descarga_id: 'pc' },
+  puertos: { vlan_nativa_id: 'vlan', vlans_etiquetadas: 'vlan', puesto_id: 'puesto' },
+  wifi: { vlan_id: 'vlan', credencial_id: 'credencial_wifi', access_point_ids: 'access_point' },
+  personas: { puesto_id: 'puesto' },
+  cuentas: { persona_id: 'persona', credencial_id: 'credencial_dominio' },
+  asignaciones: { persona_id: 'persona' },
+  mapeos: { equipo_id: 'servidor', persona_id: 'persona' },
+  licencias: { credencial_id: 'credencial_licencia' },
+  instalaciones: { cuenta_id: 'cuenta', persona_id: 'persona' },
+  servicios: { credencial_id: 'credencial_servicio' },
+  tramos: { tramo_origen_ubicacion_id: 'ubicacion', tramo_destino_ubicacion_id: 'ubicacion', tramo_origen_equipo_id: 'patchera', tramo_destino_equipo_id: 'patchera' },
+  dns: { servicio_id: 'dominio' }
+};
+
+/** Por qué algo que falta NO se crea solo, por colección a la que apunta la referencia. @type {Object<string, string>} */
+const NO_CREABLE = {
+  organizaciones: 'las organizaciones se cargan a propósito en la hoja Organizaciones',
+  equipos: 'no se sabe de qué tipo de equipo es: cargalo en la hoja Equipos',
+  enlaces_isp: 'falta el medio (fibra, radioenlace…): cargalo en la hoja Enlaces ISP',
+  configuraciones: 'falta su contenido: cargala en la hoja Configuraciones',
+  licencias: 'falta el tipo de licencia: cargala en la hoja Licencias',
+  credenciales: 'no se sabe de qué tipo es: cargala en la hoja Credenciales',
+  servicios: 'no se sabe de qué tipo es: cargalo en la hoja Servicios'
+};
+
+/** Registro nuevo con los valores por omisión de su hoja. @param {string} hojaId @param {string} org @param {Object<string, any>} valores */
+function registroNuevo(hojaId, org, valores) {
+  const h = hojaPorId(hojaId);
+  const rec = baseDe(h, /** @type {any} */ ({ org }));
+  for (const c of h.cols) if (!c.virtual && c.k !== 'organizacion_id' && !c.campo && c.def !== undefined) rec[c.k] = c.def;
+  Object.assign(rec, valores);
+  rec.id = crypto.randomUUID();
+  return rec;
+}
+
+/** Lo agrega al «mundo» (para que las demás filas lo encuentren por nombre) y lo anota como «se va a crear». @param {Mundo} m @param {string} hojaId @param {any} rec @param {{tipo: string, nombre: string, detalle: string, origen: Origen, deps?: string[]}} d */
+function registrarAuto(m, hojaId, rec, d) {
+  const h = hojaPorId(hojaId);
+  m.cols[h.col].set(rec.id, rec);
+  indexar(m, h.col, rec);
+  m.autos.set(rec.id, { id: rec.id, col: h.col, hojaId, rec, tipo: d.tipo, nombre: d.nombre, detalle: d.detalle, origenes: [d.origen], deps: (d.deps || []).filter(Boolean) });
+  return rec.id;
+}
+
+/** Otra fila también pide algo ya planeado. @param {Mundo} m @param {string} id @param {Origen} origen */
+function anotarOrigen(m, id, origen) {
+  const a = m.autos.get(id);
+  if (a && !a.origenes.some(o => o.f === origen.f && o.col === origen.col)) a.origenes.push(origen);
+}
+
+/** @param {Mundo} m @param {string} org @param {string} nombre */
+function sedeNombrada(m, org, nombre) {
+  const n = nrm(nombre);
+  for (const u of m.cols.ubicaciones.values()) if (u.organizacion_id === org && u.ubicacion_tipo === 'sede' && nrm(u.ubicacion_nombre) === n) return u;
+  return null;
+}
+
+/** @param {Mundo} m @param {string} org @param {string} sedeId @param {string} nombre */
+function salaNombrada(m, org, sedeId, nombre) {
+  const n = nrm(nombre);
+  for (const u of m.cols.ubicaciones.values()) if (u.organizacion_id === org && u.ubicacion_tipo === 'sala' && u.ubicacion_padre_id === sedeId && nrm(u.ubicacion_nombre) === n) return u;
+  return null;
+}
+
+/** La sede «Sin sede» de la organización (la que ya hay o la que se va a crear, una sola). @param {Mundo} m @param {string} org @param {Origen} origen @returns {string} */
+function sinSede(m, org, origen) {
+  const ex = sedeNombrada(m, org, NOMBRE_SIN_SEDE);
+  if (ex) { anotarOrigen(m, ex.id, origen); return ex.id; }
+  const rec = registroNuevo('ubicaciones', org, { ubicacion_nombre: NOMBRE_SIN_SEDE, ubicacion_tipo: 'sede', ubicacion_padre_id: null, ubicacion_notas: NOTA_SIN_SEDE });
+  return registrarAuto(m, 'ubicaciones', rec, { tipo: 'Sede', nombre: NOMBRE_SIN_SEDE, detalle: 'sede provisoria «para revisar» (junta lo que no dice a qué sede pertenece)', origen });
+}
+
+/** @param {Mundo} m @param {string} org @param {string} nombre @param {Origen} origen @returns {string} */
+function crearSede(m, org, nombre, origen) {
+  const ex = sedeNombrada(m, org, nombre);
+  if (ex) { anotarOrigen(m, ex.id, origen); return ex.id; }
+  if (nrm(nombre) === nrm(NOMBRE_SIN_SEDE)) return sinSede(m, org, origen);
+  const rec = registroNuevo('ubicaciones', org, { ubicacion_nombre: nombre, ubicacion_tipo: 'sede', ubicacion_padre_id: null, ubicacion_notas: NOTA_AUTO });
+  return registrarAuto(m, 'ubicaciones', rec, { tipo: 'Sede', nombre, detalle: 'solo con el nombre (sin dirección)', origen });
+}
+
+/** @param {Mundo} m @param {string} org @param {string} nombre @param {string} sedeId @param {Origen} origen @returns {string} */
+function crearSala(m, org, nombre, sedeId, origen) {
+  const ex = salaNombrada(m, org, sedeId, nombre);
+  if (ex) { anotarOrigen(m, ex.id, origen); return ex.id; }
+  const sede = m.cols.ubicaciones.get(sedeId);
+  const provisoria = !!sede && nrm(sede.ubicacion_nombre) === nrm(NOMBRE_SIN_SEDE);
+  const rec = registroNuevo('ubicaciones', org, { ubicacion_nombre: nombre, ubicacion_tipo: 'sala', ubicacion_padre_id: sedeId, ubicacion_notas: provisoria ? 'PARA REVISAR. ' + NOTA_AUTO + ' No decía a qué sede pertenece: pasala a su sede real.' : NOTA_AUTO });
+  return registrarAuto(m, 'ubicaciones', rec, { tipo: 'Sala', nombre, detalle: 'en la sede «' + (sede ? sede.ubicacion_nombre : '?') + '»' + (provisoria ? ' (provisoria, para revisar)' : '') + ', sin más datos', origen, deps: [sedeId] });
+}
+
+/**
+ * Una sede o sala que no existe. `modo` «sede»: se pide una sede (columna «Sede (para salas)»). `modo` «cualquiera»: un nombre
+ * suelto es una SALA de la sede «Sin sede»; «Sede / Sala» crea la sede (si falta) y su sala.
+ * @param {Mundo} m @param {string} org @param {string} texto @param {'sede'|'cualquiera'} modo @param {Origen} origen @returns {{id?: string, error?: string}}
+ */
+function crearUbicacionPorTexto(m, org, texto, modo, origen) {
+  const partes = texto.split(/\s*\/\s*/).map(x => x.trim()).filter(Boolean);
+  if (!partes.length) return {};
+  if (partes.length > 2) return { error: 'tiene más de dos niveles: una sede y su sala se escriben «Sede / Sala»' };
+  if (modo === 'sede') return partes.length > 1 ? { error: 'una sede se escribe solo con su nombre' } : { id: crearSede(m, org, partes[0], origen) };
+  if (partes.length === 1) {
+    if (nrm(partes[0]) === nrm(NOMBRE_SIN_SEDE)) return { id: sinSede(m, org, origen) };
+    return { id: crearSala(m, org, partes[0], sinSede(m, org, origen), origen) };
+  }
+  return { id: crearSala(m, org, partes[1], crearSede(m, org, partes[0], origen), origen) };
+}
+
+/** @param {Mundo} m @param {string} org @param {string} nombre @param {string|null} ubicacionId @param {Origen} origen @returns {string} */
+function crearRack(m, org, nombre, ubicacionId, origen) {
+  const ub = ubicacionId || sinSede(m, org, origen);
+  const rec = registroNuevo('racks', org, { rack_nombre: nombre, ubicacion_id: ub, rack_unidades_total: ALTO_RACK_POR_DEFECTO, rack_notas: NOTA_AUTO });
+  return registrarAuto(m, 'racks', rec, { tipo: 'Rack', nombre, detalle: 'alto ' + ALTO_RACK_POR_DEFECTO + ' U, en «' + rutaUbicacion(m.cols.ubicaciones.get(ub), m) + '»', origen, deps: [ub] });
+}
+
+/** @param {Mundo} m @param {string} org @param {string} nombre @param {string|null} ubicacionId @param {Origen} origen @returns {string} */
+function crearPuesto(m, org, nombre, ubicacionId, origen) {
+  const ub = ubicacionId || sinSede(m, org, origen);
+  const rec = registroNuevo('puestos', org, { puesto_nombre: nombre, ubicacion_id: ub, puesto_notas: NOTA_AUTO });
+  return registrarAuto(m, 'puestos', rec, { tipo: 'Puesto', nombre, detalle: 'en «' + rutaUbicacion(m.cols.ubicaciones.get(ub), m) + '», sin boca de pared', origen, deps: [ub] });
+}
+
+/** «10», «10 - Administración». @param {Mundo} m @param {string} org @param {string} texto @param {Origen} origen @returns {{id?: string, error?: string}} */
+function crearVlan(m, org, texto, origen) {
+  const x = /^(\d{1,4})\s*(?:[-–—:·]\s*(.*))?$/.exec(texto.trim());
+  if (!x) return { error: 'una VLAN solo se puede crear sola si se escribe con su número («10» o «10 - Administración»)' };
+  const n = Number(x[1]);
+  if (n < 1 || n > 4094) return { error: 'el número de VLAN tiene que estar entre 1 y 4094' };
+  const nombre = (x[2] || '').trim() || 'VLAN ' + n;
+  const rec = registroNuevo('vlans', org, { vlan_numero: n, vlan_nombre: nombre, vlan_dhcp_activo: false, vlan_descripcion: NOTA_AUTO });
+  return { id: registrarAuto(m, 'vlans', rec, { tipo: 'VLAN', nombre: n + ' - ' + nombre, detalle: 'número ' + n + (x[2] ? '' : ' y nombre «' + nombre + '»') + ', sin red ni DHCP', origen }) };
+}
+
+/** «Ana Pérez» o «Ana Pérez (Ventas)». @param {Mundo} m @param {string} org @param {string} texto @param {Origen} origen @returns {string} */
+function crearPersona(m, org, texto, origen) {
+  const x = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(texto.trim());
+  const nombre = x && x[1] ? x[1] : texto.trim(), sector = x && x[1] ? x[2].trim() : null;
+  const rec = registroNuevo('personas', org, { persona_nombre: nombre, persona_sector: sector, persona_notas: NOTA_AUTO });
+  return registrarAuto(m, 'personas', rec, { tipo: 'Persona', nombre, detalle: (sector ? 'sector «' + sector + '», ' : '') + 'estado Activa, sin puesto', origen });
+}
+
+/** @param {Mundo} m @param {string} org @param {string} nombre @param {string} tipo clave de `ROTULO_CREDENCIAL_TIPO` @param {Origen} origen @returns {string} */
+function crearCredencial(m, org, nombre, tipo, origen) {
+  const rec = registroNuevo('credenciales', org, { credencial_tipo: tipo, credencial_nombre: nombre, credencial_notas: NOTA_AUTO });
+  return registrarAuto(m, 'credenciales', rec, { tipo: 'Credencial', nombre, detalle: 'de tipo «' + (ROTULO_CREDENCIAL_TIPO[tipo] || tipo) + '», sin contraseña', origen });
+}
+
+/**
+ * Un equipo con solo su nombre y el tipo (que la referencia deja claro). Los campos obligatorios del tipo toman el valor inicial
+ * de la ficha; los de texto, «A completar».
+ * @param {Mundo} m @param {string} org @param {string} nombre @param {string} tipo @param {string|null} categoria @param {Origen} origen @returns {string}
+ */
+function crearEquipo(m, org, nombre, tipo, categoria, origen) {
+  const rec = registroNuevo('equipos', org, { equipo_tipo: tipo, equipo_nombre: nombre, equipo_notas: NOTA_AUTO });
+  rec.equipo_campos = categoria ? { otro_categoria: categoria } : {};
+  let completar = false;
+  for (const c of columnasEquipo()) {
+    if (!/** @type {(e: any) => boolean} */ (c.aplica)(rec) || c.k in rec.equipo_campos || !c.req) continue;
+    if (c.t === 'bool') rec.equipo_campos[c.k] = false;
+    else if (c.t === 'entero') rec.equipo_campos[c.k] = 0;
+    else if (c.t === 'enum' && c.op) rec.equipo_campos[c.k] = c.num ? Number(c.op[0][0]) : c.op[0][0];
+    else { rec.equipo_campos[c.k] = A_COMPLETAR; completar = true; }
+  }
+  const rotulo = categoria || ROTULO_EQUIPO_TIPO[tipo] || tipo;
+  return registrarAuto(m, 'equipos', rec, { tipo: 'Equipo (' + rotulo + ')', nombre, detalle: 'solo con el nombre y el tipo, sin ubicación' + (completar ? '; rol y sistema operativo «' + A_COMPLETAR + '»' : ''), origen });
+}
+
+/** «DOMINIO\usuario». @param {Mundo} m @param {string} org @param {string} texto @param {Origen} origen @returns {{id?: string, error?: string}} */
+function crearCuenta(m, org, texto, origen) {
+  const x = /^([^\\]+)\\(.+)$/.exec(texto.trim());
+  if (!x) return { error: 'una cuenta de dominio solo se puede crear sola si se escribe «DOMINIO\\usuario»' };
+  const rec = registroNuevo('cuentas', org, { cuenta_dominio: x[1].trim(), cuenta_usuario: x[2].trim() });
+  return { id: registrarAuto(m, 'cuentas', rec, { tipo: 'Cuenta de dominio', nombre: x[1].trim() + '\\' + x[2].trim(), detalle: 'habilitada, sin persona (cuenta de servicio)', origen }) };
+}
+
+/** Un servicio de tipo dominio (el que lleva registros DNS). @param {Mundo} m @param {string} org @param {string} nombre @param {Origen} origen @returns {string} */
+function crearDominio(m, org, nombre, origen) {
+  const rec = registroNuevo('servicios', org, { servicio_tipo: 'dominio', servicio_nombre: nombre });
+  return registrarAuto(m, 'servicios', rec, { tipo: 'Servicio (dominio)', nombre, detalle: 'solo con el nombre, sin proveedor ni vencimiento', origen });
+}
+
+/** Ubicación donde poner un puesto que se crea solo: la del equipo de la fila, si se sabe. @param {Mundo} m @param {Fila} f @returns {string|null} */
+function ubicacionDeLaFila(m, f) {
+  if (f.vals.ubicacion_id) return f.vals.ubicacion_id;
+  const rk = f.vals.rack_id ? m.cols.racks.get(f.vals.rack_id) : null;
+  if (rk && rk.ubicacion_id) return rk.ubicacion_id;
+  const e = f.vals.equipo_id ? m.cols.equipos.get(f.vals.equipo_id) : null;
+  return e && e.ubicacion_id ? e.ubicacion_id : null;
+}
+
+/**
+ * Una referencia no existe: si se puede deducir con seguridad qué es, se planea crearla con los datos mínimos.
+ * Devuelve `{id}` (creada o reusada), `{error}` (se sabe qué es pero el texto no alcanza) o `null` (no se puede crear sola).
+ * @param {Mundo} m @param {Estado} est @param {Fila} f @param {Col} c @param {string} org @param {string} texto
+ * @returns {{id?: string, error?: string}|null}
+ */
+function intentarCrear(m, est, f, c, org, texto) {
+  const que = (CREABLE[est.h.id] || {})[c.k];
+  if (!que || !org) return null;
+  /** @type {Origen} */
+  const origen = { hoja: est.h.nombre, fila: f.n, col: c.r, f };
+  const t = texto.trim();
+  switch (que) {
+    case 'sede': return crearUbicacionPorTexto(m, org, t, 'sede', origen);
+    case 'ubicacion': return crearUbicacionPorTexto(m, org, t, 'cualquiera', origen);
+    case 'rack': return { id: crearRack(m, org, t, f.vals.ubicacion_id || null, origen) };
+    case 'puesto': return { id: crearPuesto(m, org, t, ubicacionDeLaFila(m, f), origen) };
+    case 'vlan': return crearVlan(m, org, t, origen);
+    case 'persona': return { id: crearPersona(m, org, t, origen) };
+    case 'servidor': return { id: crearEquipo(m, org, t, 'servidor', null, origen) };
+    case 'access_point': return { id: crearEquipo(m, org, t, 'access_point', null, origen) };
+    case 'patchera': return { id: crearEquipo(m, org, t, 'patchera', null, origen) };
+    case 'pc': return { id: crearEquipo(m, org, t, 'otro', 'PC de escritorio', origen) };
+    case 'credencial_wifi': return { id: crearCredencial(m, org, t, 'wifi', origen) };
+    case 'credencial_dominio': return { id: crearCredencial(m, org, t, 'dominio', origen) };
+    case 'credencial_licencia': return { id: crearCredencial(m, org, t, 'clave_licencia', origen) };
+    case 'credencial_servicio': return { id: crearCredencial(m, org, t, { hosting: 'hosting', correo: 'correo', dominio: 'nic_dns', dns: 'nic_dns' }[/** @type {'hosting'} */ (f.vals.servicio_tipo)] || 'otro', origen) };
+    case 'cuenta': return crearCuenta(m, org, t, origen);
+    case 'dominio': return { id: crearDominio(m, org, t, origen) };
+    default: return null;
+  }
+}
+
+/** Mensaje de una referencia que no existe y no se crea sola. @param {string} col @param {string} texto @param {string} nombreOrg @param {string|undefined} [error] */
+function mensajeNoExiste(col, texto, nombreOrg, error) {
+  const base = NOMBRE_REF[col] + ' «' + texto + '» no existe en ' + (nombreOrg || 'la organización') + (HOJA_DE_COLECCION[col] ? ' (ni en la hoja ' + HOJA_DE_COLECCION[col] + ')' : '');
+  if (error) return base + ' y no se puede crear sola: ' + error;
+  return base + (NO_CREABLE[col] ? ' y no se crea sola: ' + NO_CREABLE[col] : '');
+}
+
+/**
+ * Una vez resueltas las filas: se queda con lo que de verdad hace falta (lo que pide alguna fila SIN errores, y de lo que eso
+ * depende) y arma la lista de «se va a crear» y las acciones para guardarlo.
+ * @param {Mundo} m @param {Plan} plan
+ */
+function cerrarCreaciones(m, plan) {
+  /** @type {Set<string>} */
+  const quedan = new Set();
+  /** @param {string} id */
+  const visitar = id => { if (quedan.has(id)) return; const a = m.autos.get(id); if (!a) return; quedan.add(id); a.deps.forEach(visitar); };
+  for (const a of m.autos.values()) if (a.origenes.some(o => !o.f.errores.length)) visitar(a.id);
+  for (const a of m.autos.values()) {
+    if (!quedan.has(a.id)) continue;
+    const validos = a.origenes.filter(o => !o.f.errores.length);
+    const desde = (validos.length ? validos : a.origenes).filter((o, i, l) => l.findIndex(x => x.hoja === o.hoja && x.fila === o.fila && x.col === o.col) === i);
+    const org = m.cols.organizaciones.get(a.rec.organizacion_id);
+    plan.creaciones.push({ tipo: a.tipo, nombre: a.nombre, detalle: a.detalle, organizacion: org ? org.organizacion_nombre : '', desde: desde.slice(0, 3).map(o => ({ hoja: o.hoja, fila: o.fila, columna: o.col })), total: desde.length });
+    plan.acciones_auto.push({ col: a.col, op: 'crear', rec: a.rec, hoja: hojaPorId(a.hojaId).nombre, fila: (validos[0] || a.origenes[0]).fila, hojaId: a.hojaId, auto: true });
+  }
+}
+
 // ---- Validaciones propias de cada hoja ----
 
 /** @type {Object<string, (f: Fila, rec: any, m: Mundo, err: (col: string|null, mensaje: string) => void) => void>} */
 const HOOKS = {
   ubicaciones(f, rec, m, err) {
-    if (rec.ubicacion_padre_id === rec.id) { err('Ubicación superior', 'una ubicación no puede estar dentro de sí misma'); return; }
+    if (rec.ubicacion_padre_id === rec.id) { err('Sede (para salas)', 'una sala no puede ser su propia sede'); return; }
+    if (rec.ubicacion_tipo === 'sede' && rec.ubicacion_padre_id) err('Sede (para salas)', 'una sede no tiene sede superior (pertenece a la organización): ese campo es solo para las salas');
+    if (rec.ubicacion_tipo === 'sala') {
+      const sede = rec.ubicacion_padre_id ? m.cols.ubicaciones.get(rec.ubicacion_padre_id) : null;
+      if (!rec.ubicacion_padre_id) err('Sede (para salas)', 'una sala necesita su sede');
+      else if (sede && sede.ubicacion_tipo !== 'sede') err('Sede (para salas)', 'la sede de una sala tiene que ser una sede, no otra sala');
+    }
     // Ciclos: se sigue la cadena de padres usando las filas ya vistas y las existentes.
     let p = rec.ubicacion_padre_id;
-    for (let i = 0; p && i < 30; i++) { if (p === rec.id) { err('Ubicación superior', 'forma un ciclo de ubicaciones'); return; } const x = m.cols.ubicaciones.get(p); p = x && x.ubicacion_padre_id; }
+    for (let i = 0; p && i < 30; i++) { if (p === rec.id) { err('Sede (para salas)', 'forma un ciclo de sedes y salas'); return; } const x = m.cols.ubicaciones.get(p); p = x && x.ubicacion_padre_id; }
   },
   racks(f, rec, m, err) {
     if (rec.rack_unidades_total != null && rec.rack_unidades_total < 1) err('Unidades (U) totales', 'tiene que ser al menos 1');
@@ -1374,10 +1820,10 @@ const HOOKS = {
     // Rack, ubicación y puesto
     if (rec.rack_id) {
       const rk = m.cols.racks.get(rec.rack_id);
-      if (rec.rack_u_inicio == null || rec.rack_u_alto == null) err('U inicial en el rack', 'si hay rack hay que indicar la U inicial y cuántas U ocupa');
-      else if (rk && (rec.rack_u_inicio < 1 || rec.rack_u_alto < 1 || rec.rack_u_inicio + rec.rack_u_alto - 1 > rk.rack_unidades_total)) err('U inicial en el rack', 'no entra en el rack «' + rk.rack_nombre + '» (' + rk.rack_unidades_total + ' U)');
+      if (rec.rack_u_inicio == null || rec.rack_u_alto == null) err('Posición (U)', 'si hay rack hay que indicar la posición (U inicial) y cuántas U ocupa');
+      else if (rk && (rec.rack_u_inicio < 1 || rec.rack_u_alto < 1 || rec.rack_u_inicio + rec.rack_u_alto - 1 > rk.rack_unidades_total)) err('Posición (U)', 'no entra en el rack «' + rk.rack_nombre + '» (' + rk.rack_unidades_total + ' U)');
       if (rk) {
-        if (f.vals.ubicacion_id && f.vals.ubicacion_id !== rk.ubicacion_id) err('Ubicación', 'si está en un rack, la ubicación es la del rack');
+        if (f.vals.ubicacion_id && f.vals.ubicacion_id !== rk.ubicacion_id) err('Sede / sala', 'si está en un rack, la sede o sala es la del rack');
         rec.ubicacion_id = rk.ubicacion_id;
       }
     } else if ((f.vals.rack_u_inicio != null || f.vals.rack_u_alto != null) && !ex) err('Rack', 'hay U pero falta el rack');
@@ -1424,7 +1870,7 @@ const HOOKS = {
   },
   tramos(f, rec, m, err) {
     if (rec.tramo_pelos != null && rec.tramo_pelos < 1) err('Cantidad de pelos', 'tiene que ser al menos 1');
-    if (rec.tramo_origen_ubicacion_id && rec.tramo_origen_ubicacion_id === rec.tramo_destino_ubicacion_id && (!rec.tramo_origen_equipo_id || rec.tramo_origen_equipo_id === rec.tramo_destino_equipo_id)) err('Destino: ubicación', 'el origen y el destino no pueden ser el mismo');
+    if (rec.tramo_origen_ubicacion_id && rec.tramo_origen_ubicacion_id === rec.tramo_destino_ubicacion_id && (!rec.tramo_origen_equipo_id || rec.tramo_origen_equipo_id === rec.tramo_destino_equipo_id)) err('Destino: sede / sala', 'el origen y el destino no pueden ser el mismo');
     const usados = new Set();
     for (const u of rec.tramo_pelos_usados || []) {
       if (u.pelo < 1 || u.pelo > rec.tramo_pelos) err('Pelos usados', 'el pelo ' + u.pelo + ' no existe en un tramo de ' + rec.tramo_pelos + ' pelos');
@@ -1456,10 +1902,10 @@ const POST = {
     for (const f of filas) {
       const r = f.rec;
       if (!r || f.errores.length || !r.rack_id || r.rack_u_inicio == null || r.rack_u_alto == null) continue;
-      const toca = !f.existente || f.cambios.some(x => /rack|U /i.test(x));
+      const toca = !f.existente || f.cambios.some(x => /rack|posici|U /i.test(x));
       let choca = null;
       if (toca) choca = (porRack.get(r.rack_id) || []).find(o => r.rack_u_inicio <= o.rack_u_inicio + o.rack_u_alto - 1 && o.rack_u_inicio <= r.rack_u_inicio + r.rack_u_alto - 1) || null;
-      if (choca) f.errores.push({ col: 'U inicial en el rack', mensaje: 'se superpone con «' + choca.equipo_nombre + '» en el rack (' + (choca.rack_u_alto > 1 ? 'U ' + choca.rack_u_inicio + ' a ' + (choca.rack_u_inicio + choca.rack_u_alto - 1) : 'U ' + choca.rack_u_inicio) + ')' });
+      if (choca) f.errores.push({ col: 'Posición (U)', mensaje: 'se superpone con «' + choca.equipo_nombre + '» en el rack (' + (choca.rack_u_alto > 1 ? 'U ' + choca.rack_u_inicio + ' a ' + (choca.rack_u_inicio + choca.rack_u_alto - 1) : 'U ' + choca.rack_u_inicio) + ')' });
       else ocupar(r);
     }
   },
@@ -1517,9 +1963,12 @@ function aplicarDns(estados, m, plan) {
     let svId = '';
     if (sT === undefined) err('Servicio', 'falta el servicio'); else if (org) {
       const r = buscar(m, 'servicios', org, sT);
-      if (r.length === 0) err('Servicio', 'el servicio «' + sT + '» no existe en ' + (m.cols.organizaciones.get(org) || {}).organizacion_nombre);
+      if (r.length === 0) {
+        // Los registros DNS son de un dominio: si el servicio no existe, se crea como dominio (QC58-A).
+        svId = crearDominio(m, org, String(sT).trim(), { hoja: h.nombre, fila: f.n, col: 'Servicio', f });
+      }
       else if (r.length > 1) err('Servicio', 'el servicio «' + sT + '» es ambiguo: escribí «nombre (Tipo)»');
-      else svId = r[0];
+      else { svId = r[0]; if (m.autos.has(svId)) anotarOrigen(m, svId, { hoja: h.nombre, fila: f.n, col: 'Servicio', f }); }
     }
     /** @type {any} */
     const g = {};
@@ -1534,7 +1983,8 @@ function aplicarDns(estados, m, plan) {
     if (f.errores.length) { for (const e of f.errores) res.errores.push({ n: f.n, col: e.col, mensaje: e.mensaje }); continue; }
     const sv = /** @type {any} */ (m.cols.servicios.get(svId));
     const accionPrev = porId.get(svId);
-    const rec = accionPrev ? accionPrev.rec : structuredClone(sv);
+    const esAuto = m.autos.has(svId);
+    const rec = esAuto ? sv : accionPrev ? accionPrev.rec : structuredClone(sv);
     if (!['dominio', 'dns'].includes(rec.servicio_tipo)) { res.errores.push({ n: f.n, col: 'Servicio', mensaje: 'solo un dominio o una zona DNS lleva registros DNS' }); continue; }
     const clave = svId + '|' + g.tipo + '|' + nrm(g.nombre) + '|' + nrm(g.valor);
     const ya = vistos.has(clave) || (rec.servicio_registros || []).some((/** @type {any} */ x) => x.tipo === g.tipo && nrm(x.nombre) === nrm(g.nombre) && nrm(x.valor) === nrm(g.valor));
@@ -1542,7 +1992,7 @@ function aplicarDns(estados, m, plan) {
     if (ya) { res.sinCambios++; continue; }
     const nuevo = { tipo: g.tipo, nombre: g.nombre, valor: g.valor, ...(g.prioridad != null ? { prioridad: g.prioridad } : {}) };
     rec.servicio_registros = [...(rec.servicio_registros || []), nuevo];
-    if (!accionPrev) { const a = { col: 'servicios', op: 'actualizar', rec, hoja: 'Servicios', fila: f.n, hojaId: 'servicios', cambios: ['Registros DNS'] }; plan.acciones.push(a); porId.set(svId, a); }
+    if (!accionPrev && !esAuto) { const a = { col: 'servicios', op: 'actualizar', rec, hoja: 'Servicios', fila: f.n, hojaId: 'servicios', cambios: ['Registros DNS'] }; plan.acciones.push(a); porId.set(svId, a); }
     res.crear++;
   }
 }
@@ -1559,7 +2009,7 @@ export function cancelarPlanilla() { planPendiente = null; }
 /**
  * Guarda lo que dice el plan (las filas con errores no entran). Usa `repositorio.guardar`, así que todo queda en el historial.
  * @param {UsuarioSesion} usuario @param {{soloValidas?: boolean}} [opciones]
- * @returns {Promise<{creados: number, actualizados: number, conexiones: number, errores: string[]}>}
+ * @returns {Promise<{creados: number, actualizados: number, conexiones: number, creadosAutomaticos: number, errores: string[]}>}
  */
 export async function aplicarPlanilla(usuario, opciones) {
   if (!puede(usuario, 'importar')) throw new Error('Solo el superadmin puede importar una planilla.');
@@ -1569,20 +2019,23 @@ export async function aplicarPlanilla(usuario, opciones) {
   planPendiente = null;
   /** @type {string[]} */
   const errores = [];
-  let creados = 0, actualizados = 0, conexiones = 0;
+  let creados = 0, actualizados = 0, conexiones = 0, creadosAutomaticos = 0;
   const motivo = 'Importado desde planilla de Excel';
+  const motivoAuto = 'Creado automáticamente al importar una planilla de Excel (lo mencionaba una fila y no existía)';
   /** @type {any[]} */
   const ordenadas = [];
   for (const id of ORDEN_APLICAR) {
-    const deHoja = plan.acciones.filter(a => a.hojaId === id);
+    // Lo que se crea solo va antes que las filas de su hoja (las filas lo nombran); en sedes y salas, las sedes antes que las salas.
+    let deHoja = [...plan.acciones_auto.filter(a => a.hojaId === id), ...plan.acciones.filter(a => a.hojaId === id)];
+    if (id === 'ubicaciones') deHoja = [...deHoja.filter(a => a.rec.ubicacion_tipo === 'sede'), ...deHoja.filter(a => a.rec.ubicacion_tipo !== 'sede')];
     // Una impresora USB necesita que su computadora ya esté guardada.
     if (id === 'equipos') { const dep = (/** @type {any} */ a) => !!(a.rec.equipo_campos && a.rec.equipo_campos.impresora_pc_id); ordenadas.push(...deHoja.filter(a => !dep(a)), ...deHoja.filter(dep)); }
     else ordenadas.push(...deHoja);
   }
   for (const a of ordenadas) {
     try {
-      await repositorio.guardar(a.col, a.rec, usuario.id, { motivo });
-      if (a.op === 'crear') creados++; else actualizados++;
+      await repositorio.guardar(a.col, a.rec, usuario.id, { motivo: a.auto ? motivoAuto : motivo });
+      if (a.auto) creadosAutomaticos++; else if (a.op === 'crear') creados++; else actualizados++;
     } catch (e) { errores.push(a.hoja + ', fila ' + a.fila + ': ' + (e instanceof Error ? e.message : 'no se pudo guardar')); }
   }
   for (const c of plan.conexiones) {
@@ -1593,7 +2046,7 @@ export async function aplicarPlanilla(usuario, opciones) {
       conexiones++;
     } catch (e) { errores.push(c.fila + ': ' + (e instanceof Error ? e.message : 'no se pudo conectar')); }
   }
-  return { creados, actualizados, conexiones, errores };
+  return { creados, actualizados, conexiones, creadosAutomaticos, errores };
 }
 
 /** Descripción de la planilla (hojas y columnas) para armar la documentación. */

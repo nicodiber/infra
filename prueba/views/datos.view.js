@@ -12,6 +12,9 @@ import { ir, pantalla, migasRaiz, toast, repintarMarco, pintarUltimaExportacion 
 import { h } from '../assets/js/utiles.js';
 import * as planilla from '../assets/js/planilla.js';
 
+/** Avisa a las métricas (D-080) sin importarlas. @param {string} tipo @param {Object} detalle */
+const metrica = (tipo, detalle) => { try { window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo, detalle } })); } catch { /* nada */ } };
+
 /** @type {Object<string, string>} */
 const ROTULO_COLECCION = {
   organizaciones: 'organizaciones', usuarios: 'usuarios', permisos_modulo: 'permisos por módulo', ubicaciones: 'ubicaciones', racks: 'racks',
@@ -40,9 +43,10 @@ export async function renderVistaDatos(contenedor) {
   const bExp = h('button', { type: 'button', text: 'Exportar a un archivo', disabled: puedeExportar ? null : 'disabled', onclick: async () => {
     try {
       const r = await repositorio.exportar({ organizacionId: esSuper ? null : orgId, incluirSecretos: esSuper, usuarioId: u.id });
+      metrica('datos_exportar', { resultado: 'ok', registros: r.registros, formato: 'json' });
       toast('Exportado «' + r.archivo + '»: ' + r.registros + ' registros.');
       await pintarUltimaExportacion();
-    } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo exportar.'); }
+    } catch (e) { metrica('datos_exportar', { resultado: 'error', error: e instanceof Error ? e.message : '' }); toast(e instanceof Error ? e.message : 'No se pudo exportar.'); }
   } });
 
   // ---- importar
@@ -53,6 +57,7 @@ export async function renderVistaDatos(contenedor) {
     if (!f) return;
     try {
       const r = await repositorio.analizarImportacion(await f.text());
+      metrica('datos_importar_analizado', { resultado: 'ok', filas: Object.fromEntries(r.filas.map(x => [x[0], x[1]])), advertencias: r.advertencias.length });
       zona.appendChild(h('div', { class: 'msg' }, [
         h('div', { text: 'El archivo «' + f.name + '» tiene datos de ' + r.alcance + ' (' + r.organizaciones.join(', ') + '):' }),
         h('ul', { class: 'resumen-importar' }, r.filas.map(x => h('li', { text: x[1] + ' ' + (ROTULO_COLECCION[x[0]] || x[0]) }))),
@@ -62,11 +67,13 @@ export async function renderVistaDatos(contenedor) {
           h('button', { type: 'button', class: 'primario', text: 'Sí, reemplazar los datos', onclick: async () => {
             try {
               await repositorio.aplicarImportacion();
+              metrica('datos_importar', { resultado: 'ok' });
               await terminarCambioDeDatos('Datos importados');
-            } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo importar.'); }
+            } catch (e) { metrica('datos_importar', { resultado: 'error', error: e instanceof Error ? e.message : '' }); toast(e instanceof Error ? e.message : 'No se pudo importar.'); }
           } }),
           h('button', { type: 'button', text: 'Cancelar', onclick: () => { repositorio.cancelarImportacion(); zona.textContent = ''; archivo.value = ''; } })])]));
     } catch (e) {
+      metrica('datos_importar_analizado', { resultado: 'error', error: e instanceof Error ? e.message : '' });
       zona.appendChild(h('div', { class: 'msg mal', role: 'alert', text: e instanceof Error ? e.message : 'No se pudo leer el archivo.' }));
     }
   });
@@ -80,8 +87,9 @@ export async function renderVistaDatos(contenedor) {
         h('button', { type: 'button', class: 'primario', text: 'Sí, restablecer', onclick: async () => {
           try {
             const r = await repositorio.restablecerDatosEjemplo();
+            metrica('datos_restablecer', { resultado: 'ok', ms: r.totalMs });
             await terminarCambioDeDatos('Datos de ejemplo restablecidos (' + r.totalMs + ' ms)');
-          } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo restablecer.'); }
+          } catch (e) { metrica('datos_restablecer', { resultado: 'error', error: e instanceof Error ? e.message : '' }); toast(e instanceof Error ? e.message : 'No se pudo restablecer.'); }
         } }),
         h('button', { type: 'button', text: 'Cancelar', onclick: () => { zona.textContent = ''; } })])]));
   } });
@@ -137,6 +145,7 @@ export async function renderVistaDatos(contenedor) {
     try {
       const r = await planilla.generarPlanilla({ vacia, usuario: u, incluirContrasenas: casillaSecretos.checked });
       planilla.descargarArchivo(r.nombre, r.bytes);
+      metrica('datos_planilla_exportar', { vacia, conContrasenas: !!r.contrasenas });
       const filas = r.resumen.reduce((n, x) => n + x[1], 0);
       toast(vacia ? 'Planilla vacía descargada «' + r.nombre + '».' : 'Planilla descargada «' + r.nombre + '»: ' + filas + ' filas' + (r.contrasenas ? ', con ' + r.contrasenas + ' contraseñas SIN cifrar' : ', sin contraseñas') + '.');
       if (!vacia && (r.recortadas || r.ambiguas)) {
@@ -173,12 +182,22 @@ export async function renderVistaDatos(contenedor) {
     const tabla = h('table', { class: 'tabla-vista-previa' }, [
       h('thead', null, [h('tr', null, ['Hoja', 'Filas', 'Se crean', 'Se actualizan', 'Sin cambios', 'Con errores'].map(t => h('th', { text: t })))]),
       h('tbody', null, presentes.filter(x => x.filas > 0 || x.errores.length).map(x => h('tr', null, [x.nombre, String(x.filas), String(x.crear), String(x.actualizar), String(x.sinCambios), String(new Set(x.errores.filter(e => e.n > 1).map(e => e.n)).size)].map((t, i) => h('td', { text: t, ...(i === 5 && x.errores.length ? { style: 'font-weight:700' } : {}) })))))]);
-    const bloqueErrores = plan.hojas.filter(x => x.errores.length || x.avisos.length).map(x => h('details', { open: x.errores.length ? 'open' : null, style: 'margin:6px 0' }, [
+    const bloqueErrores = plan.hojas.filter(x => x.errores.length || x.avisos.length).map(x => h('details', { open: x.errores.length || x.avisos.length ? 'open' : null, style: 'margin:6px 0' }, [
       h('summary', { text: x.nombre + (x.errores.length ? ': ' + x.errores.length + ' error' + (x.errores.length === 1 ? '' : 'es') : ': avisos') }),
       h('ul', { class: 'resumen-importar' }, [
         ...x.errores.slice(0, 100).map(e => h('li', { class: 'mal', text: x.nombre + (e.n > 1 ? ', fila ' + e.n : ', encabezado') + (e.col ? ', columna «' + e.col + '»' : '') + ': ' + e.mensaje })),
         x.errores.length > 100 ? h('li', { text: '… y ' + (x.errores.length - 100) + ' errores más.' }) : null,
         ...x.avisos.map(a => h('li', { text: x.nombre + ': ' + a }))])]));
+    // QC58-A: lo que las filas mencionan y no existe se crea con los datos mínimos; acá se ve antes, qué es y desde qué fila.
+    const porTipo = new Map();
+    for (const c of plan.creaciones) { const l = porTipo.get(c.tipo) || []; l.push(c); porTipo.set(c.tipo, l); }
+    const bloqueCrear = plan.creaciones.length ? h('details', { open: 'open', class: 'se-va-a-crear', style: 'margin:8px 0' }, [
+      h('summary', { style: 'font-weight:700', text: 'Se va a crear ' + plan.creaciones.length + (plan.creaciones.length === 1 ? ' cosa' : ' cosas') + ' que las filas mencionan y todavía no existen' }),
+      h('div', { class: 'mut', text: 'Se crean con los datos mínimos que se deducen (el nombre y poco más); después los completás en su ficha. Si la fila que lo pide tiene errores, no se crea.' }),
+      h('ul', { class: 'resumen-importar' }, plan.creaciones.slice(0, 200).map(c => h('li', null, [
+        h('b', { text: c.tipo + ' «' + c.nombre + '»' }), ' — ' + c.detalle + (plan.creaciones.some(x => x.organizacion !== c.organizacion) && c.organizacion ? ' (' + c.organizacion + ')' : '') + '. Lo pide ',
+        c.desde.map(d => d.hoja + ', fila ' + d.fila + (d.columna ? ', columna «' + d.columna + '»' : '')).join('; ') + (c.total > c.desde.length ? ' y ' + (c.total - c.desde.length) + ' fila' + (c.total - c.desde.length === 1 ? '' : 's') + ' más' : '') + '.']))),
+      plan.creaciones.length > 200 ? h('div', { class: 'mut', text: '… y ' + (plan.creaciones.length - 200) + ' más.' }) : null]) : null;
     const hayErrores = plan.errores > 0;
     const aplicar = async (/** @type {boolean} */ soloValidas) => {
       zonaPlanilla.textContent = '';
@@ -189,10 +208,11 @@ export async function renderVistaDatos(contenedor) {
         await repintarMarco();
         zonaPlanilla.textContent = '';
         zonaPlanilla.appendChild(h('div', { class: r.errores.length ? 'msg mal' : 'msg', role: 'status' }, [
-          h('div', { style: 'font-weight:700', text: 'Planilla importada: ' + r.creados + ' creados, ' + r.actualizados + ' actualizados' + (r.conexiones ? ', ' + r.conexiones + ' conexiones nuevas' : '') + '.' }),
+          h('div', { style: 'font-weight:700', text: 'Planilla importada: ' + r.creados + ' creados, ' + r.actualizados + ' actualizados' + (r.conexiones ? ', ' + r.conexiones + ' conexiones nuevas' : '') + (r.creadosAutomaticos ? ' y ' + r.creadosAutomaticos + ' creados porque las filas los mencionaban y no existían (completalos en su ficha)' : '') + '.' }),
           r.errores.length ? h('div', { text: 'No se pudieron guardar ' + r.errores.length + ' filas:' }) : null,
           r.errores.length ? h('ul', { class: 'resumen-importar' }, r.errores.slice(0, 100).map(e => h('li', { text: e }))) : null]));
-        toast('Planilla importada: ' + r.creados + ' creados, ' + r.actualizados + ' actualizados.');
+        metrica('datos_planilla_importar', { resultado: 'ok', creados: r.creados, actualizados: r.actualizados, creadosAutomaticos: r.creadosAutomaticos, filasConError: r.errores.length });
+        toast('Planilla importada: ' + r.creados + ' creados, ' + r.actualizados + ' actualizados' + (r.creadosAutomaticos ? ', ' + r.creadosAutomaticos + ' creados automáticamente' : '') + '.');
       } catch (e) {
         zonaPlanilla.textContent = '';
         zonaPlanilla.appendChild(h('div', { class: 'msg mal', role: 'alert', text: e instanceof Error ? e.message : 'No se pudo importar la planilla.' }));
@@ -212,6 +232,7 @@ export async function renderVistaDatos(contenedor) {
       h('div', { class: 'tabla-scroll', style: 'overflow:auto;margin:8px 0' }, [tabla]),
       ausentes.length ? h('div', { class: 'mut', text: 'No están en el archivo: ' + ausentes.map(x => x.nombre).join(', ') + '.' }) : null,
       plan.contrasenas ? h('div', { class: 'msg mal', style: 'margin:6px 0', text: plan.contrasenas + ' credenciales traen contraseña: van a quedar sin cifrar en este navegador (D-042).' }) : null,
+      bloqueCrear,
       ...bloqueErrores,
       h('div', { text: 'Importar no borra nada: crea lo nuevo y completa lo que ya existe (una celda vacía nunca pisa un dato). Todo queda en el historial.', style: 'margin-top:6px' }),
       h('div', { class: 'herr', style: 'margin:8px 0 0' }, [
@@ -232,7 +253,7 @@ export async function renderVistaDatos(contenedor) {
 
   const bloquePlanilla = h('div', { class: 'bloque', style: 'margin:10px 0' }, [
     h('h2', { text: 'Planilla de Excel' }),
-    h('p', { class: 'mut', style: 'margin:4px 0 8px', text: 'La estructura de Infradoc en un archivo de Excel (.xlsx): una hoja por tipo de dato y una hoja de instrucciones. Sirve para pasar la documentación del Excel desordenado a datos con estructura, como respaldo y para importar al producto final. Las referencias van por nombre (el rack «RACK-01», la ubicación «Sala de servidores»), así que se pueden completar a mano.' }),
+    h('p', { class: 'mut', style: 'margin:4px 0 8px', text: 'La estructura de Infradoc en un archivo de Excel (.xlsx): una hoja por tipo de dato y una hoja de instrucciones. Sirve para pasar la documentación del Excel desordenado a datos con estructura, como respaldo y para importar al producto final. Las referencias van por nombre (el rack «RACK-01», la sala «Sala de servidores»), así que se pueden completar a mano; lo que una fila nombra y todavía no existe se crea solo (lo ves en la vista previa antes de importar).' }),
     h('p', { style: 'margin:4px 0', text: 'Orden recomendado de carga (cada hoja apunta a las anteriores): ' + ordenCarga + '.' }),
     h('div', { class: 'herr', style: 'margin:8px 0' }, [
       h('button', { type: 'button', text: 'Descargar planilla vacía', onclick: () => bajarPlanilla(true) }),

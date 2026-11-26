@@ -11,6 +11,8 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { h, tabla, fmtFechaHora, hoyISO } from '../assets/js/utiles.js';
 import { ROTULO_SERVICIO_TIPO, TIPOS_REGISTRO_DNS } from '../assets/js/modelos.js';
+import { selectorConCrear } from '../assets/js/altas.js';
+import { altaDesdeRuta, duplicar, nombreDeCopia } from '../assets/js/altas/comunes.js';
 import { sinPermiso, pestanas, campo, fichaCab, botonBaja, valorHistorial } from '../assets/js/credenciales.js';
 import { pintarNotas } from '../assets/js/notas.js';
 import { textoVencimientoServicio } from './servicios.view.js';
@@ -30,11 +32,12 @@ export async function renderVista(contenedor) {
   let tab = TABS.includes(partes[2]) ? partes[2] : 'registros';
   const migas = await migasRaiz();
   migas.push(['Dominios y servicios', '#/servicios']);
+  if (nuevo) { await altaDesdeRuta('servicios', '#/servicios', r => '#/servicio/' + r.id, 'Servicio creado'); return; }
 
   /** @type {any} */
   let s = null;
   let orgId = /** @type {string} */ (sesion.organizacionActiva());
-  if (!nuevo) {
+  {
     s = await repositorio.obtener('servicios', idHash);
     if (!s) {
       pantalla(contenedor, { codigo: 'P51', nombre: 'Ficha de servicio', migas: migas.concat([['No encontrado']]) });
@@ -43,16 +46,16 @@ export async function renderVista(contenedor) {
     }
     orgId = s.organizacion_id;
   }
-  if (!puede(u, nuevo ? 'modificar' : 'ver', 'configuraciones', orgId)) {
-    pantalla(contenedor, { codigo: 'P51', nombre: 'Ficha de servicio', migas: migas.concat([[nuevo ? 'Nuevo' : 'Ficha']]) });
-    sinPermiso(contenedor, u, nuevo ? 'cargar servicios' : 'Dominios y servicios');
+  if (!puede(u, 'ver', 'configuraciones', orgId)) {
+    pantalla(contenedor, { codigo: 'P51', nombre: 'Ficha de servicio', migas: migas.concat([['Ficha']]) });
+    sinPermiso(contenedor, u, 'Dominios y servicios');
     return;
   }
 
   const modifica = puede(u, 'modificar', 'configuraciones', orgId);
   const verCredenciales = puede(u, 'ver', 'credenciales', orgId);
-  let editando = nuevo || partes[2] === 'editar';
-  if (editando && !nuevo && !modifica) editando = false;
+  let editando = partes[2] === 'editar';
+  if (editando && !modifica) editando = false;
   let error = '';
   /** @type {any} */
   let ed = null;
@@ -60,9 +63,8 @@ export async function renderVista(contenedor) {
   let fila = null;
   let errorFila = '';
   const iniciarEd = () => {
-    ed = s ? { tipo: s.servicio_tipo, nombre: s.servicio_nombre, proveedor: s.servicio_proveedor || '', titular: s.servicio_titular || '', vence: s.servicio_vence_en || '',
-      delegacion: s.servicio_delegacion_dns || '', plan: s.servicio_plan || '', credencial: s.credencial_id || '' }
-      : { tipo: 'dominio', nombre: '', proveedor: '', titular: '', vence: '', delegacion: '', plan: '', credencial: '' };
+    ed = { tipo: s.servicio_tipo, nombre: s.servicio_nombre, proveedor: s.servicio_proveedor || '', titular: s.servicio_titular || '', vence: s.servicio_vence_en || '',
+      delegacion: s.servicio_delegacion_dns || '', plan: s.servicio_plan || '', credencial: s.credencial_id || '' };
   };
   if (editando) iniciarEd();
 
@@ -74,8 +76,8 @@ export async function renderVista(contenedor) {
       repositorio.umbralesVerificacion(), repositorio.listar('usuarios', null, { incluirBajas: true }),
       verCredenciales ? repositorio.listar('credenciales', { organizacion_id: orgId }, { ordenarPor: 'credencial_nombre' }) : Promise.resolve([])]);
     const nombreUsuario = new Map(usuarios.map(x => [x.id, x.usuario_nombre]));
-    const titulo = nuevo ? 'Nuevo servicio' : s.servicio_nombre;
-    pantalla(contenedor, { codigo: 'P51', nombre: 'Ficha de servicio', migas: migas.concat([[titulo, !nuevo && tab !== 'registros' ? '#/servicio/' + s.id : undefined]]) });
+    const titulo = s.servicio_nombre;
+    pantalla(contenedor, { codigo: 'P51', nombre: 'Ficha de servicio', migas: migas.concat([[titulo, tab !== 'registros' ? '#/servicio/' + s.id : undefined]]) });
 
     const datos = h('div', { class: 'datos' });
     if (editando) {
@@ -94,9 +96,9 @@ export async function renderVista(contenedor) {
       datos.appendChild(campo('DNS delegado en', inp('delegacion', 'DNS delegado en', 'text')));
       datos.appendChild(campo('Plan', inp('plan', 'Plan', 'text')));
       if (verCredenciales) {
-        const sc = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Credencial del panel' }, [h('option', { value: '', text: 'Sin credencial vinculada' })].concat(
-          credenciales.map(c => h('option', { value: c.id, text: c.credencial_nombre, selected: c.id === ed.credencial ? 'selected' : null })))));
-        sc.addEventListener('change', () => { ed.credencial = sc.value; });
+        const CRED = { dominio: 'dominio', dns: 'nic_dns', hosting: 'hosting', certificado: 'otro', correo: 'correo' };
+        const sc = selectorConCrear({ desde: 'servicios', campo: 'credencial_id', organizacion_id: orgId, valor: ed.credencial || null, etiqueta: 'Credencial del panel',
+          valoresAlta: { credencial_tipo: /** @type {Object<string, string>} */ (CRED)[ed.tipo], credencial_nombre: 'Panel: ' + ed.nombre.trim() }, rotuloOrigen: 'Editar servicio', alCambiar: v => { ed.credencial = v; } });
         datos.appendChild(campo('Acceso al panel', sc));
       }
       if (error) datos.appendChild(h('div', { class: 'msg mal', role: 'alert', style: 'grid-column:1/-1', text: error }));
@@ -112,24 +114,27 @@ export async function renderVista(contenedor) {
     const guardar = async () => {
       if (!ed.nombre.trim()) { error = 'Escribí el nombre del servicio.'; await pintar(); return; }
       try {
-        const base = nuevo ? { organizacion_id: orgId, servicio_registros: [] } : s;
-        const g = await repositorio.guardar('servicios', { ...base, servicio_tipo: ed.tipo, servicio_nombre: ed.nombre.trim(), servicio_proveedor: ed.proveedor.trim() || null,
+        await repositorio.guardar('servicios', { ...s, servicio_tipo: ed.tipo, servicio_nombre: ed.nombre.trim(), servicio_proveedor: ed.proveedor.trim() || null,
           servicio_titular: ed.titular.trim() || null, servicio_vence_en: ed.vence || null, servicio_delegacion_dns: ed.delegacion.trim() || null, servicio_plan: ed.plan.trim() || null,
-          credencial_id: verCredenciales ? ed.credencial || null : (nuevo ? null : s.credencial_id) }, u.id);
-        toast(nuevo ? 'Servicio creado' : 'Cambios guardados · verificado hoy (' + hoyISO().split('-').reverse().join('/') + ')');
+          credencial_id: verCredenciales ? ed.credencial || null : s.credencial_id }, u.id);
+        toast('Cambios guardados · verificado hoy (' + hoyISO().split('-').reverse().join('/') + ')');
         ed = null; error = '';
-        if (nuevo) { ir('#/servicio/' + g.id); return; }
         editando = false; await rerender();
       } catch (e) { error = e instanceof Error ? e.message : 'No se pudo guardar.'; await pintar(); }
     };
     const botones = editando
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }),
-        h('button', { type: 'button', text: 'Cancelar', onclick: () => { ed = null; error = ''; if (nuevo) ir('#/servicios'); else { editando = false; pintar(); } } })]
+        h('button', { type: 'button', text: 'Cancelar', onclick: () => { ed = null; error = ''; editando = false; pintar(); } })]
       : [modifica ? h('button', { type: 'button', text: 'Editar', onclick: () => { iniciarEd(); error = ''; editando = true; pintar(); } }) : null,
-        nuevo ? null : await botonBaja({ u, coleccion: 'servicios', registro: s, modulo: 'configuraciones', orgId, nombre: s.servicio_nombre, volver: '#/servicios', rerender })];
-    contenedor.appendChild(fichaCab({ tipo: 'configuracion', etiqueta: 'servicio', titulo, datos, botones, modoEdicion: editando, registro: nuevo ? null : s,
+        modifica ? h('button', { type: 'button', text: 'Duplicar', title: 'Abre el alta con estos datos para cargar uno parecido', onclick: async () => {
+          const otros = await repositorio.listar('servicios', { organizacion_id: orgId });
+          await duplicar('servicios', s, { servicio_tipo: s.servicio_tipo, servicio_nombre: nombreDeCopia(s.servicio_nombre, otros.map(x => x.servicio_nombre)), servicio_proveedor: s.servicio_proveedor,
+            servicio_titular: s.servicio_titular, servicio_vence_en: s.servicio_vence_en, servicio_delegacion_dns: s.servicio_delegacion_dns, servicio_plan: s.servicio_plan,
+            credencial_id: s.credencial_id, servicio_registros: structuredClone(s.servicio_registros || []) }, r => '#/servicio/' + r.id, 'Servicio');
+        } }) : null,
+        await botonBaja({ u, coleccion: 'servicios', registro: s, modulo: 'configuraciones', orgId, nombre: s.servicio_nombre, volver: '#/servicios', rerender })];
+    contenedor.appendChild(fichaCab({ tipo: 'configuracion', etiqueta: 'servicio', titulo, datos, botones, modoEdicion: editando, registro: s,
       coleccion: 'servicios', modulo: 'configuraciones', u, orgId, umbrales, usuarios: nombreUsuario, rerender }));
-    if (nuevo) return;
 
     // ---- pestañas
     const verHist = puede(u, 'ver_historial', 'configuraciones', orgId);

@@ -142,7 +142,7 @@ export async function renderVista(contenedor) {
       tablas: [{ titulo: 'Ubicaciones', cab: ['Nombre', 'Tipo', 'Dirección'], filas: ordenar(ubicaciones, 'ubicacion_nombre').map(x => [x.ubicacion_nombre, texto(x.ubicacion_tipo), texto(x.ubicacion_direccion)]), verificados: ubicaciones.map(x => x.verificado_en) }]
     }) },
     { id: 'red', titulo: 'Red: equipos, VLAN, Wi-Fi y enlaces de internet', modulo: 'red', cargar: () => ({ tablas: [
-      { titulo: 'Equipos de red', cab: ['Código', 'Nombre', 'Tipo', 'Marca / modelo', 'N.º de serie', 'IP de gestión', 'Ubicación', 'Estado'],
+      { titulo: 'Equipos de red', cab: ['Código', 'Nombre', 'Tipo', 'Marca / modelo', 'N.º de serie', 'IP de gestión', 'Sede / sala', 'Estado'],
         filas: eqRed.map(e => [e.equipo_codigo, e.equipo_nombre, ROTULO_EQUIPO_TIPO[e.equipo_tipo] || e.equipo_tipo, [e.equipo_marca, e.equipo_modelo].filter(Boolean).join(' ') || '—', texto(e.equipo_numero_serie), texto(e.equipo_ip_gestion), ubicDe(e), ROTULO_ESTADO_EQUIPO[e.equipo_estado] || texto(e.equipo_estado)]), verificados: eqRed.map(e => e.verificado_en) },
       { titulo: 'VLAN', cab: ['N.º', 'Nombre', 'Red', 'Gateway', 'DHCP', 'Descripción'],
         filas: vlans.slice().sort((a, b) => a.vlan_numero - b.vlan_numero).map(v => [v.vlan_numero, v.vlan_nombre, texto(v.vlan_red_cidr), texto(v.vlan_gateway), v.vlan_dhcp_activo ? 'Sí' + (v.vlan_dhcp_rango ? ' (' + v.vlan_dhcp_rango + ')' : '') : 'No', texto(v.vlan_descripcion)]), verificados: vlans.map(v => v.verificado_en) },
@@ -153,12 +153,12 @@ export async function renderVista(contenedor) {
     ] }) },
     { id: 'puestos', titulo: 'Puestos', modulo: 'red', cargar: () => {
       const ordenados = ordenar(puestos, 'puesto_nombre');
-      return { tablas: [{ cab: ['Puesto', 'Boca de pared', 'Ubicación', 'Equipos', 'Notas'],
+      return { tablas: [{ cab: ['Puesto', 'Boca de pared', 'Sede / sala', 'Equipos', 'Notas'],
         filas: ordenados.map(p => [p.puesto_nombre, texto(p.puesto_boca_pared), p.ubicacion_id ? texto(nomUb.get(p.ubicacion_id)) : '—', equipos.filter(e => e.puesto_id === p.id && e.equipo_estado !== 'baja').map(e => e.equipo_nombre).join(', ') || '—', texto(p.puesto_notas)]), verificados: ordenados.map(p => p.verificado_en) }] };
     } },
     { id: 'servidores', titulo: 'Servidores', modulo: 'servidores', cargar: () => ({ tablas: [{ cab: ['Código', 'Nombre', 'Rol', 'Sistema operativo', 'CPU / RAM', 'IP de gestión', 'Ubicación'],
       filas: eqServ.map(e => { const c = e.equipo_campos || {}; return [e.equipo_codigo, e.equipo_nombre, texto(c.servidor_rol), texto(c.servidor_sistema_operativo), texto(c.servidor_cpu) + (c.servidor_ram_gb ? ' / ' + c.servidor_ram_gb + ' GB' : ''), texto(e.equipo_ip_gestion), ubicDe(e)]; }), verificados: eqServ.map(e => e.verificado_en) }] }) },
-    { id: 'racks', titulo: 'Racks', modulo: 'racks', cargar: () => { const l = ordenar(racks, 'rack_nombre'); return { tablas: [{ cab: ['Rack', 'Ubicación', 'Unidades', 'Equipos instalados', 'Notas'],
+    { id: 'racks', titulo: 'Racks', modulo: 'racks', cargar: () => { const l = ordenar(racks, 'rack_nombre'); return { tablas: [{ cab: ['Rack', 'Sede / sala', 'Unidades', 'Equipos instalados', 'Notas'],
       filas: l.map(r => [r.rack_nombre, r.ubicacion_id ? texto(nomUb.get(r.ubicacion_id)) : '—', r.rack_unidades_total, equipos.filter(e => e.rack_id === r.id && e.equipo_estado !== 'baja').length, texto(r.rack_notas)]), verificados: l.map(r => r.verificado_en) }] }; } },
     { id: 'configs', titulo: 'Configuraciones y mapeos de disco', modulo: 'configuraciones', ayuda: 'No se imprime el contenido de las configuraciones.', cargar: () => ({ tablas: [
       { titulo: 'Configuraciones', cab: ['Título', 'Tipo', 'Equipo', 'Versión del', 'Notas'], filas: configs.map(c => [c.configuracion_titulo, ROTULO_CONFIGURACION_TIPO[c.configuracion_tipo] || texto(c.configuracion_tipo), nombreEq(c.equipo_id), fmtFecha(c.configuracion_version_fecha), texto(c.configuracion_notas)]), verificados: configs.map(c => c.verificado_en) },

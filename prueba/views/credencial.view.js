@@ -11,6 +11,8 @@ import { puede, puedeVerSecreto, puedePedirSecreto, puedeQuitarAprobacion } from
 import { ir, pantalla, migasRaiz, repintarMarco, toast } from '../assets/js/marco.js';
 import { h, tabla, fmtFechaHora, hoyISO } from '../assets/js/utiles.js';
 import { ROTULO_CREDENCIAL_TIPO, ROTULO_PERFIL } from '../assets/js/modelos.js';
+import { selectorConCrear } from '../assets/js/altas.js';
+import { altaDesdeRuta, opcionesEquipos } from '../assets/js/altas/comunes.js';
 import { sinPermiso, enlaceEquipo, textoVencimiento, pestanas, campo, fichaCab, botonBaja, rotuloCampo, valorHistorial } from '../assets/js/credenciales.js';
 
 const SEGUNDOS_VISIBLE = 30;
@@ -25,11 +27,12 @@ export async function renderVista(contenedor) {
   let tab = ['quien', 'relaciones', 'historial', 'accesos'].includes(partes[2]) ? partes[2] : 'quien';
   const migas = await migasRaiz();
   migas.push(['Credenciales', '#/credenciales']);
+  if (nuevo) { await altaDesdeRuta('credenciales', '#/credenciales', r => '#/credencial/' + r.id, 'Credencial creada'); return; }
 
   /** @type {any} */
   let c = null;
   let orgId = /** @type {string} */ (sesion.organizacionActiva());
-  if (!nuevo) {
+  {
     c = await repositorio.obtener('credenciales', idHash);
     if (!c) {
       pantalla(contenedor, { codigo: 'P09', nombre: 'Ficha de credencial', migas: migas.concat([['No encontrada']]) });
@@ -38,9 +41,9 @@ export async function renderVista(contenedor) {
     }
     orgId = c.organizacion_id;
   }
-  if (!puede(u, nuevo ? 'modificar' : 'ver', 'credenciales', orgId)) {
-    pantalla(contenedor, { codigo: 'P09', nombre: 'Ficha de credencial', migas: migas.concat([[nuevo ? 'Nueva' : 'Ficha']]) });
-    sinPermiso(contenedor, u, nuevo ? 'cargar credenciales' : 'Credenciales');
+  if (!puede(u, 'ver', 'credenciales', orgId)) {
+    pantalla(contenedor, { codigo: 'P09', nombre: 'Ficha de credencial', migas: migas.concat([['Ficha']]) });
+    sinPermiso(contenedor, u, 'Credenciales');
     return;
   }
 
@@ -53,8 +56,8 @@ export async function renderVista(contenedor) {
   const configPorId = new Map(configs.map(x => [x.id, x]));
   const rotuloTipo = (/** @type {string} */ t) => ROTULO_CREDENCIAL_TIPO[t] || t;
 
-  let editando = nuevo || partes[2] === 'editar';
-  if (editando && !nuevo && !puede(u, 'modificar', 'credenciales', orgId)) editando = false;
+  let editando = partes[2] === 'editar';
+  if (editando && !puede(u, 'modificar', 'credenciales', orgId)) editando = false;
   /** @type {string|null} */
   let valor = null; // contraseña visible ahora (solo en memoria, se borra al ocultar)
   /** @type {number} */
@@ -76,11 +79,11 @@ export async function renderVista(contenedor) {
 
   async function pintar() {
     contenedor.textContent = '';
-    const titulo = nuevo ? 'Nueva credencial' : c.credencial_nombre;
-    pantalla(contenedor, { codigo: 'P09', nombre: 'Ficha de credencial', migas: migas.concat([[titulo, !nuevo && tab !== 'quien' ? '#/credencial/' + c.id : undefined]]).concat(tab === 'historial' ? [['Historial']] : tab === 'accesos' ? [['Registro de accesos']] : []) });
+    const titulo = c.credencial_nombre;
+    pantalla(contenedor, { codigo: 'P09', nombre: 'Ficha de credencial', migas: migas.concat([[titulo, tab !== 'quien' ? '#/credencial/' + c.id : undefined]]).concat(tab === 'historial' ? [['Historial']] : tab === 'accesos' ? [['Registro de accesos']] : []) });
     const puedeModificar = puede(u, 'modificar', 'credenciales', orgId);
-    const verDirecto = !nuevo && puedeVerSecreto(u, c);
-    const puedeCambiarClave = puedeModificar && (nuevo || verDirecto);
+    const verDirecto = puedeVerSecreto(u, c);
+    const puedeCambiarClave = puedeModificar && verDirecto;
 
     // ---- datos
     const datos = h('div', { class: 'datos' });
@@ -92,10 +95,10 @@ export async function renderVista(contenedor) {
       };
       const selTipo = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Tipo' }, Object.keys(ROTULO_CREDENCIAL_TIPO).map(k => h('option', { value: k, text: ROTULO_CREDENCIAL_TIPO[k], selected: k === ed.tipo ? 'selected' : null }))));
       selTipo.addEventListener('change', () => { ed.tipo = selTipo.value; });
-      const selEq = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Equipo vinculado' }, [h('option', { value: '', text: 'Sin equipo' })].concat(equipos.map(e => h('option', { value: e.id, text: e.equipo_nombre, selected: e.id === ed.equipo ? 'selected' : null })))));
-      selEq.addEventListener('change', () => { ed.equipo = selEq.value; });
-      const selCf = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Configuración vinculada' }, [h('option', { value: '', text: 'Sin configuración' })].concat(configs.map(x => h('option', { value: x.id, text: x.configuracion_titulo, selected: x.id === ed.config ? 'selected' : null })))));
-      selCf.addEventListener('change', () => { ed.config = selCf.value; });
+      const selEq = selectorConCrear({ desde: 'credenciales', campo: 'equipo_id', organizacion_id: orgId, valor: ed.equipo || null, etiqueta: 'Equipo vinculado',
+        cargarOpciones: () => opcionesEquipos(orgId), rotuloOrigen: 'Editar credencial', alCambiar: v => { ed.equipo = v; } });
+      const selCf = selectorConCrear({ desde: 'credenciales', campo: 'configuracion_id', organizacion_id: orgId, valor: ed.config || null, etiqueta: 'Configuración vinculada',
+        rotuloOrigen: 'Editar credencial', alCambiar: v => { ed.config = v; } });
       datos.appendChild(campo('Nombre', inp('nombre', 'Nombre')));
       datos.appendChild(campo('Tipo', selTipo));
       datos.appendChild(campo('Usuario', inp('usuario', 'Usuario')));
@@ -105,11 +108,11 @@ export async function renderVista(contenedor) {
       datos.appendChild(campo('Vence el', inp('vence', 'Vence el', 'date')));
       datos.appendChild(campo('Notas', inp('notas', 'Notas')));
       if (puedeCambiarClave) {
-        const i = /** @type {HTMLInputElement} */ (h('input', { type: ed.verSecreto ? 'text' : 'password', value: ed.secreto, autocomplete: 'new-password', 'aria-label': 'Nueva contraseña', placeholder: nuevo ? 'Contraseña' : 'Vacío = no cambia' }));
+        const i = /** @type {HTMLInputElement} */ (h('input', { type: ed.verSecreto ? 'text' : 'password', value: ed.secreto, autocomplete: 'new-password', 'aria-label': 'Nueva contraseña', placeholder: 'Vacío = no cambia' }));
         i.addEventListener('input', () => { ed.secreto = i.value; });
         const chk = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: ed.verSecreto ? 'checked' : null }));
         chk.addEventListener('change', () => { ed.verSecreto = chk.checked; i.type = chk.checked ? 'text' : 'password'; });
-        datos.appendChild(campo(nuevo ? 'Contraseña' : 'Nueva contraseña', h('div', null, [i, h('label', { style: 'display:flex;gap:6px;align-items:center;margin-top:4px;font-size:12.5px' }, [chk, 'Mostrar mientras escribo'])])));
+        datos.appendChild(campo('Nueva contraseña', h('div', null, [i, h('label', { style: 'display:flex;gap:6px;align-items:center;margin-top:4px;font-size:12.5px' }, [chk, 'Mostrar mientras escribo'])])));
       }
     } else {
       datos.appendChild(campo('Tipo', rotuloTipo(c.credencial_tipo)));
@@ -124,26 +127,22 @@ export async function renderVista(contenedor) {
 
     const guardar = async () => {
       if (!ed.nombre.trim()) { toast('Escribí el nombre de la credencial.'); return; }
-      if (nuevo && !ed.secreto) { toast('Escribí la contraseña de la credencial nueva.'); return; }
       try {
-        const base = nuevo ? { organizacion_id: orgId, credencial_notas: null } : c;
-        const reg = { ...base, credencial_nombre: ed.nombre.trim(), credencial_tipo: ed.tipo, credencial_usuario: ed.usuario.trim() || null,
+        const reg = { ...c, credencial_nombre: ed.nombre.trim(), credencial_tipo: ed.tipo, credencial_usuario: ed.usuario.trim() || null,
           credencial_url_o_host: ed.host.trim() || null, equipo_id: ed.equipo || null, configuracion_id: ed.config || null,
           credencial_vence_en: ed.vence || null, credencial_notas: ed.notas.trim() || null, credencial_secreto: puedeCambiarClave && ed.secreto ? ed.secreto : null };
         const g = await repositorio.guardar('credenciales', reg, u.id);
-        toast(nuevo ? 'Credencial creada' : 'Cambios guardados · verificado hoy (' + hoyISO().split('-').reverse().join('/') + ')');
-        if (nuevo) { ir('#/credencial/' + g.id); return; }
+        toast('Cambios guardados · verificado hoy (' + hoyISO().split('-').reverse().join('/') + ')');
         editando = false; ed = null; ocultar(); await rerender();
       } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo guardar.'); }
     };
     const botones = editando
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }),
-        h('button', { type: 'button', text: 'Cancelar', onclick: () => { if (nuevo) ir('#/credenciales'); else { editando = false; ed = null; pintar(); } } })]
+        h('button', { type: 'button', text: 'Cancelar', onclick: () => { editando = false; ed = null; pintar(); } })]
       : [puedeModificar ? h('button', { type: 'button', text: 'Editar', onclick: () => { iniciarEd(); editando = true; pintar(); } }) : null,
-        nuevo ? null : await botonBaja({ u, coleccion: 'credenciales', registro: c, modulo: 'credenciales', orgId, nombre: c.credencial_nombre, volver: '#/credenciales', rerender })];
-    contenedor.appendChild(fichaCab({ tipo: 'credencial', etiqueta: 'credencial', titulo, datos, botones, modoEdicion: editando, registro: nuevo ? null : c,
+        await botonBaja({ u, coleccion: 'credenciales', registro: c, modulo: 'credenciales', orgId, nombre: c.credencial_nombre, volver: '#/credenciales', rerender })];
+    contenedor.appendChild(fichaCab({ tipo: 'credencial', etiqueta: 'credencial', titulo, datos, botones, modoEdicion: editando, registro: c,
       coleccion: 'credenciales', modulo: 'credenciales', u, orgId, umbrales, usuarios: nombreUsuario, rerender }));
-    if (nuevo) return;
 
     // ---- contraseña
     const caja = h('div', { class: 'bloque g1' }, [h('h3', { text: 'Contraseña' })]);

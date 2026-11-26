@@ -18,7 +18,7 @@ import {
   ROTULO_CREDENCIAL_TIPO, ROTULO_CONFIGURACION_TIPO, ROTULO_ESTADO_EQUIPO, ROTULO_LICENCIA_TIPO, ROTULO_PERSONA_ESTADO,
   ROTULO_CUENTA_ESTADO, ROTULO_MAPEO_APLICA_A, ROTULO_MAPEO_METODO, ROTULO_RELOJ_METODO, CATEGORIA_RELOJ,
   moduloDeEntidad as moduloDeEntidadModelo, ROTULO_SERVICIO_TIPO, TIPOS_REGISTRO_DNS, ROTULO_FIBRA_TIPO, CONECTORES_FIBRA,
-  ROTULO_ARCHIVO_TIPO, LIMITE_ARCHIVO_BYTES, ROTULO_ENTIDAD, rutaDeEntidad, VERSION_MODELO, migrarDatos, esImpresora
+  ROTULO_ARCHIVO_TIPO, LIMITE_ARCHIVO_BYTES, ROTULO_ENTIDAD, rutaDeEntidad, VERSION_MODELO, migrarDatos, esImpresora, ROTULO_UBICACION_TIPO
 } from './modelos.js';
 import { normalizar, ahoraISO, descargarTexto, hoyISO } from './utiles.js';
 
@@ -374,8 +374,14 @@ async function migrarBaseGuardada() {
   migrarDatos(datos, guardada);
   const base = /** @type {IDBDatabase} */ (db);
   const tx = base.transaction(COLECCIONES, 'readwrite');
-  for (const c of COLECCIONES) for (const r of datos[c]) { tx.objectStore(c).put(r); cache[c].set(r.id, r); }
+  for (const c of COLECCIONES) {
+    const vigentes = new Set(datos[c].map(r => r.id));
+    // La migración 2 → 3 quita los edificios: lo que ya no está en el resultado se borra de la base y de la copia en memoria.
+    for (const id of Array.from(cache[c].keys())) if (!vigentes.has(id)) { tx.objectStore(c).delete(id); cache[c].delete(id); }
+    for (const r of datos[c]) { tx.objectStore(c).put(r); cache[c].set(r.id, r); }
+  }
   await terminar(tx);
+  indiceBusqueda = null;
   await metaSet('version_modelo', VERSION_MODELO);
 }
 
@@ -643,6 +649,7 @@ function armarBaja(coleccion, id, usuarioId, motivo) {
   const reg = cache[coleccion] && cache[coleccion].get(id);
   if (!reg || reg.eliminado_en) throw new Error('El registro no existe o ya está dado de baja.');
   if (coleccion === 'cambios' || coleccion === 'registro_accesos') throw new Error('Este registro no se da de baja.');
+  if (coleccion === 'ubicaciones') { const motivoBloqueo = bloqueoUbicacion(reg); if (motivoBloqueo) throw new Error(motivoBloqueo); }
   const ahora = ahoraISO(), hoy = hoyISO();
   const entidad = ENTIDAD_DE_COLECCION[coleccion];
   /** @type {Map<string, [string, any]>} */ const porRegistro = new Map();
@@ -680,7 +687,7 @@ function armarBaja(coleccion, id, usuarioId, motivo) {
 
 /** Nombre corto de un registro para los motivos del historial. @param {string} coleccion @param {any} r */
 function nombreDe(coleccion, r) {
-  const k = { equipos: 'equipo_nombre', personas: 'persona_nombre', licencias: 'licencia_producto', racks: 'rack_nombre', puestos: 'puesto_nombre', organizaciones: 'organizacion_nombre' }[/** @type {'equipos'} */ (coleccion)];
+  const k = { equipos: 'equipo_nombre', personas: 'persona_nombre', licencias: 'licencia_producto', racks: 'rack_nombre', puestos: 'puesto_nombre', organizaciones: 'organizacion_nombre', ubicaciones: 'ubicacion_nombre' }[/** @type {'equipos'} */ (coleccion)];
   return k ? r[k] : '';
 }
 
@@ -702,6 +709,7 @@ export async function darDeBaja(coleccion, id, datos) {
 function validarEscritura(coleccion, r) {
   if (coleccion === 'equipos' || coleccion === 'racks' || coleccion === 'puestos') validarPlano(r);
   if (coleccion === 'puertos') validarPuerto(r);
+  if (coleccion === 'racks' || coleccion === 'puestos') validarLugar(r, coleccion === 'racks' ? 'El rack' : 'El puesto');
   if (coleccion === 'equipos') {
     if (!r.equipo_codigo) throw new Error('El equipo necesita un código.');
     if (esImpresora(r)) validarImpresora(r);
@@ -722,16 +730,148 @@ function validarEscritura(coleccion, r) {
     if (r.mapeo_aplica_a === 'persona' && !r.persona_id) throw new Error('Falta indicar la persona a la que aplica el mapeo.');
   } else if (coleccion === 'servicios') {
     validarServicio(r);
+  } else if (coleccion === 'vlans' || coleccion === 'redes_wifi' || coleccion === 'enlaces_isp') {
+    validarUnicidadDeRed(coleccion, r);
   } else if (coleccion === 'tramos_fibra') {
     validarTramo(r);
   } else if (coleccion === 'archivos') {
     validarArchivo(r);
   } else if (coleccion === 'relaciones') {
     validarRelacion(r);
+  } else if (coleccion === 'ubicaciones') {
+    validarUbicacion(r);
   } else if (coleccion === 'instalaciones_licencia') {
     const l = cache.licencias.get(r.licencia_id), e = cache.equipos.get(r.equipo_id);
     if (!l || !e || l.organizacion_id !== r.organizacion_id || e.organizacion_id !== r.organizacion_id) throw new Error('La instalación necesita una licencia y un equipo de la misma organización.');
   }
+}
+
+/**
+ * Un rack o un puesto tiene que estar en una sede o sala vigente de su misma organización.
+ * @param {any} r @param {string} quien
+ */
+function validarLugar(r, quien) {
+  if (r.eliminado_en) return;
+  const u = r.ubicacion_id ? cache.ubicaciones.get(r.ubicacion_id) : null;
+  if (!u || u.eliminado_en || u.organizacion_id !== r.organizacion_id) throw new Error(quien + ' tiene que estar en una sede o sala vigente de la organización.');
+}
+
+/**
+ * Reglas de las sedes y salas (QC60, modelo 3): solo hay sedes y salas; una sede no tiene padre; una sala cuelga de una sede
+ * vigente de su misma organización; el nombre no se repite (sin distinguir mayúsculas ni acentos) entre las sedes de la
+ * organización ni entre las salas de una misma sede; una sede con salas no puede pasar a sala. El nombre se compara solo si
+ * cambió el nombre, el tipo o la sede, para poder guardar otras cosas (el plano) en datos importados que ya repetían nombres.
+ * @param {any} r
+ */
+function validarUbicacion(r) {
+  const nombre = String(r.ubicacion_nombre || '').trim();
+  if (!nombre) throw new Error('Falta el nombre de la sede o sala.');
+  if (!ROTULO_UBICACION_TIPO[r.ubicacion_tipo]) throw new Error('El tipo tiene que ser sede o sala.');
+  if (r.eliminado_en) return;
+  if (!r.organizacion_id || !cache.organizaciones.get(r.organizacion_id)) throw new Error('La sede o sala necesita una organización.');
+  const previo = r.id ? cache.ubicaciones.get(r.id) : null;
+  const esSede = r.ubicacion_tipo === 'sede';
+  if (esSede) {
+    if (r.ubicacion_padre_id) throw new Error('Una sede no depende de otra: pertenece a la organización.');
+  } else {
+    const sede = r.ubicacion_padre_id ? cache.ubicaciones.get(r.ubicacion_padre_id) : null;
+    if (!r.ubicacion_padre_id) throw new Error('Una sala necesita su sede: elegí a qué sede pertenece (si todavía no la cargaste, creala).');
+    if (!sede || sede.eliminado_en || sede.ubicacion_tipo !== 'sede') throw new Error('La sala tiene que pertenecer a una sede vigente.');
+    if (sede.organizacion_id !== r.organizacion_id) throw new Error('La sede de la sala tiene que ser de la misma organización.');
+  }
+  if (previo && previo.ubicacion_tipo === 'sede' && !esSede) {
+    const salas = Array.from(cache.ubicaciones.values()).filter(x => x.ubicacion_padre_id === r.id && !x.eliminado_en);
+    if (salas.length) throw new Error('«' + nombre + '» tiene salas (' + resumenNombres(salas.map(x => x.ubicacion_nombre)) + '): no puede pasar a ser una sala.');
+  }
+  const cambioIdentidad = !previo || normalizar(previo.ubicacion_nombre) !== normalizar(nombre) || previo.ubicacion_tipo !== r.ubicacion_tipo
+    || (previo.ubicacion_padre_id || null) !== (r.ubicacion_padre_id || null) || !!previo.eliminado_en;
+  if (cambioIdentidad) {
+    const clave = normalizar(nombre);
+    const repetida = Array.from(cache.ubicaciones.values()).find(x => x.id !== r.id && !x.eliminado_en && x.organizacion_id === r.organizacion_id
+      && x.ubicacion_tipo === r.ubicacion_tipo && (x.ubicacion_padre_id || null) === (r.ubicacion_padre_id || null) && normalizar(x.ubicacion_nombre) === clave);
+    if (repetida) {
+      if (esSede) throw new Error('Ya hay una sede llamada «' + repetida.ubicacion_nombre + '» en esta organización.');
+      const sede = cache.ubicaciones.get(r.ubicacion_padre_id);
+      throw new Error('Ya hay una sala llamada «' + repetida.ubicacion_nombre + '» en la sede «' + (sede ? sede.ubicacion_nombre : '?') + '».');
+    }
+  }
+}
+
+/** «A, B, C y 2 más». @param {string[]} nombres @param {number} [max] */
+function resumenNombres(nombres, max = 4) {
+  const orden = nombres.slice().sort((a, b) => a.localeCompare(b, 'es'));
+  return orden.slice(0, max).join(', ') + (orden.length > max ? ' y ' + (orden.length - max) + ' más' : '');
+}
+
+/**
+ * Lo vigente que cuelga de una sede o sala, por id (sin copiar registros): salas hijas, racks, equipos, puestos y tramos de fibra
+ * que la tienen como lugar o como punta. Los equipos montados en un rack cuentan con el lugar del rack (regla 9).
+ * @param {string} id
+ */
+function dependientesDeUbicacion(id) {
+  const vivos = (/** @type {string} */ col, /** @type {(r: any) => boolean} */ f) => Array.from(cache[col].values()).filter(r => !r.eliminado_en && f(r));
+  return {
+    salas: vivos('ubicaciones', r => r.ubicacion_padre_id === id),
+    racks: vivos('racks', r => r.ubicacion_id === id),
+    equipos: vivos('equipos', r => r.ubicacion_id === id),
+    puestos: vivos('puestos', r => r.ubicacion_id === id),
+    tramos: vivos('tramos_fibra', r => r.tramo_origen_ubicacion_id === id || r.tramo_destino_ubicacion_id === id)
+  };
+}
+
+/**
+ * Qué hay en una sede o sala. Con `incluirSalas`, una sede suma lo de sus salas (los totales de la ficha de una sede).
+ * Devuelve copias de los registros vigentes.
+ * @param {string} id
+ * @param {{incluirSalas?: boolean}} [opciones]
+ * @returns {Promise<{salas: any[], racks: any[], equipos: any[], puestos: any[], tramos: any[]}>}
+ */
+export async function elementosDeUbicacion(id, opciones) {
+  await iniciar();
+  const ids = [id];
+  if (opciones && opciones.incluirSalas) for (const x of dependientesDeUbicacion(id).salas) ids.push(x.id);
+  const total = { salas: /** @type {any[]} */ ([]), racks: /** @type {any[]} */ ([]), equipos: /** @type {any[]} */ ([]), puestos: /** @type {any[]} */ ([]), tramos: /** @type {any[]} */ ([]) };
+  for (const i of ids) {
+    const d = dependientesDeUbicacion(i);
+    if (i === id) total.salas.push(...d.salas);
+    total.racks.push(...d.racks); total.equipos.push(...d.equipos); total.puestos.push(...d.puestos);
+    for (const t of d.tramos) if (!total.tramos.some(x => x.id === t.id)) total.tramos.push(t);
+  }
+  return {
+    salas: total.salas.map(x => publico('ubicaciones', x)), racks: total.racks.map(x => publico('racks', x)),
+    equipos: total.equipos.map(x => publico('equipos', x)), puestos: total.puestos.map(x => publico('puestos', x)),
+    tramos: total.tramos.map(x => publico('tramos_fibra', x))
+  };
+}
+
+/**
+ * Motivo por el que no se puede dar de baja una sede o sala (con cuáles son los que la ocupan), o null si se puede.
+ * Lo usa `darDeBaja` y también la pantalla, para avisar antes de pedir la confirmación.
+ * @param {string} id
+ * @returns {Promise<string|null>}
+ */
+export async function bloqueoDeBajaDeUbicacion(id) {
+  await iniciar();
+  const u = cache.ubicaciones.get(id);
+  if (!u || u.eliminado_en) return null;
+  return bloqueoUbicacion(u);
+}
+
+/** @param {any} u @returns {string|null} */
+function bloqueoUbicacion(u) {
+  const d = dependientesDeUbicacion(u.id);
+  /** @type {string[]} */
+  const partes = [];
+  const sumar = (/** @type {any[]} */ lista, /** @type {string} */ uno, /** @type {string} */ varios, /** @type {(x: any) => string} */ nombre) => {
+    if (lista.length) partes.push(lista.length + ' ' + (lista.length === 1 ? uno : varios) + ' (' + resumenNombres(lista.map(nombre)) + ')');
+  };
+  sumar(d.salas, 'sala', 'salas', x => x.ubicacion_nombre);
+  sumar(d.racks, 'rack', 'racks', x => x.rack_nombre);
+  sumar(d.equipos, 'equipo', 'equipos', x => x.equipo_nombre);
+  sumar(d.puestos, 'puesto', 'puestos', x => x.puesto_nombre);
+  sumar(d.tramos, 'tramo de fibra', 'tramos de fibra', x => x.tramo_nombre);
+  if (!partes.length) return null;
+  return 'No se puede dar de baja «' + u.ubicacion_nombre + '» porque todavía tiene ' + partes.join('; ') + '. Pasalos a otra sede o sala (o dalos de baja) y volvé a intentar.';
 }
 
 /** Posición en el plano (MJ44): `plano_x` y `plano_y` van juntas, entre 0 y 1 (relativas al plano), o ninguna. @param {any} r */
@@ -788,6 +928,25 @@ function validarServicio(r) {
     if (!g || !TIPOS_REGISTRO_DNS.includes(g.tipo)) throw new Error('Un registro DNS tiene un tipo que no existe (' + (g && g.tipo) + ').');
     if (!String(g.nombre || '').trim() || !String(g.valor || '').trim()) throw new Error('Cada registro DNS necesita nombre y valor.');
     if (g.tipo === 'MX' && g.prioridad != null && !Number.isInteger(g.prioridad)) throw new Error('La prioridad de un registro MX es un número entero.');
+  }
+}
+
+/**
+ * Unicidad dentro de la organización (regla 13): `vlan_numero` (1 a 4094), `wifi_ssid` y un solo enlace principal. Solo se compara si el
+ * registro es nuevo o si cambió justo ese dato, para poder guardar otras cosas de datos importados que ya repetían.
+ * @param {string} coleccion @param {any} r
+ */
+function validarUnicidadDeRed(coleccion, r) {
+  if (r.eliminado_en) return;
+  const previo = r.id ? cache[coleccion].get(r.id) : null;
+  const otros = Array.from(cache[coleccion].values()).filter((/** @type {any} */ x) => x.id !== r.id && !x.eliminado_en && x.organizacion_id === r.organizacion_id);
+  if (coleccion === 'vlans') {
+    if (!Number.isInteger(r.vlan_numero) || r.vlan_numero < 1 || r.vlan_numero > 4094) throw new Error('El número de VLAN va de 1 a 4094.');
+    if ((!previo || previo.vlan_numero !== r.vlan_numero || previo.eliminado_en) && otros.some((/** @type {any} */ x) => x.vlan_numero === r.vlan_numero)) throw new Error('Ya existe la VLAN ' + r.vlan_numero + ' en esta organización.');
+  } else if (coleccion === 'redes_wifi') {
+    if ((!previo || normalizar(previo.wifi_ssid) !== normalizar(r.wifi_ssid) || previo.eliminado_en) && otros.some((/** @type {any} */ x) => normalizar(x.wifi_ssid) === normalizar(r.wifi_ssid))) throw new Error('Ya existe una red Wi-Fi con el SSID «' + r.wifi_ssid + '» en esta organización.');
+  } else if (r.enlace_es_principal && (!previo || !previo.enlace_es_principal || previo.eliminado_en) && otros.some((/** @type {any} */ x) => x.enlace_es_principal)) {
+    throw new Error('Ya hay un enlace principal en esta organización: dejá este como respaldo o cambiá primero el otro.');
   }
 }
 
@@ -1233,7 +1392,7 @@ function describir(entidad, r) {
   switch (entidad) {
     case 'Equipo': return { titulo: r.equipo_nombre, subtitulo: unir(r.equipo_codigo, ROTULO_EQUIPO_TIPO[r.equipo_tipo], unir(r.equipo_marca, r.equipo_modelo)) };
     case 'Rack': return { titulo: r.rack_nombre, subtitulo: unir(nombreUb(r.ubicacion_id), r.rack_unidades_total + ' U') };
-    case 'Ubicacion': return { titulo: r.ubicacion_nombre, subtitulo: unir(r.ubicacion_tipo, r.ubicacion_direccion) };
+    case 'Ubicacion': return { titulo: r.ubicacion_nombre, subtitulo: unir(ROTULO_UBICACION_TIPO[r.ubicacion_tipo] || r.ubicacion_tipo, r.ubicacion_direccion) };
     case 'Puesto': return { titulo: r.puesto_nombre, subtitulo: nombreUb(r.ubicacion_id) };
     case 'Vlan': return { titulo: 'VLAN ' + r.vlan_numero + ' · ' + r.vlan_nombre, subtitulo: r.vlan_red_cidr || '' };
     case 'RedWifi': return { titulo: 'Wi-Fi ' + r.wifi_ssid, subtitulo: r.wifi_seguridad };
@@ -1902,6 +2061,7 @@ export const GRUPOS_BUSQUEDA = [
   { nombre: 'Mapeos', tipo: 'configuracion' },
   { nombre: 'Notas', tipo: 'nota' },
   { nombre: 'Racks', tipo: 'rack' },
+  { nombre: 'Sedes y salas', tipo: 'ubicacion' },
   { nombre: 'Configuraciones', tipo: 'configuracion' },
   { nombre: 'Credenciales', tipo: 'credencial' },
   { nombre: 'Red (VLAN y Wi-Fi)', tipo: 'vlan' },
@@ -2016,17 +2176,30 @@ function construirIndice() {
       const quien = asignadoA.get(e.id);
       agregar('equipos', e, 'Equipos', 'equipo', 'red', e.equipo_nombre, unir(e.equipo_codigo, detalle, unir(e.equipo_marca, e.equipo_modelo)),
         [['Código', e.equipo_codigo], ['Tipo', detalle], ['Modelo', unir(e.equipo_marca, e.equipo_modelo)], ['IP de gestión', e.equipo_ip_gestion], ['MAC', e.equipo_mac], ['N.º de serie', e.equipo_numero_serie],
-          ['Ubicación', ubicacion], ['Puesto', puesto], ['Asignado a', quien], ['Estado', ROTULO_ESTADO_EQUIPO[e.equipo_estado]]]
+          [e.rack_id ? 'Rack y posición (U)' : 'Sede / sala', ubicacion], ['Puesto', puesto], ['Asignado a', quien], ['Estado', ROTULO_ESTADO_EQUIPO[e.equipo_estado]]]
           .concat(reloj ? [['Método de fichada', ROTULO_RELOJ_METODO[c.reloj_metodo] || c.reloj_metodo], ['Software', c.reloj_software], ['PC de descarga', nombreEq(c.reloj_pc_descarga_id)]] : []),
         [e.equipo_codigo, e.equipo_marca, e.equipo_modelo, e.equipo_notas, nombreUb(e.ubicacion_id), ROTULO_EQUIPO_TIPO[e.equipo_tipo], puesto].concat(strings));
     }
     // El código corto cuenta como parte del título: buscar `AGR-PC-014` pone primero al equipo (MJ37).
     if (indice.length > n0) indice[indice.length - 1]._tituloN += ' ' + normalizar(e.equipo_codigo);
   }
+  // Sedes y salas (QC60): nombre, dirección, notas y la ruta «Sede › Sala».
+  /** @param {any} u */
+  const rutaUb = u => { const pa = u.ubicacion_padre_id ? ubic.get(u.ubicacion_padre_id) : null; return (pa ? pa.ubicacion_nombre + ' › ' : '') + u.ubicacion_nombre; };
+  for (const u of ubic.values()) {
+    if (u.eliminado_en) continue;
+    const esSede = u.ubicacion_tipo === 'sede';
+    const salas = esSede ? Array.from(ubic.values()).filter(x => !x.eliminado_en && x.ubicacion_padre_id === u.id).map(x => x.ubicacion_nombre).sort((x, y) => x.localeCompare(y, 'es')) : [];
+    const racksDe = Array.from(racks.values()).filter(x => !x.eliminado_en && x.ubicacion_id === u.id).map(x => x.rack_nombre).sort((x, y) => x.localeCompare(y, 'es'));
+    const tipoR = ROTULO_UBICACION_TIPO[u.ubicacion_tipo] || u.ubicacion_tipo;
+    agregar('ubicaciones', u, 'Sedes y salas', 'ubicacion', 'organizacion', u.ubicacion_nombre, unir(tipoR, esSede ? '' : rutaUb(u), u.ubicacion_direccion),
+      [['Tipo', tipoR], ['Ruta', esSede ? '' : rutaUb(u)], ['Dirección', u.ubicacion_direccion], ['Salas', salas.join(', ')], ['Racks', racksDe.join(', ')], ['Notas', u.ubicacion_notas]],
+      [rutaUb(u), u.ubicacion_direccion, u.ubicacion_notas], { ruta: '#/ubicacion/' + u.id });
+  }
   for (const r of racks.values()) {
     if (r.eliminado_en) continue;
     agregar('racks', r, 'Racks', 'rack', 'racks', r.rack_nombre, unir(nombreUb(r.ubicacion_id), r.rack_unidades_total + ' U'),
-      [['Ubicación', nombreUb(r.ubicacion_id)], ['Alto', r.rack_unidades_total + ' U'], ['Ocupación', (ocupacion.get(r.id) || 0) + ' / ' + r.rack_unidades_total + ' U']], [r.rack_notas]);
+      [['Sede / sala', nombreUb(r.ubicacion_id)], ['Alto', r.rack_unidades_total + ' U'], ['Ocupación', (ocupacion.get(r.id) || 0) + ' / ' + r.rack_unidades_total + ' U']], [r.rack_notas]);
   }
   for (const cf of cache.configuraciones.values()) {
     if (cf.eliminado_en) continue;
@@ -2096,7 +2269,7 @@ function construirIndice() {
       recorrido = unir(sw && pSw ? sw.equipo_nombre + ' puerto ' + pSw.puerto_numero : '', patch ? patch.equipo_nombre + ' boca ' + boca.puerto_numero : '', p.puesto_boca_pared ? 'boca de pared ' + p.puesto_boca_pared : '').split(' · ').join(' → ');
     }
     agregar('puestos', p, 'Puestos', 'puesto', 'red', p.puesto_nombre, unir(nombreUb(p.ubicacion_id), p.puesto_boca_pared ? 'boca de pared ' + p.puesto_boca_pared : ''),
-      [['Ubicación', nombreUb(p.ubicacion_id)], ['Boca de pared', p.puesto_boca_pared], ['Equipos', eqs.map((/** @type {any} */ e) => e.equipo_nombre).join(', ')], ['Recorrido', recorrido]],
+      [['Sede / sala', nombreUb(p.ubicacion_id)], ['Boca de pared', p.puesto_boca_pared], ['Equipos', eqs.map((/** @type {any} */ e) => e.equipo_nombre).join(', ')], ['Recorrido', recorrido]],
       [p.puesto_notas]);
   }
   const per = (/** @type {string|null} */ id) => (id && cache.personas.get(id) ? cache.personas.get(id).persona_nombre : '');
@@ -2296,7 +2469,7 @@ export async function analizarImportacion(texto) {
   const migraciones = migrarDatos(datos, desde);
   importacionPendiente = datos;
   const advertencias = [];
-  if (migraciones) advertencias.push('El archivo se exportó con una versión anterior de Infradoc (modelo de datos ' + desde + '): se actualiza solo al importarlo (los campos nuevos quedan con su valor por defecto y no se pierde nada).');
+  if (migraciones) advertencias.push('El archivo se exportó con una versión anterior de Infradoc (modelo de datos ' + desde + '): se actualiza solo al importarlo (los campos nuevos quedan con su valor por defecto; si traía edificios u oficinas, quedan como sedes y salas).');
   if (crudo.alcance === 'organizacion') advertencias.push('El archivo es de una sola organización («' + (crudo.alcance_organizacion || '?') + '»): al importarlo, las demás organizaciones que hoy hay en este navegador se pierden.');
   if (crudo.incluye_secretos === false) advertencias.push('El archivo se exportó sin contraseñas: las credenciales quedarán sin contraseña y los usuarios, sin su clave de prueba (no vas a poder ingresar con ellos).');
   return {

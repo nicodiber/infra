@@ -10,6 +10,7 @@ import { ir, pantalla, migasRaiz } from '../assets/js/marco.js';
 import { h, tabla, fmtFecha, indicadorVerificacion, estadoVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_CREDENCIAL_TIPO } from '../assets/js/modelos.js';
 import { sinPermiso, textoVencimiento, chips } from '../assets/js/credenciales.js';
+import { crearYAbrir } from '../assets/js/altas/comunes.js';
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
@@ -43,7 +44,11 @@ export async function renderVista(contenedor) {
       ['revisar', 'A revisar', base.filter(c => nivel(c) === 'revisar').length], ['viejo', 'Desactualizadas', base.filter(c => nivel(c) === 'viejo').length]], est.nivel, k => { est.nivel = k; pintar(); }));
     const filas = base.filter(c => est.nivel === 'todos' || nivel(c) === est.nivel);
     if (!lista.length) {
-      zonaTabla.appendChild(h('div', { class: 'aviso', text: 'Todavía no hay credenciales cargadas en esta organización.' + (puede(u, 'modificar', 'credenciales', orgId) ? ' Usá «Nueva credencial» para cargar la primera.' : '') }));
+      const puedeCrear = puede(u, 'modificar', 'credenciales', orgId);
+      zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [h('h2', { text: 'Todavía no hay credenciales cargadas' }),
+        h('p', { text: 'Acá van las contraseñas de iLO, routers, VPN, Wi-Fi, paneles y claves de licencia. Se cargan con su usuario y host, y la contraseña queda oculta.' }),
+        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva credencial', onclick: () => crearYAbrir('credenciales', r => '#/credencial/' + r.id, { aviso: 'Credencial creada' }) })])
+          : h('p', { class: 'mut', text: 'Tu rol no puede cargar credenciales: pedíselo a un técnico o gerente.' })]));
       return;
     }
     if (!filas.length) { zonaTabla.appendChild(h('div', { class: 'mut', style: 'padding:8px', text: 'Ninguna credencial coincide con el filtro.' })); return; }
@@ -60,7 +65,7 @@ export async function renderVista(contenedor) {
   sel.addEventListener('change', () => { est.tipo = sel.value; pintar(); });
   contenedor.appendChild(h('h1', { text: 'Credenciales' }));
   contenedor.appendChild(h('div', { class: 'herr' }, [inp, sel, h('span', { style: 'flex:1' }),
-    puede(u, 'modificar', 'credenciales', orgId) ? h('button', { type: 'button', class: 'primario', text: 'Nueva credencial', onclick: () => ir('#/credencial/nuevo') }) : null]));
+    puede(u, 'modificar', 'credenciales', orgId) ? h('button', { type: 'button', class: 'primario', text: 'Nueva credencial', onclick: () => crearYAbrir('credenciales', r => '#/credencial/' + r.id, { aviso: 'Credencial creada' }) }) : null]));
   contenedor.appendChild(zonaChips);
   contenedor.appendChild(zonaTabla);
   contenedor.appendChild(h('div', { class: 'mut', style: 'margin-top:6px', text: 'Nunca se muestran contraseñas en el listado: se ven en la ficha de cada credencial.' }));

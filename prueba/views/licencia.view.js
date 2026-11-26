@@ -12,6 +12,9 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast, abrirModal, cerrarModal, repintarMarco } from '../assets/js/marco.js';
 import { h, tabla, fmtFecha, fmtFechaHora, hoyISO } from '../assets/js/utiles.js';
 import { ROTULO_LICENCIA_TIPO, ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
+import { selectorConCrear } from '../assets/js/altas.js';
+import { altaDesdeRuta, duplicar, nombreDeCopia } from '../assets/js/altas/comunes.js';
+import { abrirAlta } from '../assets/js/altas.js';
 import { sinPermiso, enlaceEquipo, pestanas, campo, fichaCab, botonBaja, valorHistorial } from '../assets/js/credenciales.js';
 import { barraUso, textoVencimientoLicencia } from './licencias.view.js';
 
@@ -29,11 +32,12 @@ export async function renderVista(contenedor) {
   let tab = ['instalaciones', 'relaciones', 'archivos', 'historial'].includes(partes[2]) ? partes[2] : 'instalaciones';
   const migas = await migasRaiz();
   migas.push(['Licencias', '#/licencias']);
+  if (nuevo) { await altaDesdeRuta('licencias', '#/licencias', r => '#/licencia/' + r.id, 'Licencia creada'); return; }
 
   /** @type {any} */
   let l = null;
   let orgId = /** @type {string} */ (sesion.organizacionActiva());
-  if (!nuevo) {
+  {
     l = await repositorio.obtener('licencias', idHash);
     if (!l) {
       pantalla(contenedor, { codigo: 'P25', nombre: 'Ficha de licencia', migas: migas.concat([['No encontrada']]) });
@@ -42,9 +46,9 @@ export async function renderVista(contenedor) {
     }
     orgId = l.organizacion_id;
   }
-  if (!puede(u, nuevo ? 'modificar' : 'ver', 'licencias', orgId)) {
-    pantalla(contenedor, { codigo: 'P25', nombre: 'Ficha de licencia', migas: migas.concat([[nuevo ? 'Nueva' : 'Ficha']]) });
-    sinPermiso(contenedor, u, nuevo ? 'cargar licencias' : 'Licencias');
+  if (!puede(u, 'ver', 'licencias', orgId)) {
+    pantalla(contenedor, { codigo: 'P25', nombre: 'Ficha de licencia', migas: migas.concat([['Ficha']]) });
+    sinPermiso(contenedor, u, 'Licencias');
     return;
   }
 
@@ -52,15 +56,13 @@ export async function renderVista(contenedor) {
   const verPersonas = puede(u, 'ver', 'personas', orgId);
   const verCredenciales = puede(u, 'ver', 'credenciales', orgId);
   const creaClaves = puede(u, 'modificar', 'credenciales', orgId);
-  let editando = nuevo || partes[2] === 'editar';
-  if (editando && !nuevo && !modifica) editando = false;
-  let agregando = false;
+  let editando = partes[2] === 'editar';
+  if (editando && !modifica) editando = false;
   let error = '';
   /** @type {any} */
   let ed = null;
   const iniciarEd = () => {
-    ed = l ? { producto: l.licencia_producto, tipo: l.licencia_tipo, cantidad: String(l.licencia_cantidad), vence: l.licencia_vence_en || '', proveedor: l.licencia_proveedor || '', clave: '', verClave: false }
-      : { producto: '', tipo: 'suscripcion', cantidad: '1', vence: '', proveedor: '', clave: '', verClave: false };
+    ed = { producto: l.licencia_producto, tipo: l.licencia_tipo, cantidad: String(l.licencia_cantidad), vence: l.licencia_vence_en || '', proveedor: l.licencia_proveedor || '', credencial: l.credencial_id || '' };
   };
   if (editando) iniciarEd();
 
@@ -77,12 +79,11 @@ export async function renderVista(contenedor) {
     const equipoPorId = new Map(equipos.map(e => [e.id, e]));
     const personaPorId = new Map(personas.map(p => [p.id, p]));
     const cuentaPorId = new Map(cuentas.map(c => [c.id, c]));
-    const titulo = nuevo ? 'Nueva licencia' : l.licencia_producto;
-    pantalla(contenedor, { codigo: 'P25', nombre: 'Ficha de licencia', migas: migas.concat([[titulo, !nuevo && tab !== 'instalaciones' ? '#/licencia/' + l.id : undefined]]).concat(!nuevo && tab === 'historial' ? [['Historial']] : []) });
+    const titulo = l.licencia_producto;
+    pantalla(contenedor, { codigo: 'P25', nombre: 'Ficha de licencia', migas: migas.concat([[titulo, tab !== 'instalaciones' ? '#/licencia/' + l.id : undefined]]).concat(tab === 'historial' ? [['Historial']] : []) });
 
     // ---- datos
     const datos = h('div', { class: 'datos' });
-    const puedeAgregarClave = creaClaves && !(l && l.credencial_id);
     if (editando) {
       const inp = (/** @type {string} */ k, /** @type {string} */ et, /** @type {string} */ tipo, /** @type {Object<string, string>} */ extra) => {
         const i = /** @type {HTMLInputElement} */ (h('input', { type: tipo || 'text', value: ed[k], 'aria-label': et, ...(extra || {}) }));
@@ -96,15 +97,12 @@ export async function renderVista(contenedor) {
       datos.appendChild(campo('Cantidad comprada', inp('cantidad', 'Cantidad comprada', 'number', { min: '1', step: '1' })));
       datos.appendChild(campo('Vence el', ed.tipo === 'perpetua' ? h('span', { class: 'mut', text: 'Una licencia perpetua no vence' }) : inp('vence', 'Vence el', 'date')));
       datos.appendChild(campo('Proveedor', inp('proveedor', 'Proveedor')));
-      if (puedeAgregarClave) {
-        const i = /** @type {HTMLInputElement} */ (h('input', { type: ed.verClave ? 'text' : 'password', value: ed.clave, autocomplete: 'new-password', 'aria-label': 'Clave de la licencia', placeholder: 'Opcional' }));
-        i.addEventListener('input', () => { ed.clave = i.value; });
-        const chk = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: ed.verClave ? 'checked' : null }));
-        chk.addEventListener('change', () => { ed.verClave = chk.checked; i.type = chk.checked ? 'text' : 'password'; });
-        datos.appendChild(campo('Clave de la licencia', h('div', null, [i, h('label', { style: 'display:flex;gap:6px;align-items:center;margin-top:4px;font-size:12.5px' }, [chk, 'Mostrar mientras escribo']),
-          h('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px', text: 'Se guarda como una credencial de tipo «Clave de licencia»: queda oculta y se pide con registro.' })])));
-      } else if (l && l.credencial_id) datos.appendChild(campo('Clave de la licencia', 'Ya está guardada en una credencial: se cambia desde esa credencial.'));
-      else datos.appendChild(campo('Clave de la licencia', 'Tu rol no puede crear credenciales; pedile a quien administre las credenciales que la cargue y la vincule.'));
+      if (creaClaves) {
+        const valoresClave = /** @type {Object<string, any>} */ ({ credencial_tipo: 'clave_licencia', credencial_nombre: 'Clave: ' + ed.producto.trim() });
+        const selClave = selectorConCrear({ desde: 'licencias', campo: 'credencial_id', organizacion_id: orgId, valor: ed.credencial || null, etiqueta: 'Clave de la licencia (credencial)',
+          valoresAlta: valoresClave, rotuloOrigen: 'Editar licencia', alCambiar: v => { ed.credencial = v; } });
+        datos.appendChild(campo('Clave de la licencia (credencial)', h('div', null, [selClave, h('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px', text: 'La clave se guarda como una credencial de tipo «Clave de licencia»: queda oculta y se pide con registro.' })])));
+      } else datos.appendChild(campo('Clave de la licencia', 'Tu rol no puede crear credenciales; pedile a quien administre las credenciales que la cargue y la vincule.'));
       if (error) datos.appendChild(h('div', { class: 'msg mal', role: 'alert', style: 'grid-column:1/-1', text: error }));
     } else {
       const uso = await repositorio.licenciasEnUso(l.id);
@@ -121,30 +119,27 @@ export async function renderVista(contenedor) {
       if (!ed.producto.trim()) { error = 'Escribí el producto y la edición.'; await pintar(); return; }
       if (!Number.isInteger(cant) || cant < 1) { error = 'La cantidad comprada tiene que ser un número entero de 1 o más.'; await pintar(); return; }
       try {
-        let credId = nuevo ? null : l.credencial_id || null;
+        const credId = creaClaves ? ed.credencial || null : l.credencial_id || null;
         const vence = ed.tipo === 'perpetua' ? null : ed.vence || null;
-        if (puedeAgregarClave && ed.clave) {
-          const c = await repositorio.guardar('credenciales', { organizacion_id: orgId, credencial_tipo: 'clave_licencia', credencial_nombre: 'Clave: ' + ed.producto.trim(), credencial_usuario: null,
-            credencial_url_o_host: null, equipo_id: null, configuracion_id: null, credencial_notas: null, credencial_vence_en: vence, credencial_secreto: ed.clave }, u.id);
-          credId = c.id;
-        }
-        const base = nuevo ? { organizacion_id: orgId } : l;
-        const g = await repositorio.guardar('licencias', { ...base, licencia_producto: ed.producto.trim(), licencia_tipo: ed.tipo, licencia_cantidad: cant, licencia_vence_en: vence,
+        await repositorio.guardar('licencias', { ...l, licencia_producto: ed.producto.trim(), licencia_tipo: ed.tipo, licencia_cantidad: cant, licencia_vence_en: vence,
           licencia_proveedor: ed.proveedor.trim() || null, credencial_id: credId }, u.id);
-        toast(nuevo ? 'Licencia creada' : 'Cambios guardados · verificada hoy (' + hoyISO().split('-').reverse().join('/') + ')');
+        toast('Cambios guardados · verificada hoy (' + hoyISO().split('-').reverse().join('/') + ')');
         ed = null; error = '';
-        if (nuevo) { ir('#/licencia/' + g.id); return; }
         editando = false; await rerender();
       } catch (e) { error = e instanceof Error ? e.message : 'No se pudo guardar.'; await pintar(); }
     };
     const botones = editando
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }),
-        h('button', { type: 'button', text: 'Cancelar', onclick: () => { ed = null; error = ''; if (nuevo) ir('#/licencias'); else { editando = false; pintar(); } } })]
+        h('button', { type: 'button', text: 'Cancelar', onclick: () => { ed = null; error = ''; editando = false; pintar(); } })]
       : [modifica ? h('button', { type: 'button', text: 'Editar', onclick: () => { iniciarEd(); error = ''; editando = true; pintar(); } }) : null,
-        nuevo ? null : await botonBaja({ u, coleccion: 'licencias', registro: l, modulo: 'licencias', orgId, nombre: l.licencia_producto, volver: '#/licencias', rerender })];
-    contenedor.appendChild(fichaCab({ tipo: 'licencia', etiqueta: 'licencia', titulo, datos, botones, modoEdicion: editando, registro: nuevo ? null : l,
+        modifica ? h('button', { type: 'button', text: 'Duplicar', title: 'Abre el alta con estos datos (sin la clave) para cargar una parecida', onclick: async () => {
+          const otras = await repositorio.listar('licencias', { organizacion_id: orgId });
+          await duplicar('licencias', l, { licencia_producto: nombreDeCopia(l.licencia_producto, otras.map(x => x.licencia_producto)), licencia_tipo: l.licencia_tipo, licencia_cantidad: l.licencia_cantidad,
+            licencia_vence_en: l.licencia_vence_en, licencia_proveedor: l.licencia_proveedor }, r => '#/licencia/' + r.id, 'Licencia');
+        } }) : null,
+        await botonBaja({ u, coleccion: 'licencias', registro: l, modulo: 'licencias', orgId, nombre: l.licencia_producto, volver: '#/licencias', rerender })];
+    contenedor.appendChild(fichaCab({ tipo: 'licencia', etiqueta: 'licencia', titulo, datos, botones, modoEdicion: editando, registro: l,
       coleccion: 'licencias', modulo: 'licencias', u, orgId, umbrales, usuarios: nombreUsuario, rerender }));
-    if (nuevo) return;
 
     // ---- pestañas
     /** @type {Array<[string, string]>} */
@@ -186,41 +181,16 @@ export async function renderVista(contenedor) {
 
     cuerpo.appendChild(h('div', { class: 'herr' }, [
       h('span', { class: 'mut', style: 'flex:1', text: vigentes.length + ' instalación(es) vigente(s)' + (instalaciones.length > vigentes.length ? ' y ' + (instalaciones.length - vigentes.length) + ' retirada(s)' : '') + '.' }),
-      modifica && !agregando ? h('button', { type: 'button', class: 'primario', text: 'Agregar instalación', onclick: () => { agregando = true; pintar(); } }) : null]));
-
-    if (agregando) {
-      const ocupados = new Set(vigentes.map(i => i.equipo_id));
-      const libres = equipos.filter(e => !ocupados.has(e.id));
-      const selEq = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Equipo' }, [h('option', { value: '', text: 'Elegí el equipo…' })].concat(libres.map(e => h('option', { value: e.id, text: e.equipo_nombre + ' · ' + (ROTULO_EQUIPO_TIPO[e.equipo_tipo] || e.equipo_tipo) })))));
-      const selCu = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Cuenta de dominio' }, [h('option', { value: '', text: 'Sin cuenta' })].concat(cuentas.map(c => h('option', { value: c.id, text: c.cuenta_dominio + '\\' + c.cuenta_usuario })))));
-      const selPe = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Persona' }, [h('option', { value: '', text: 'Sin persona' })].concat(personas.filter(p => p.persona_estado === 'activa').map(p => h('option', { value: p.id, text: p.persona_nombre })))));
-      const desde = /** @type {HTMLInputElement} */ (h('input', { type: 'date', 'aria-label': 'Instalada desde', value: hoyISO() }));
-      const aviso = h('div', { class: 'msg', role: 'status', hidden: uso.usadas >= uso.cantidad ? null : 'hidden', text: uso.usadas >= uso.cantidad ? 'Ya están en uso todas las licencias compradas (' + uso.usadas + ' de ' + uso.cantidad + '): al agregar otra, la licencia queda excedida.' : '' });
-      const msg = h('div', { class: 'msg mal', role: 'alert', hidden: 'hidden' });
-      const falla = (/** @type {string} */ t) => { msg.textContent = t; msg.hidden = false; };
-      const campos = [campo('Equipo', selEq), campo('Desde', desde)];
-      if (verPersonas) campos.push(campo('Cuenta de dominio (opcional)', selCu), campo('Persona (opcional)', selPe));
-      cuerpo.appendChild(h('div', { class: 'bloque t-licencia', style: 'margin-bottom:10px' }, [h('h3', { text: 'Agregar instalación' }),
-        h('div', { class: 'datos' }, campos), aviso, msg,
-        !libres.length ? h('div', { class: 'mut', text: 'No quedan equipos de la organización sin esta licencia.' }) : null,
-        h('div', { class: 'herr' }, [
-          h('button', { type: 'button', class: 'primario', text: 'Agregar', onclick: async () => {
-            if (!selEq.value) return falla('Elegí el equipo donde está instalada.');
-            if (!desde.value) return falla('Indicá desde cuándo está instalada.');
-            try {
-              await repositorio.guardar('instalaciones_licencia', { organizacion_id: orgId, licencia_id: l.id, equipo_id: selEq.value, cuenta_id: selCu.value || null, persona_id: selPe.value || null,
-                instalacion_desde: desde.value, instalacion_hasta: null }, u.id);
-              const e = equipoPorId.get(selEq.value);
-              agregando = false;
-              toast('Instalación agregada en ' + (e ? e.equipo_nombre : 'el equipo') + (uso.usadas + 1 > uso.cantidad ? ' · la licencia quedó excedida' : ''));
-              await repintarMarco(); await pintar();
-            } catch (err) { falla(err instanceof Error ? err.message : 'No se pudo agregar.'); }
-          } }),
-          h('button', { type: 'button', text: 'Cancelar', onclick: () => { agregando = false; pintar(); } })])]));
-    }
+      modifica ? h('button', { type: 'button', class: 'primario', text: 'Agregar instalación', onclick: async () => {
+        const creada = await abrirAlta('instalaciones_licencia', { organizacion_id: orgId, valores: { licencia_id: l.id } });
+        if (!creada) return;
+        const e = equipoPorId.get(creada.equipo_id);
+        toast('Instalación agregada en ' + (e ? e.equipo_nombre : 'el equipo') + (uso.usadas + 1 > uso.cantidad ? ' · la licencia quedó excedida' : ''));
+        await repintarMarco(); await pintar();
+      } }) : null]));
 
     if (!instalaciones.length) {
-      if (!agregando) cuerpo.appendChild(h('div', { class: 'aviso' }, [h('div', { text: 'Esta licencia todavía no está instalada en ningún equipo.' }),
+      cuerpo.appendChild(h('div', { class: 'aviso' }, [h('div', { text: 'Esta licencia todavía no está instalada en ningún equipo.' }),
         modifica ? h('div', { class: 'mut', style: 'margin-top:6px', text: 'Usá «Agregar instalación» para anotar dónde se usa.' }) : null]));
       return;
     }

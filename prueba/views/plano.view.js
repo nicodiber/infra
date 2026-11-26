@@ -45,7 +45,7 @@ export async function renderVista(contenedor) {
   if (!ub) {
     contenedor.appendChild(h('h1', { text: 'Planos de la organización' }));
     const conPlano = ubicaciones.filter(x => x.ubicacion_plano_archivo_id);
-    if (!conPlano.length) { contenedor.appendChild(estadoVacio('Todavía no hay planos', 'Entrá a una ubicación desde «Racks» (enlace «Plano») y subí la imagen de su plano.', 'rack')); return; }
+    if (!conPlano.length) { contenedor.appendChild(estadoVacio('Todavía no hay planos', 'Entrá a una sede o sala desde «Racks» (enlace «Plano») y subí la imagen de su plano.', 'rack')); return; }
     contenedor.appendChild(h('ul', null, conPlano.map(x => h('li', null, [h('a', { href: '#/plano/' + x.id, text: rutaUbicacion(x.id, mapaU) })]))));
     return;
   }
@@ -91,7 +91,7 @@ export async function renderVista(contenedor) {
       const esImg = /^image\/(png|jpe?g|gif|webp|svg\+xml)$/.test(f.type);
       if (!esImg && f.type !== 'application/pdf') throw new Error('Subí una imagen (PNG, JPG, SVG) o un PDF.');
       await repositorio.guardarArchivo({ entidad: 'Ubicacion', entidadId: ub.id, tipo: esImg ? 'plano' : 'otro', archivo: f, usuarioId: u.id });
-      if (!esImg) { toast('El PDF quedó adjunto a la ubicación, pero no se usa de fondo: subí una imagen o SVG.'); return; }
+      if (!esImg) { toast('El PDF quedó adjunto a la sede o sala, pero no se usa de fondo: subí una imagen o SVG.'); return; }
       toast('Plano cargado'); contenedor.textContent = ''; await renderVista(contenedor);
     } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo subir el plano.'); }
   };
@@ -109,7 +109,7 @@ export async function renderVista(contenedor) {
     btnUbicar.className = modoUbicar ? 'primario' : '';
     btnUbicar.textContent = modoUbicar ? 'Terminar de ubicar' : 'Ubicar';
     if (!src) {
-      zona.appendChild(estadoVacio('Esta ubicación todavía no tiene plano',
+      zona.appendChild(estadoVacio('Esta sede o sala todavía no tiene plano',
         'Subí una imagen o un SVG del plano (hasta 5 MB) con «Subir plano'
         + (puedeSubir ? '' : '» — pedíselo a quien modifica la organización') + '. Después ubicás sobre él los racks, puestos y access points. Un PDF se adjunta pero no se usa de fondo.', 'rack'));
       return;

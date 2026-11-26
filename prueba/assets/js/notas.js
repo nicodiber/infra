@@ -13,6 +13,7 @@ import { toast } from './marco.js';
 import { h, fmtFechaHora, hoyISO } from './utiles.js';
 import { COLECCION_DE_ENTIDAD, ROTULO_EQUIPO_TIPO } from './modelos.js';
 import { botonBaja, nombresUsuarios } from './credenciales.js';
+import { abrirAlta } from './altas.js';
 
 /** Hash de la ficha de cada entidad (null: no tiene ficha propia). @type {Object<string, string|null>} */
 const RUTA_FICHA = {
@@ -23,7 +24,7 @@ const RUTA_FICHA = {
 /** Etiqueta de tipo de cada entidad. @type {Object<string, string>} */
 const ROTULO_ENTIDAD = {
   Equipo: 'Equipo', Rack: 'Rack', Persona: 'Persona', CuentaDominio: 'Cuenta de dominio', Licencia: 'Licencia', MapeoDisco: 'Mapeo de disco',
-  Puesto: 'Puesto', Configuracion: 'Configuración', Credencial: 'Credencial', Vlan: 'VLAN', RedWifi: 'Red Wi-Fi', Ubicacion: 'Ubicación', EnlaceIsp: 'Enlace ISP'
+  Puesto: 'Puesto', Configuracion: 'Configuración', Credencial: 'Credencial', Vlan: 'VLAN', RedWifi: 'Red Wi-Fi', Ubicacion: 'Sede / sala', EnlaceIsp: 'Enlace ISP'
 };
 
 /**
@@ -80,10 +81,12 @@ export async function pintarNotas(contenedor, o) {
 
     contenedor.appendChild(h('div', { class: 'herr' }, [
       h('span', { class: 'mut', style: 'flex:1', text: 'Texto libre para documentar lo que no entra en un campo. Sin contraseñas ni claves: para eso están las Credenciales.' }),
-      modifica && editando !== 'nueva' ? h('button', { type: 'button', class: 'primario', text: 'Nueva nota', onclick: () => { editando = 'nueva'; error = ''; pintar(); } }) : null]));
+      modifica ? h('button', { type: 'button', class: 'primario', text: 'Nueva nota', onclick: async () => {
+        const creada = await abrirAlta('notas', { organizacion_id: org, valores: { entidad: o.entidad || null, entidad_id: o.entidadId || null } });
+        if (creada) { toast('Nota creada'); await pintar(); }
+      } }) : null]));
 
-    if (editando === 'nueva') contenedor.appendChild(formulario(null));
-    if (!lista.length && editando !== 'nueva') {
+    if (!lista.length) {
       contenedor.appendChild(h('div', { class: 'aviso' }, [h('div', { text: 'Todavía no hay notas acá.' }),
         modifica ? h('div', { class: 'mut', style: 'margin-top:6px', text: 'Usá «Nueva nota» para documentar, por ejemplo, cómo está armado el dominio o qué hay que hacer al reemplazar este equipo.' }) : null]));
       return;
@@ -100,7 +103,7 @@ export async function pintarNotas(contenedor, o) {
     }
   };
 
-  /** @param {any|null} n */
+  /** Edición de una nota existente (el alta de notas nuevas es `altas/notas.js`). @param {any} n */
   function formulario(n) {
     const titulo = /** @type {HTMLInputElement} */ (h('input', { 'aria-label': 'Título de la nota', placeholder: 'Título', style: 'width:100%', maxlength: '120' }));
     titulo.value = n ? n.nota_titulo : '';
@@ -119,7 +122,7 @@ export async function pintarNotas(contenedor, o) {
       } catch (e) { error = e instanceof Error ? e.message : 'No se pudo guardar.'; msg.textContent = error; msg.hidden = false; }
     };
     return h('div', { class: 'bloque t-nota', style: 'margin-bottom:10px' }, [
-      h('h3', { text: n ? 'Editar nota' : 'Nueva nota' }), titulo, h('div', { style: 'height:8px' }), cuerpo, msg,
+      h('h3', { text: 'Editar nota' }), titulo, h('div', { style: 'height:8px' }), cuerpo, msg,
       h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }),
         h('button', { type: 'button', text: 'Cancelar', onclick: () => { editando = null; error = ''; pintar(); } })])]);
   }

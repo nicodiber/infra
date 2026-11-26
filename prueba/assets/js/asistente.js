@@ -92,7 +92,7 @@ function ruta(coleccion, r) {
     case 'redes_wifi': return '#/wifi/' + r.id;
     case 'puestos': return '#/puesto/' + r.id;
     case 'puertos': return '#/equipo/' + (r.equipo_id) + '/puertos/' + (r.puerto_numero);
-    case 'ubicaciones': return '#/plano';
+    case 'ubicaciones': return '#/ubicacion/' + r.id;
     case 'personas': return '#/persona/' + r.id;
     case 'cuentas_dominio': return '#/cuenta/' + r.id;
     case 'licencias': return '#/licencia/' + r.id;
@@ -217,7 +217,7 @@ const CATALOGO = {
   licencias: { titulo: 'Licencias excedidas o vencidas', ejemplos: ['¿Qué licencias están excedidas o vencidas?', '¿Nos pasamos con las licencias de {Office}?'], claves: ['licenc', 'excedid', 'pasamos', 'sobran', 'vencid'] },
   sin_verificar: { titulo: 'Datos sin verificar', ejemplos: ['¿Qué no se verificó hace más de un año?', '¿Hay algo que no revisamos hace mucho?', '¿Qué está sin controlar?'], claves: ['verific', 'revis', 'chequ', 'control', 'actualiz', 'antigu'] },
   contrasena: { titulo: 'Contraseñas y accesos', ejemplos: ['¿Cuál es la contraseña de {iDRAC SRV-AGRO-01}?', '¿Cómo entro a la iLO de {SRV-AGRO-01}?', '¿Usuario y clave del {router}?'], claves: ['contras', 'clave', 'pass', 'acceso', 'entro', 'entrar', 'acced', 'usuario', 'login', 'credenc'] },
-  ubicacion: { titulo: 'Dónde está algo', ejemplos: ['¿Dónde está {SRV-AGRO-01}?', '¿En qué rack está el {switch core}?', '¿Dónde queda la {PC-AGRO-001}?'], claves: ['ubic', 'queda', 'sala', 'sede', 'lugar', 'rack', 'edificio'] },
+  ubicacion: { titulo: 'Dónde está algo', ejemplos: ['¿Dónde está {SRV-AGRO-01}?', '¿En qué rack está el {switch core}?', '¿Dónde queda la {PC-AGRO-001}?'], claves: ['ubic', 'queda', 'sala', 'sede', 'lugar', 'rack', 'posicion'] },
   rack_contenido: { titulo: 'Contenido de un rack', ejemplos: ['¿Qué hay en el {rack principal}?', '¿Qué equipos tiene el rack {RACK-SRV-01}?', '¿Cuántas U libres tiene el rack {RACK-SRV-01}?'], claves: ['rack', 'unidad', 'libres', 'contenido', 'gabinete'] },
   vlan_info: { titulo: 'VLAN', ejemplos: ['¿Qué red tiene la VLAN {10}?', '¿Cuál es el gateway de la VLAN de {cámaras}?', '¿La VLAN {20} tiene DHCP?', '¿Qué VLAN hay?'], claves: ['vlan', 'gateway', 'dhcp', 'subred', 'cidr', 'rango', 'red'] },
   vlan_de: { titulo: 'VLAN de un equipo o puesto', ejemplos: ['¿En qué VLAN está {SRV-AGRO-01}?', '¿Qué VLAN usa el puesto {ADM-01}?'], claves: ['vlan'] },
@@ -578,7 +578,7 @@ function interpretar(pregunta) {
   // Conexión de un puesto
   if (puesto && /(conectad|conecta|puerto|boca|patch|switch|va\b|llega|enchufad|donde|cable)/.test(n)) return { intencion: 'conexion', objeto: '', puesto };
 
-  // Dónde está algo
+  // Dónde está algo («edificio» se sigue entendiendo como forma coloquial de decir sede; las respuestas hablan de sede y sala)
   if (/\b(en|a|de) que (rack|sala|sede|edificio|ubicacion|lugar|gabinete)\b/.test(n) || /\bdonde (esta|estan|queda|quedan|se encuentra|se encuentran|lo encuentro|la encuentro|ubico|tenemos|anda|andan)\b/.test(n) || /\b(ubicacion|ubicado|ubicada) (de|del)?\b/.test(n)) {
     // «¿Dónde está el rack principal?»: lo que se busca es el rack mismo.
     const esRack = /\bdonde\b/.test(n) && /\bracks?\b/.test(n) && !/\b(en|a|de) que racks?\b/.test(n);
@@ -988,13 +988,13 @@ async function hallarPersonas(ctx, palabras) {
   return res.map(r => porId.get(r.id)).filter(Boolean).map(p => ({ ...p, titulo: p.persona_nombre }));
 }
 
-/** Ubicación con sus padres, del hijo al padre («Sala de servidores · Edificio Administración»). @param {Map<string, any>} ubics @param {string|null|undefined} id */
+/** Sede y sala, de la sede a la sala («Planta Norte › Sala de servidores»); para una sede, solo su nombre (QC60). @param {Map<string, any>} ubics @param {string|null|undefined} id */
 function cadenaUbicacion(ubics, id) {
   /** @type {string[]} */
   const partes = [];
   let actual = id, vuelta = 0;
-  while (actual && vuelta++ < 5) { const u = ubics.get(actual); if (!u) break; partes.push(u.ubicacion_nombre); actual = u.ubicacion_padre_id; }
-  return partes.join(' · ');
+  while (actual && vuelta++ < 5) { const u = ubics.get(actual); if (!u) break; partes.unshift(u.ubicacion_nombre); actual = u.ubicacion_padre_id; }
+  return partes.join(' › ');
 }
 
 /** «U15–16» o «U15». @param {{rack_u_inicio: number|null, rack_u_alto: number|null}} e */
@@ -1140,7 +1140,7 @@ async function responderAyuda(ctx, _q) {
 /** @param {Ctx} ctx @param {Interpretacion} q @returns {Promise<Respuesta>} */
 async function responderUbicacion(ctx, q) {
   const palabras = q.objeto.split(' ').filter(hay);
-  if (!palabras.length) return aviso('¿De qué equipo, rack o puesto querés saber la ubicación? Por ejemplo: «¿Dónde está SRV-AGRO-01?».');
+  if (!palabras.length) return aviso('¿De qué equipo, rack o puesto querés saber dónde está? Por ejemplo: «¿Dónde está SRV-AGRO-01?».');
   if (q.campo === 'rack') {
     if (!ctx.veo('racks', ctx.org)) return sinPermiso('los racks');
     const [racks, equipos, ubics] = await Promise.all([ctx.listar('racks'), ctx.listar('equipos'), ctx.listar('ubicaciones')]);
@@ -1149,8 +1149,8 @@ async function responderUbicacion(ctx, q) {
     if (elegidos.length) return { grupos: [grupo(intro + (elegidos.length === 1 ? 'El rack está en:' : 'Estos racks coinciden:'), elegidos.map(k => ({ partes: [{ t: k.rack_nombre, href: ruta('racks', k) }], detalle: unir(cadenaUbicacion(ub, k.ubicacion_id) || 'sin ubicación cargada', k.rack_unidades_total + ' U'), orgId: k.organizacion_id })))], enlace: atajo(ctx, 'racks', 'Ver los racks') };
     return { grupos: [{ texto: 'No encontré un rack «' + palabras.join(' ') + '» en lo que podés ver.' }], enlace: atajo(ctx, 'racks', 'Ver los racks') };
   }
-  const res = (await buscarFlexible(ctx, palabras)).filter(r => ['equipos', 'racks', 'puestos'].includes(r.coleccion));
-  if (!res.length) return { grupos: [{ texto: 'No encontré un equipo, rack o puesto para «' + palabras.join(' ') + '» en lo que podés ver.' }], enlace: atajo(ctx, 'racks', 'Ver los racks') };
+  const res = (await buscarFlexible(ctx, palabras)).filter(r => ['equipos', 'racks', 'puestos', 'ubicaciones'].includes(r.coleccion));
+  if (!res.length) return { grupos: [{ texto: 'No encontré un equipo, rack, puesto, sede o sala para «' + palabras.join(' ') + '» en lo que podés ver.' }], enlace: atajo(ctx, 'racks', 'Ver los racks') };
   const [equipos, racks, puestos, ubics] = await Promise.all([ctx.listar('equipos'), ctx.listar('racks'), ctx.listar('puestos'), ctx.listar('ubicaciones')]);
   const ub = new Map(ubics.map(u => [u.id, u]));
   /** @type {Item[]} */
@@ -1163,16 +1163,20 @@ async function responderUbicacion(ctx, q) {
       const pu = e.puesto_id ? puestos.find(x => x.id === e.puesto_id) : null;
       /** @type {Parte[]} */
       const partes = [{ t: e.equipo_nombre, href: ruta('equipos', e) }];
-      if (rack) partes.push(parteSi(ctx, 'racks', rack.organizacion_id, rack.rack_nombre + ' · ' + rangoU(e), ruta('racks', rack)));
+      const lugar = cadenaUbicacion(ub, (rack && rack.ubicacion_id) || e.ubicacion_id || (pu && pu.ubicacion_id));
+      // «Sede › Sala › Rack › Posición (U)»: el tramo del rack es un enlace al rack.
+      if (rack) partes.push(parteSi(ctx, 'racks', rack.organizacion_id, [lugar, rack.rack_nombre, rangoU(e)].filter(Boolean).join(' › '), ruta('racks', rack)));
       if (pu) partes.push(parteSi(ctx, 'red', pu.organizacion_id, 'puesto ' + pu.puesto_nombre, ruta('puestos', pu)));
-      const lugar = cadenaUbicacion(ub, e.ubicacion_id || (rack && rack.ubicacion_id) || (pu && pu.ubicacion_id));
-      items.push({ partes, detalle: lugar || (rack || pu ? undefined : 'No tiene una ubicación cargada.'), orgId: e.organizacion_id });
+      items.push({ partes, detalle: rack ? undefined : lugar || (pu ? undefined : 'No tiene una sede o sala cargada.'), orgId: e.organizacion_id });
     } else if (r.coleccion === 'racks') {
       const k = racks.find(x => x.id === r.id);
       if (k) items.push({ partes: [{ t: k.rack_nombre, href: ruta('racks', k) }], detalle: unir(cadenaUbicacion(ub, k.ubicacion_id), k.rack_unidades_total + ' U'), orgId: k.organizacion_id });
+    } else if (r.coleccion === 'ubicaciones') {
+      const u = ub.get(r.id);
+      if (u) items.push({ partes: [{ t: (u.ubicacion_tipo === 'sede' ? 'Sede ' : 'Sala ') + u.ubicacion_nombre, href: ruta('ubicaciones', u) }], detalle: u.ubicacion_tipo === 'sala' ? cadenaUbicacion(ub, u.id) : 'Es una sede de la organización.', orgId: u.organizacion_id });
     } else {
       const p = puestos.find(x => x.id === r.id);
-      if (p) items.push({ partes: [{ t: 'Puesto ' + p.puesto_nombre, href: ruta('puestos', p) }], detalle: cadenaUbicacion(ub, p.ubicacion_id) || 'No tiene una ubicación cargada.', orgId: p.organizacion_id });
+      if (p) items.push({ partes: [{ t: 'Puesto ' + p.puesto_nombre, href: ruta('puestos', p) }], detalle: cadenaUbicacion(ub, p.ubicacion_id) || 'No tiene una sede o sala cargada.', orgId: p.organizacion_id });
     }
   }
   if (!items.length) return aviso('No encontré la ubicación de «' + palabras.join(' ') + '».');
@@ -1413,7 +1417,7 @@ async function responderListarTipo(ctx, q) {
   lista.sort((a, b) => a.equipo_nombre.localeCompare(b.equipo_nombre, 'es', { numeric: true }));
   const atajoT = atajo(ctx, t.pantalla.replace('#/', ''), 'Ver ' + (t.pantalla === '#/servidores' ? 'los servidores' : t.pantalla === '#/escritorio' ? 'los equipos de escritorio' : 'la red'));
   if (!lista.length) return { grupos: [{ texto: 'No hay ' + t.rotulo + ' cargados en lo que podés ver.' }], enlace: atajoT };
-  const items = lista.map(e => item(e.equipo_nombre, ruta('equipos', e), unir(marcaModelo(e), cadenaUbicacion(ub, e.ubicacion_id).split(' · ')[0], e.equipo_ip_gestion), e.organizacion_id));
+  const items = lista.map(e => item(e.equipo_nombre, ruta('equipos', e), unir(marcaModelo(e), cadenaUbicacion(ub, e.ubicacion_id).split(' › ').pop(), e.equipo_ip_gestion), e.organizacion_id));
   /** @type {Respuesta} */
   const r = { grupos: [grupo('Hay ' + lista.length + ' ' + t.rotulo + ':', items)], enlace: atajoT };
   if (nota) r.nota = nota;
@@ -1431,7 +1435,7 @@ async function responderSinAsignar(ctx, q) {
   const propios = equipos.filter(e => esDeTipo(e, t.clave) && e.equipo_estado !== 'baja' && ctx.veo(moduloDe('equipos', e), e.organizacion_id));
   const enDeposito = propios.filter(e => e.equipo_estado === 'en_deposito');
   const sinDueno = verAsignaciones && q.filtro !== 'deposito' ? propios.filter(e => e.equipo_estado !== 'en_deposito' && !asigs.some(a => a.equipo_id === e.id && !a.asignacion_hasta)) : [];
-  const fila = (/** @type {any} */ e, /** @type {string} */ det) => item(e.equipo_nombre, ruta('equipos', e), unir(det, marcaModelo(e), cadenaUbicacion(ub, e.ubicacion_id).split(' · ')[0]), e.organizacion_id);
+  const fila = (/** @type {any} */ e, /** @type {string} */ det) => item(e.equipo_nombre, ruta('equipos', e), unir(det, marcaModelo(e), cadenaUbicacion(ub, e.ubicacion_id).split(' › ').pop()), e.organizacion_id);
   /** @type {Grupo[]} */
   const grupos = [];
   grupos.push(enDeposito.length ? grupo('En depósito (' + enDeposito.length + '):', enDeposito.map(e => fila(e, 'en depósito'))) : { texto: 'No hay ' + t.rotulo + ' en depósito.' });
@@ -1851,7 +1855,7 @@ const INSTRUCCIONES_IA = 'Sos un clasificador de preguntas de un sistema de docu
   'Intenciones: ip (qué IP tiene un equipo; objeto = nombre o descripción del equipo), conexion (a qué puerto, boca o switch está conectado un equipo o un puesto; objeto = equipo, o puesto = número o nombre del puesto), ' +
   'vence (qué vence; dias = cantidad de días de la ventana, 0 si no se indica), asignado_a (a quién está asignado un equipo; objeto = equipo), equipos_de (qué equipos tiene una persona; objeto = nombre de la persona), ' +
   'licencias (licencias excedidas o vencidas; filtro; objeto = producto si lo nombra), sin_verificar (qué no se verificó hace más de cierto tiempo; dias = días), contrasena (contraseña, clave o cómo entrar a algo; objeto = de qué), ' +
-  'ubicacion (dónde está un equipo, rack o puesto; objeto), rack_contenido (qué equipos hay en un rack o cuántas U libres; objeto = rack), vlan_info (datos de una VLAN: red, gateway, DHCP; numero = número de VLAN, objeto = nombre, campo = gateway|dhcp|rango|red), ' +
+  'ubicacion (dónde está un equipo, rack, puesto, sede o sala; objeto), rack_contenido (qué equipos hay en un rack o cuántas U libres; objeto = rack), vlan_info (datos de una VLAN: red, gateway, DHCP; numero = número de VLAN, objeto = nombre, campo = gateway|dhcp|rango|red), ' +
   'vlan_de (en qué VLAN está un equipo o puesto; objeto o puesto), wifi (redes Wi-Fi; objeto = nombre de la red; campo = clave si pregunta por la clave), internet (proveedor de Internet, IP pública, número de cliente, soporte; campo = ip_publica|cliente|soporte|velocidad|proveedor), ' +
   'dato_equipo (un dato de un equipo; objeto = equipo, campo = marca|modelo|serie|mac|so|ram|cpu|almacenamiento|virtualizacion|rol|firmware|garantia|estado|codigo), listar_tipo (listar o contar equipos de un tipo; tipo = servidor|switch|router|firewall|access_point|patchera|ups|notebook|pc|impresora|nas|reloj|hmi|balanza|nvr|computadoras), ' +
   'sin_asignar (equipos sin persona o en depósito; tipo opcional), cuenta_de (cuentas o usuario de dominio de una persona, o de quién es una cuenta; objeto), persona_info (sector o puesto de una persona, quién está en un puesto o quiénes son de un sector; objeto, puesto, campo = persona|sector|puesto), ' +
@@ -1967,6 +1971,10 @@ async function preguntar(pregunta) {
       origen = interp ? 'Entendida por la IA del navegador' : 'Búsqueda por palabras: ni la IA del navegador reconoció la pregunta';
     }
     const r = interp ? await RESPONDEDORES[interp.intencion](ctx, interp) : await responderNoReconocida(ctx, q);
+    try {
+      const conItems = r.grupos.some(g => g.items && g.items.length > 0);
+      window.dispatchEvent(new CustomEvent('infradoc:metrica', { detail: { tipo: 'asistente_pregunta', detalle: { texto: q, comoSeEntendio: origen, intencion: interp ? interp.intencion : null, entendida: !!interp, conResultados: conItems } } }));
+    } catch { /* las métricas nunca rompen el asistente */ }
     const nuevo = pintarRespuesta(r, ctx.orgs, !!ctx.org);
     nuevo.appendChild(h('p', { class: 'as-origen', text: origen }));
     espera.replaceWith(nuevo);

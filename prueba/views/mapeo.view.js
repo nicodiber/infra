@@ -11,6 +11,8 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { h, tabla, fmtFechaHora, hoyISO } from '../assets/js/utiles.js';
 import { ROTULO_MAPEO_APLICA_A, ROTULO_MAPEO_METODO } from '../assets/js/modelos.js';
+import { selectorConCrear } from '../assets/js/altas.js';
+import { altaDesdeRuta, opcionesEquipos, opcionesPersonas } from '../assets/js/altas/comunes.js';
 import { sinPermiso, enlaceEquipo, pestanas, campo, fichaCab, botonBaja, valorHistorial } from '../assets/js/credenciales.js';
 
 /** @type {Object<string, string>} */
@@ -25,11 +27,12 @@ export async function renderVista(contenedor) {
   let tab = ['historial', 'relaciones', 'archivos'].includes(partes[2]) ? partes[2] : 'resumen';
   const migas = await migasRaiz();
   migas.push(['Configuraciones', '#/configuraciones'], ['Mapeos de discos', '#/configuraciones/mapeos']);
+  if (nuevo) { await altaDesdeRuta('mapeos_disco', '#/configuraciones/mapeos', r => '#/mapeo/' + r.id, 'Mapeo creado'); return; }
 
   /** @type {any} */
   let m = null;
   let orgId = /** @type {string} */ (sesion.organizacionActiva());
-  if (!nuevo) {
+  {
     m = await repositorio.obtener('mapeos_disco', idHash);
     if (!m) {
       pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de mapeo de disco', migas: migas.concat([['No encontrado']]) });
@@ -38,21 +41,20 @@ export async function renderVista(contenedor) {
     }
     orgId = m.organizacion_id;
   }
-  if (!puede(u, nuevo ? 'modificar' : 'ver', 'configuraciones', orgId)) {
-    pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de mapeo de disco', migas: migas.concat([[nuevo ? 'Nuevo' : 'Ficha']]) });
-    sinPermiso(contenedor, u, nuevo ? 'cargar mapeos de discos' : 'Configuraciones');
+  if (!puede(u, 'ver', 'configuraciones', orgId)) {
+    pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de mapeo de disco', migas: migas.concat([['Ficha']]) });
+    sinPermiso(contenedor, u, 'Configuraciones');
     return;
   }
   const modifica = puede(u, 'modificar', 'configuraciones', orgId);
   const verPersonas = puede(u, 'ver', 'personas', orgId);
-  let editando = nuevo || partes[2] === 'editar';
-  if (editando && !nuevo && !modifica) editando = false;
+  let editando = partes[2] === 'editar';
+  if (editando && !modifica) editando = false;
   let error = '';
   /** @type {any} */
   let ed = null;
   const iniciarEd = () => {
-    ed = m ? { letra: m.mapeo_letra, ruta: m.mapeo_ruta, equipo: m.equipo_id || '', aplica: m.mapeo_aplica_a, grupo: m.mapeo_grupo || '', persona: m.persona_id || '', metodo: m.mapeo_metodo }
-      : { letra: '', ruta: '', equipo: '', aplica: 'todos', grupo: '', persona: '', metodo: 'gpo' };
+    ed = { letra: m.mapeo_letra, ruta: m.mapeo_ruta, equipo: m.equipo_id || '', aplica: m.mapeo_aplica_a, grupo: m.mapeo_grupo || '', persona: m.persona_id || '', metodo: m.mapeo_metodo };
   };
   if (editando) iniciarEd();
   const rerender = async () => { if (m) m = (await repositorio.obtener('mapeos_disco', m.id)) || m; await pintar(); };
@@ -66,8 +68,8 @@ export async function renderVista(contenedor) {
     const nombreUsuario = new Map(usuarios.map(x => [x.id, x.usuario_nombre]));
     const equipoPorId = new Map(equipos.map(e => [e.id, e]));
     const personaPorId = new Map(personas.map(p => [p.id, p]));
-    const titulo = nuevo ? 'Nuevo mapeo de disco' : m.mapeo_letra + ' ' + m.mapeo_ruta;
-    pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de mapeo de disco', migas: migas.concat([[nuevo ? 'Nuevo' : m.mapeo_letra, !nuevo && tab !== 'resumen' ? '#/mapeo/' + m.id : undefined]]).concat(!nuevo && tab === 'historial' ? [['Historial']] : []) });
+    const titulo = m.mapeo_letra + ' ' + m.mapeo_ruta;
+    pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de mapeo de disco', migas: migas.concat([[m.mapeo_letra, tab !== 'resumen' ? '#/mapeo/' + m.id : undefined]]).concat(tab === 'historial' ? [['Historial']] : []) });
 
     const datos = h('div', { class: 'datos' });
     if (editando) {
@@ -84,12 +86,14 @@ export async function renderVista(contenedor) {
       };
       datos.appendChild(campo('Letra de unidad', inp('letra', 'Letra de unidad', { maxlength: '2', placeholder: 'P:', style: 'width:80px' })));
       datos.appendChild(campo('Ruta de red', inp('ruta', 'Ruta de red', { placeholder: '\\\\SERVIDOR\\Carpeta' })));
-      datos.appendChild(campo('Servidor que la comparte', sel('equipo', 'Servidor', /** @type {Array<[string, string]>} */ ([['', 'Sin servidor documentado']]).concat(equipos.filter(e => e.equipo_tipo === 'servidor').map(e => /** @type {[string, string]} */ ([e.id, e.equipo_nombre]))))));
+      datos.appendChild(campo('Servidor que la comparte', selectorConCrear({ desde: 'mapeos_disco', campo: 'equipo_id', organizacion_id: orgId, valor: ed.equipo || null, etiqueta: 'Servidor',
+        cargarOpciones: () => opcionesEquipos(orgId, { filtro: e => e.equipo_tipo === 'servidor' }), valoresAlta: { equipo_tipo: 'servidor' }, rotuloOrigen: 'Editar mapeo', alCambiar: v => { ed.equipo = v; } })));
       datos.appendChild(campo('Se aplica a', sel('aplica', 'Se aplica a', Object.keys(ROTULO_MAPEO_APLICA_A).map(k => /** @type {[string, string]} */ ([k, ROTULO_MAPEO_APLICA_A[k]])))));
       if (ed.aplica === 'grupo') datos.appendChild(campo('Grupo de dominio', inp('grupo', 'Grupo de dominio', { placeholder: 'GG-Compras' })));
       if (ed.aplica === 'persona') {
         datos.appendChild(campo('Persona', verPersonas
-          ? sel('persona', 'Persona', /** @type {Array<[string, string]>} */ ([['', 'Elegí una persona…']]).concat(personas.filter(p => p.persona_estado === 'activa' || p.id === ed.persona).map(p => /** @type {[string, string]} */ ([p.id, p.persona_nombre]))))
+          ? selectorConCrear({ desde: 'mapeos_disco', campo: 'persona_id', organizacion_id: orgId, valor: ed.persona || null, etiqueta: 'Persona', obligatorio: true,
+            cargarOpciones: () => opcionesPersonas(orgId, { soloActivas: true }), rotuloOrigen: 'Editar mapeo', alCambiar: v => { ed.persona = v; } })
           : h('span', { class: 'mut', text: 'Tu rol no ve el módulo Personas: elegí otro destino o pedile a alguien que lo cargue.' })));
       }
       datos.appendChild(campo('Método', sel('metodo', 'Método', Object.keys(ROTULO_MAPEO_METODO).map(k => /** @type {[string, string]} */ ([k, ROTULO_MAPEO_METODO[k]])))));
@@ -110,23 +114,20 @@ export async function renderVista(contenedor) {
       if (ed.aplica === 'grupo' && !ed.grupo.trim()) { error = 'Indicá el grupo de dominio al que se aplica.'; await pintar(); return; }
       if (ed.aplica === 'persona' && !ed.persona) { error = 'Elegí la persona a la que se aplica.'; await pintar(); return; }
       try {
-        const base = nuevo ? { organizacion_id: orgId } : m;
-        const g = await repositorio.guardar('mapeos_disco', { ...base, mapeo_letra: letra.length === 1 ? letra + ':' : letra, mapeo_ruta: ed.ruta.trim(), equipo_id: ed.equipo || null, mapeo_aplica_a: ed.aplica,
+        await repositorio.guardar('mapeos_disco', { ...m, mapeo_letra: letra.length === 1 ? letra + ':' : letra, mapeo_ruta: ed.ruta.trim(), equipo_id: ed.equipo || null, mapeo_aplica_a: ed.aplica,
           mapeo_grupo: ed.aplica === 'grupo' ? ed.grupo.trim() : null, persona_id: ed.aplica === 'persona' ? ed.persona : null, mapeo_metodo: ed.metodo }, u.id);
-        toast(nuevo ? 'Mapeo creado' : 'Cambios guardados · verificado hoy (' + hoyISO().split('-').reverse().join('/') + ')');
+        toast('Cambios guardados · verificado hoy (' + hoyISO().split('-').reverse().join('/') + ')');
         ed = null; error = '';
-        if (nuevo) { ir('#/mapeo/' + g.id); return; }
         editando = false; await rerender();
       } catch (e) { error = e instanceof Error ? e.message : 'No se pudo guardar.'; await pintar(); }
     };
     const botones = editando
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }),
-        h('button', { type: 'button', text: 'Cancelar', onclick: () => { ed = null; error = ''; if (nuevo) ir('#/configuraciones/mapeos'); else { editando = false; pintar(); } } })]
+        h('button', { type: 'button', text: 'Cancelar', onclick: () => { ed = null; error = ''; editando = false; pintar(); } })]
       : [modifica ? h('button', { type: 'button', text: 'Editar', onclick: () => { iniciarEd(); error = ''; editando = true; pintar(); } }) : null,
-        nuevo ? null : await botonBaja({ u, coleccion: 'mapeos_disco', registro: m, modulo: 'configuraciones', orgId, nombre: m.mapeo_letra + ' ' + m.mapeo_ruta, volver: '#/configuraciones/mapeos', rerender })];
-    contenedor.appendChild(fichaCab({ tipo: 'configuracion', etiqueta: 'mapeo de disco', titulo, datos, botones, modoEdicion: editando, registro: nuevo ? null : m,
+        await botonBaja({ u, coleccion: 'mapeos_disco', registro: m, modulo: 'configuraciones', orgId, nombre: m.mapeo_letra + ' ' + m.mapeo_ruta, volver: '#/configuraciones/mapeos', rerender })];
+    contenedor.appendChild(fichaCab({ tipo: 'configuracion', etiqueta: 'mapeo de disco', titulo, datos, botones, modoEdicion: editando, registro: m,
       coleccion: 'mapeos_disco', modulo: 'configuraciones', u, orgId, umbrales, usuarios: nombreUsuario, rerender }));
-    if (nuevo) return;
 
     /** @type {Array<[string, string]>} */
     const tabs = [['resumen', 'Cómo se aplica'], ['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']];

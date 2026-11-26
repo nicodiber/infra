@@ -10,6 +10,8 @@ import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { h, tabla, fmtFecha, fmtFechaHora } from '../assets/js/utiles.js';
 import { ROTULO_CONFIGURACION_TIPO, ROTULO_CREDENCIAL_TIPO } from '../assets/js/modelos.js';
+import { selectorConCrear } from '../assets/js/altas.js';
+import { altaDesdeRuta, opcionesEquipos, nombreDeCopia, duplicar, crearYAbrir } from '../assets/js/altas/comunes.js';
 import { sinPermiso, enlaceEquipo, pestanas, campo, fichaCab, botonBaja, rotuloCampo, valorHistorial } from '../assets/js/credenciales.js';
 
 const NAT = 'nat_reenvio_puertos';
@@ -23,11 +25,12 @@ export async function renderVista(contenedor) {
   let tab = ['contenido', 'reglas', 'credenciales', 'relaciones', 'archivos', 'historial'].includes(partes[2]) ? partes[2] : 'contenido';
   const migas = await migasRaiz();
   migas.push(['Configuraciones', '#/configuraciones']);
+  if (nuevo) { await altaDesdeRuta('configuraciones', '#/configuraciones', r => '#/config/' + r.id, 'Configuración creada'); return; }
 
   /** @type {any} */
   let c = null;
   let orgId = /** @type {string} */ (sesion.organizacionActiva());
-  if (!nuevo) {
+  {
     c = await repositorio.obtener('configuraciones', idHash);
     if (!c) {
       pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de configuración', migas: migas.concat([['No encontrada']]) });
@@ -36,9 +39,9 @@ export async function renderVista(contenedor) {
     }
     orgId = c.organizacion_id;
   }
-  if (!puede(u, nuevo ? 'modificar' : 'ver', 'configuraciones', orgId)) {
-    pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de configuración', migas: migas.concat([[nuevo ? 'Nueva' : 'Ficha']]) });
-    sinPermiso(contenedor, u, nuevo ? 'cargar configuraciones' : 'Configuraciones');
+  if (!puede(u, 'ver', 'configuraciones', orgId)) {
+    pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de configuración', migas: migas.concat([['Ficha']]) });
+    sinPermiso(contenedor, u, 'Configuraciones');
     return;
   }
 
@@ -49,22 +52,21 @@ export async function renderVista(contenedor) {
   const equipoPorId = new Map(equipos.map(e => [e.id, e]));
   const rotuloTipo = (/** @type {string} */ t) => ROTULO_CONFIGURACION_TIPO[t] || t;
 
-  let editando = nuevo || partes[2] === 'editar';
-  if (editando && !nuevo && !puede(u, 'modificar', 'configuraciones', orgId)) editando = false;
+  let editando = partes[2] === 'editar';
+  if (editando && !puede(u, 'modificar', 'configuraciones', orgId)) editando = false;
   /** @type {any} */
   let ed = null;
   const iniciarEd = () => {
-    ed = c ? { titulo: c.configuracion_titulo, tipo: c.configuracion_tipo, equipo: c.equipo_id || '', fecha: c.configuracion_version_fecha || '', notas: c.configuracion_notas || '',
-      contenido: c.configuracion_contenido || '', datos: structuredClone(c.configuracion_datos || []) }
-      : { titulo: '', tipo: 'general', equipo: '', fecha: '', notas: '', contenido: '', datos: [] };
+    ed = { titulo: c.configuracion_titulo, tipo: c.configuracion_tipo, equipo: c.equipo_id || '', fecha: c.configuracion_version_fecha || '', notas: c.configuracion_notas || '',
+      contenido: c.configuracion_contenido || '', datos: structuredClone(c.configuracion_datos || []) };
   };
   if (editando) iniciarEd();
   const rerender = async () => { if (c) c = (await repositorio.obtener('configuraciones', c.id)) || c; await pintar(); };
 
   async function pintar() {
     contenedor.textContent = '';
-    const titulo = nuevo ? 'Nueva configuración' : c.configuracion_titulo;
-    pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de configuración', migas: migas.concat([[titulo, !nuevo && tab !== 'contenido' ? '#/config/' + c.id : undefined]]).concat(tab === 'contenido' ? [] : [[{ reglas: 'Reglas', credenciales: 'Credenciales vinculadas', historial: 'Historial' }[/** @type {'reglas'|'credenciales'|'historial'} */ (tab)]]]) });
+    const titulo = c.configuracion_titulo;
+    pantalla(contenedor, { codigo: 'P10', nombre: 'Ficha de configuración', migas: migas.concat([[titulo, tab !== 'contenido' ? '#/config/' + c.id : undefined]]).concat(tab === 'contenido' ? [] : [[{ reglas: 'Reglas', credenciales: 'Credenciales vinculadas', historial: 'Historial' }[/** @type {'reglas'|'credenciales'|'historial'} */ (tab)]]]) });
     const puedeModificar = puede(u, 'modificar', 'configuraciones', orgId);
 
     // ---- resumen
@@ -74,8 +76,8 @@ export async function renderVista(contenedor) {
       t.addEventListener('input', () => { ed.titulo = t.value; });
       const selT = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Tipo' }, Object.keys(ROTULO_CONFIGURACION_TIPO).map(k => h('option', { value: k, text: ROTULO_CONFIGURACION_TIPO[k], selected: k === ed.tipo ? 'selected' : null }))));
       selT.addEventListener('change', () => { ed.tipo = selT.value; pintar(); });
-      const selE = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Equipo' }, [h('option', { value: '', text: 'Sin equipo' })].concat(equipos.map(e => h('option', { value: e.id, text: e.equipo_nombre, selected: e.id === ed.equipo ? 'selected' : null })))));
-      selE.addEventListener('change', () => { ed.equipo = selE.value; });
+      const selE = selectorConCrear({ desde: 'configuraciones', campo: 'equipo_id', organizacion_id: orgId, valor: ed.equipo || null, etiqueta: 'Equipo',
+        cargarOpciones: () => opcionesEquipos(orgId), rotuloOrigen: 'Editar configuración', alCambiar: v => { ed.equipo = v; } });
       const f = /** @type {HTMLInputElement} */ (h('input', { type: 'date', value: ed.fecha, 'aria-label': 'Fecha de la versión' }));
       f.addEventListener('input', () => { ed.fecha = f.value; });
       const n = /** @type {HTMLInputElement} */ (h('input', { value: ed.notas, 'aria-label': 'Notas' }));
@@ -99,33 +101,38 @@ export async function renderVista(contenedor) {
         }
       }
       try {
-        const reg = { ...(nuevo ? { organizacion_id: orgId } : c), configuracion_titulo: ed.titulo.trim(), configuracion_tipo: ed.tipo, equipo_id: ed.equipo || null,
+        const reg = { ...c, configuracion_titulo: ed.titulo.trim(), configuracion_tipo: ed.tipo, equipo_id: ed.equipo || null,
           configuracion_version_fecha: ed.fecha || null, configuracion_notas: ed.notas.trim() || null, configuracion_contenido: ed.contenido,
-          configuracion_datos: filas ? filas.map((/** @type {any} */ r) => ({ protocolo: r.protocolo || 'tcp', puerto_externo: Number(r.puerto_externo), ip_destino: String(r.ip_destino).trim(), puerto_destino: Number(r.puerto_destino), descripcion: String(r.descripcion || '').trim() })) : (nuevo ? null : c.configuracion_datos) };
+          configuracion_datos: filas ? filas.map((/** @type {any} */ r) => ({ protocolo: r.protocolo || 'tcp', puerto_externo: Number(r.puerto_externo), ip_destino: String(r.ip_destino).trim(), puerto_destino: Number(r.puerto_destino), descripcion: String(r.descripcion || '').trim() })) : c.configuracion_datos };
         const g = await repositorio.guardar('configuraciones', reg, u.id);
-        toast(nuevo ? 'Configuración creada' : 'Cambios guardados · verificado hoy');
-        if (nuevo) { ir('#/config/' + g.id); return; }
+        toast('Cambios guardados · verificado hoy');
         editando = false; ed = null; await rerender();
       } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo guardar.'); }
     };
     const botones = editando
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }),
-        h('button', { type: 'button', text: 'Cancelar', onclick: () => { if (nuevo) ir('#/configuraciones'); else { editando = false; ed = null; pintar(); } } })]
+        h('button', { type: 'button', text: 'Cancelar', onclick: () => { editando = false; ed = null; pintar(); } })]
       : [puedeModificar ? h('button', { type: 'button', text: 'Editar', onclick: () => { iniciarEd(); editando = true; pintar(); } }) : null,
-        nuevo ? null : await botonBaja({ u, coleccion: 'configuraciones', registro: c, modulo: 'configuraciones', orgId, nombre: c.configuracion_titulo, volver: '#/configuraciones', rerender })];
-    contenedor.appendChild(fichaCab({ tipo: 'configuracion', etiqueta: 'configuración', titulo, datos, botones, modoEdicion: editando, registro: nuevo ? null : c,
+        puedeModificar ? h('button', { type: 'button', text: 'Duplicar', title: 'Abre el alta con estos datos para cargar una parecida', onclick: async () => {
+          const otras = await repositorio.listar('configuraciones', { organizacion_id: orgId });
+          await duplicar('configuraciones', c, { configuracion_titulo: nombreDeCopia(c.configuracion_titulo, otras.map(x => x.configuracion_titulo)), configuracion_tipo: c.configuracion_tipo,
+            equipo_id: c.equipo_id, configuracion_version_fecha: c.configuracion_version_fecha, configuracion_notas: c.configuracion_notas, configuracion_contenido: c.configuracion_contenido,
+            configuracion_datos: structuredClone(c.configuracion_datos || []) }, r => '#/config/' + r.id, 'Configuración');
+        } }) : null,
+        await botonBaja({ u, coleccion: 'configuraciones', registro: c, modulo: 'configuraciones', orgId, nombre: c.configuracion_titulo, volver: '#/configuraciones', rerender })];
+    contenedor.appendChild(fichaCab({ tipo: 'configuracion', etiqueta: 'configuración', titulo, datos, botones, modoEdicion: editando, registro: c,
       coleccion: 'configuraciones', modulo: 'configuraciones', u, orgId, umbrales, usuarios: nombreUsuario, rerender }));
 
     // ---- pestañas
-    const credsVinc = nuevo ? [] : await repositorio.listar('credenciales', { organizacion_id: orgId, configuracion_id: c.id });
+    const credsVinc = await repositorio.listar('credenciales', { organizacion_id: orgId, configuracion_id: c.id });
     const nReglas = (editando ? ed.datos : c.configuracion_datos || []).length;
     const verHist = puede(u, 'ver_historial', 'configuraciones', orgId);
     const tabs = /** @type {Array<[string, string]>} */ ([['contenido', 'Contenido'], ['reglas', 'Reglas (' + nReglas + ')']]);
     if (puede(u, 'ver', 'credenciales', orgId)) tabs.push(['credenciales', 'Credenciales vinculadas (' + credsVinc.length + ')']);
-    if (!nuevo) tabs.push(['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']);
-    if (verHist && !nuevo) tabs.push(['historial', 'Historial']);
+    tabs.push(['relaciones', 'Relacionado con'], ['archivos', 'Fotos y archivos']);
+    if (verHist) tabs.push(['historial', 'Historial']);
     if (!tabs.some(t => t[0] === tab)) tab = 'contenido';
-    contenedor.appendChild(pestanas(tabs, tab, k => { tab = k; if (!nuevo) history.replaceState(null, '', '#/config/' + c.id + '/' + k); pintar(); }));
+    contenedor.appendChild(pestanas(tabs, tab, k => { tab = k; history.replaceState(null, '', '#/config/' + c.id + '/' + k); pintar(); }));
     const cuerpo = h('div');
     contenedor.appendChild(cuerpo);
     if (tab === 'contenido') cuerpo.appendChild(await bloqueContenido());
@@ -195,8 +202,10 @@ export async function renderVista(contenedor) {
 
   /** @param {any[]} lista */
   function bloqueCredenciales(lista) {
-    if (!lista.length) return h('div', { class: 'mut', text: 'Ninguna credencial está vinculada a esta configuración. Se vinculan desde la ficha de cada credencial.' });
-    return h('div', null, [tabla(['Nombre', 'Tipo', 'Usuario', 'Último cambio'], lista.map(x => [h('a', { href: '#/credencial/' + x.id, text: x.credencial_nombre }), ROTULO_CREDENCIAL_TIPO[x.credencial_tipo] || x.credencial_tipo, x.credencial_usuario || '—', fmtFecha(x.actualizado_en)])),
+    const nueva = puede(u, 'modificar', 'credenciales', orgId) ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva credencial para esta configuración',
+      onclick: () => crearYAbrir('credenciales', r => '#/credencial/' + r.id, { valores: { configuracion_id: c.id, equipo_id: c.equipo_id }, aviso: 'Credencial creada' }) })]) : null;
+    if (!lista.length) return h('div', null, [h('div', { class: 'mut', text: 'Ninguna credencial está vinculada a esta configuración. Cargá una con el botón o vinculala desde la ficha de la credencial.' }), nueva]);
+    return h('div', null, [nueva, tabla(['Nombre', 'Tipo', 'Usuario', 'Último cambio'], lista.map(x => [h('a', { href: '#/credencial/' + x.id, text: x.credencial_nombre }), ROTULO_CREDENCIAL_TIPO[x.credencial_tipo] || x.credencial_tipo, x.credencial_usuario || '—', fmtFecha(x.actualizado_en)])),
       h('div', { class: 'mut', style: 'margin-top:6px', text: 'Las contraseñas no se muestran acá: se ven desde la ficha de cada credencial.' })]);
   }
 

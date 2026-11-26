@@ -78,7 +78,7 @@ export async function renderVista(contenedor) {
 
   let ubicFiltro = '';
   let verAp = true;
-  const selUb = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Filtrar por ubicación' }, [h('option', { value: '', text: 'Toda la organización' })]));
+  const selUb = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Filtrar por sede o sala' }, [h('option', { value: '', text: 'Toda la organización' })]));
   const conEquipos = new Set(equipos.map(e => e.ubicacion_id).filter(Boolean));
   const relevantes = new Set();
   for (const id of conEquipos) { let a = mapaU.get(id), t = 0; while (a && t++ < 10) { relevantes.add(a.id); a = a.ubicacion_padre_id ? mapaU.get(a.ubicacion_padre_id) : null; } }
@@ -87,7 +87,7 @@ export async function renderVista(contenedor) {
   const chkAp = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: 'checked', id: 'tp-ap' }));
   selUb.addEventListener('change', () => { ubicFiltro = selUb.value; pintar(); });
   chkAp.addEventListener('change', () => { verAp = chkAp.checked; pintar(); });
-  contenedor.appendChild(h('div', { class: 'herr' }, [h('label', { for: 'tp-ub', text: 'Ubicación:' }), selUb, h('label', { for: 'tp-ap', style: 'display:inline-flex;gap:6px;align-items:center' }, [chkAp, 'Mostrar access points'])]));
+  contenedor.appendChild(h('div', { class: 'herr' }, [h('label', { for: 'tp-ub', text: 'Sede / sala:' }), selUb, h('label', { for: 'tp-ap', style: 'display:inline-flex;gap:6px;align-items:center' }, [chkAp, 'Mostrar access points'])]));
   selUb.id = 'tp-ub';
   const ley = h('div', { class: 'tp-leyenda', 'aria-label': 'Leyenda' });
   for (const k of ['router', 'firewall', 'switch', 'servidor', 'access_point']) {
@@ -158,7 +158,7 @@ export async function renderVista(contenedor) {
     };
     if (enl.length) crear('internet', 'internet', 'Internet', enl.length + (enl.length === 1 ? ' enlace' : ' enlaces'), '#/red/isp', 0);
     for (const e of nodosEq) crear(e.id, e.equipo_tipo, e.equipo_nombre, e.equipo_ip_gestion || TIPO[e.equipo_tipo].rotulo, rutaEquipo(e), /** @type {number} */ (nivel.get(e.id)));
-    if (nodos.length < 2) { zona.appendChild(estadoVacio('No hay equipos para dibujar con este filtro', 'Elegí otra ubicación o «Toda la organización».', 'red')); return; }
+    if (nodos.length < 2) { zona.appendChild(estadoVacio('No hay equipos para dibujar con este filtro', 'Elegí otra sede o sala o «Toda la organización».', 'red')); return; }
 
     // Aristas
     /** @type {Array<{a: any, b: any, pa: any[], pb: any[], isp?: any}>} */

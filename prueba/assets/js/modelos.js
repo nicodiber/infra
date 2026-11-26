@@ -44,9 +44,11 @@
  */
 
 /**
+ * Sede o sala (QC60, modelo 3). Una `sede` pertenece a la organización (`ubicacion_padre_id` null); una `sala` cuelga siempre
+ * de una sede de la misma organización.
  * @typedef {Comunes & {
- *   organizacion_id: string, ubicacion_nombre: string, ubicacion_tipo: 'sede'|'edificio'|'sala'|'oficina',
- *   ubicacion_direccion: string|null, ubicacion_padre_id: string|null, ubicacion_plano_archivo_id?: string|null
+ *   organizacion_id: string, ubicacion_nombre: string, ubicacion_tipo: 'sede'|'sala',
+ *   ubicacion_direccion: string|null, ubicacion_padre_id: string|null, ubicacion_notas?: string|null, ubicacion_plano_archivo_id?: string|null
  * }} Ubicacion
  */
 
@@ -347,6 +349,9 @@ export const ROTULO_MODULO = {
   credenciales: 'Credenciales', configuraciones: 'Configuraciones', usuarios: 'Usuarios', personas: 'Personas', licencias: 'Licencias'
 };
 
+/** Tipos de `Ubicacion` (QC60: solo sedes y salas). @type {Object<string, string>} */
+export const ROTULO_UBICACION_TIPO = { sede: 'Sede', sala: 'Sala' };
+
 /** @type {Object<string, string>} */
 export const ROTULO_PERFIL = { superadmin: 'Superadmin', gerente: 'Gerente', tecnico: 'Técnico', operario: 'Operario' };
 
@@ -432,7 +437,7 @@ export const LIMITE_ARCHIVO_BYTES = 5 * 1024 * 1024;
 
 /** Nombre legible de cada entidad para mostrar en «Relacionado con». @type {Object<string, string>} */
 export const ROTULO_ENTIDAD = {
-  Equipo: 'Equipo', Servidor: 'Servidor', Rack: 'Rack', Ubicacion: 'Ubicación', Puesto: 'Puesto', Vlan: 'VLAN', RedWifi: 'Wi-Fi',
+  Equipo: 'Equipo', Servidor: 'Servidor', Rack: 'Rack', Ubicacion: 'Sede / sala', Puesto: 'Puesto', Vlan: 'VLAN', RedWifi: 'Wi-Fi',
   EnlaceIsp: 'Enlace a Internet', Configuracion: 'Configuración', Credencial: 'Credencial', Persona: 'Persona',
   CuentaDominio: 'Cuenta de dominio', Licencia: 'Licencia', MapeoDisco: 'Mapeo de disco', Servicio: 'Servicio', TramoFibra: 'Tramo de fibra'
 };
@@ -448,7 +453,7 @@ export function rutaDeEntidad(entidad, registro) {
   switch (entidad) {
     case 'Equipo': return (registro.equipo_tipo === 'servidor' ? '#/servidor/' : '#/equipo/') + id;
     case 'Rack': return '#/rack/' + id;
-    case 'Ubicacion': return '#/plano/' + id;
+    case 'Ubicacion': return '#/ubicacion/' + id;
     case 'Puesto': return '#/puesto/' + id;
     case 'Vlan': return '#/vlan/' + id;
     case 'EnlaceIsp': return '#/enlace/' + id;
@@ -501,8 +506,9 @@ export function moduloDeEntidad(entidad, registro) {
  * Versión del modelo de datos. Cada exportación la lleva en `version_modelo`; una exportación sin ella es la versión 1.
  * Al cambiar el modelo (campo nuevo, campo renombrado) se sube en 1 y se agrega `MIGRACIONES[versión anterior]`.
  * 1: hasta la v0.5.x. 2: varias personas por equipo, impresoras con conexión (`impresora_conexion`, `impresora_pc_id`) y `puertos.enlace_isp_id` (v0.6).
+ * 3: las ubicaciones son solo sedes y salas (`oficina` → `sala`; `edificio` desaparece, QC66-A).
  */
-export const VERSION_MODELO = 2;
+export const VERSION_MODELO = 3;
 
 /**
  * Migraciones ordenadas: `MIGRACIONES[n]` lleva los datos de la versión n a la n+1, completando los campos nuevos con su valor
@@ -518,8 +524,80 @@ export const MIGRACIONES = {
       if (!e.equipo_campos.impresora_conexion) e.equipo_campos.impresora_conexion = 'red';
       if (!('impresora_pc_id' in e.equipo_campos)) e.equipo_campos.impresora_pc_id = null;
     }
-  }
+  },
+  2: datos => migrarUbicacionesASedesYSalas(datos)
 };
+
+/**
+ * Pasa de 4 tipos de ubicación (sede, edificio, sala, oficina) a 2 (sede, sala) (QC66-A):
+ * - `oficina` pasa a `sala`.
+ * - Cada `edificio` se elimina: sus salas hijas pasan a colgar de la sede que lo contenía y todo lo que apuntaba al edificio
+ *   (racks, equipos, puestos, tramos de fibra, planos, notas, relaciones y solicitudes de esa ficha) pasa a apuntar a esa sede.
+ *   Si el edificio estaba solo, sin sede arriba, se queda como sede (no hay a qué sede mandar sus cosas).
+ * - Una sala cuyo padre no es una sede sube hasta la sede más cercana; si no tiene ninguna, se convierte en sede.
+ * - Una sede nunca tiene padre.
+ * Del historial (`cambios`) solo se quitan las entradas de los edificios eliminados, que ya no tienen ficha.
+ * El plano de un edificio eliminado pasa a ser el de la sede si ésta no tenía uno.
+ * @param {Object<string, any[]>} datos
+ */
+function migrarUbicacionesASedesYSalas(datos) {
+  const ubs = datos.ubicaciones || [];
+  if (!ubs.length) return;
+  /** @type {Map<string, any>} */
+  const porId = new Map(ubs.map(u => [u.id, u]));
+  for (const u of ubs) { if (u.ubicacion_tipo === 'oficina') u.ubicacion_tipo = 'sala'; if (!('ubicacion_notas' in u)) u.ubicacion_notas = null; }
+  /** Sede más cercana por encima de `u` (sin contarla). @param {any} u */
+  const sedeArriba = u => {
+    let p = u.ubicacion_padre_id ? porId.get(u.ubicacion_padre_id) : null;
+    for (let i = 0; p && i < 50; i++) { if (p.ubicacion_tipo === 'sede') return p; p = p.ubicacion_padre_id ? porId.get(p.ubicacion_padre_id) : null; }
+    return null;
+  };
+  // 1) Edificios: se eliminan (o se quedan como sede si no hay sede arriba).
+  /** @type {Map<string, string>} */
+  const destinoDeEdificio = new Map();
+  const edificios = ubs.filter(u => u.ubicacion_tipo === 'edificio');
+  for (const e of edificios) {
+    const sede = sedeArriba(e);
+    if (sede) destinoDeEdificio.set(e.id, sede.id);
+  }
+  for (const e of edificios) if (!destinoDeEdificio.has(e.id)) { e.ubicacion_tipo = 'sede'; e.ubicacion_padre_id = null; }
+  // 2) Salas: cuelgan de la sede más cercana; sin sede, pasan a ser sede. Las sedes no tienen padre.
+  for (const u of ubs) {
+    if (destinoDeEdificio.has(u.id)) continue;
+    if (u.ubicacion_tipo === 'sede') { u.ubicacion_padre_id = null; continue; }
+    const padre = u.ubicacion_padre_id ? porId.get(u.ubicacion_padre_id) : null;
+    if (padre && padre.ubicacion_tipo === 'sede') continue;
+    const sede = sedeArriba(u);
+    if (sede) u.ubicacion_padre_id = sede.id;
+    else { u.ubicacion_tipo = 'sede'; u.ubicacion_padre_id = null; }
+  }
+  // 3) Referencias a los edificios eliminados.
+  /** @param {string|null|undefined} id */
+  const nuevoId = id => (id && destinoDeEdificio.has(id) ? /** @type {string} */ (destinoDeEdificio.get(id)) : id);
+  /** Campos que apuntan a una ubicación: [colección, campo]. */
+  const REFERENCIAS = [['racks', 'ubicacion_id'], ['equipos', 'ubicacion_id'], ['puestos', 'ubicacion_id'],
+    ['tramos_fibra', 'tramo_origen_ubicacion_id'], ['tramos_fibra', 'tramo_destino_ubicacion_id']];
+  for (const [col, campo] of REFERENCIAS) for (const r of datos[col] || []) if (r[campo]) r[campo] = nuevoId(r[campo]);
+  /** Fichas que se identifican por (nombre de entidad, id): [colección, campo entidad, campo id]. */
+  const FICHAS = [['archivos', 'entidad', 'entidad_id'], ['notas', 'entidad', 'entidad_id'], ['relaciones', 'origen_entidad', 'origen_id'],
+    ['relaciones', 'destino_entidad', 'destino_id'], ['solicitudes', 'solicitud_entidad', 'solicitud_entidad_id']];
+  for (const [col, ce, ci] of FICHAS) for (const r of datos[col] || []) if (r[ce] === 'Ubicacion' && r[ci]) r[ci] = nuevoId(r[ci]);
+  // 4) El plano del edificio pasa a la sede si ésta no tenía uno.
+  for (const e of edificios) {
+    const destino = destinoDeEdificio.get(e.id);
+    const sede = destino ? porId.get(destino) : null;
+    if (sede && e.ubicacion_plano_archivo_id && !sede.ubicacion_plano_archivo_id) sede.ubicacion_plano_archivo_id = e.ubicacion_plano_archivo_id;
+  }
+  // 5) Se quitan los edificios y su historial.
+  if (destinoDeEdificio.size) {
+    datos.ubicaciones = ubs.filter(u => !destinoDeEdificio.has(u.id));
+    const cambiosViejos = new Set((datos.cambios || []).filter(c => c.cambio_entidad === 'Ubicacion' && destinoDeEdificio.has(c.entidad_id)).map(c => c.id));
+    if (cambiosViejos.size) {
+      datos.cambios = (datos.cambios || []).filter(c => !cambiosViejos.has(c.id));
+      if (datos.lecturas_cambio) datos.lecturas_cambio = datos.lecturas_cambio.filter(l => !cambiosViejos.has(l.cambio_id));
+    }
+  }
+}
 
 /**
  * Lleva `datos` de la versión `desde` a la actual.

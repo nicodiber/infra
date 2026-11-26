@@ -12,6 +12,13 @@ import { puede } from './permisos.js';
 import { toast, abrirModal, cerrarModal, ir } from './marco.js';
 import { h } from './utiles.js';
 import { ROTULO_ENTIDAD, ENTIDAD_DE_COLECCION } from './modelos.js';
+import { abrirAlta as abrirAltaDe, tieneAlta, rotuloDeRegistro, textoCrear } from './altas.js';
+
+/** «Nueva licencia» a partir del texto de la opción «+ Crear nueva licencia…». @param {string} c */
+function rotuloCrear(c) { const t = textoCrear(c).replace(/^\+ Crear /, '').replace(/…$/, ''); return t.charAt(0).toUpperCase() + t.slice(1); }
+
+/** Colecciones que se pueden crear desde «Relacionar con…» (las que tienen ficha y alta). */
+const CREABLES = ['equipos', 'racks', 'ubicaciones', 'puestos', 'vlans', 'redes_wifi', 'enlaces_isp', 'tramos_fibra', 'credenciales', 'configuraciones', 'personas', 'cuentas_dominio', 'licencias', 'mapeos_disco', 'servicios'];
 
 /**
  * @param {HTMLElement} contenedor
@@ -65,6 +72,19 @@ function abrirAlta(o, u, alTerminar) {
   const desc = /** @type {HTMLInputElement} */ (h('input', { type: 'text', 'aria-label': 'Descripción', placeholder: 'Para qué se relacionan (opcional)', style: 'width:100%', maxlength: '200' }));
   const error = h('div', { class: 'msg mal', role: 'alert', hidden: 'hidden' });
   const eleccion = h('div', { class: 'mut', style: 'margin:8px 0', text: 'Todavía no elegiste ninguna ficha.' });
+  // «Crear una ficha nueva…»: si lo que se quiere relacionar todavía no existe, se crea acá y queda elegido.
+  const crear = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Crear una ficha nueva para relacionar' }, [h('option', { value: '', text: '¿No existe? Crear una ficha nueva…' })]
+    .concat(CREABLES.filter(c => tieneAlta(c) && ROTULO_ENTIDAD[ENTIDAD_DE_COLECCION[c]]).map(c => h('option', { value: c, text: rotuloCrear(c) })))));
+  crear.addEventListener('change', async () => {
+    const col = crear.value;
+    crear.value = '';
+    if (!col) return;
+    const creado = await abrirAltaDe(col, { organizacion_id: o.organizacionId, rotulo: 'Relacionar con…' });
+    if (!creado) return;
+    const entidad = ENTIDAD_DE_COLECCION[col];
+    elegido = { entidad, id: creado.id, titulo: rotuloDeRegistro(col, creado) };
+    eleccion.textContent = 'Elegida: ' + elegido.titulo + ' (' + ROTULO_ENTIDAD[entidad] + ', recién creada)';
+  });
   let tic = 0;
 
   const buscar = async () => {
@@ -94,7 +114,7 @@ function abrirAlta(o, u, alTerminar) {
     } catch (e) { error.textContent = e instanceof Error ? e.message : 'No se pudo crear la relación.'; error.hidden = false; }
   };
   abrirModal(h('div', { class: 'pe-modal', style: 'width:560px;padding:16px', role: 'dialog', 'aria-label': 'Relacionar con otra ficha' }, [
-    h('h2', { text: 'Relacionar con…' }), buscador, lista, eleccion,
+    h('h2', { text: 'Relacionar con…' }), buscador, lista, h('div', { style: 'margin-top:8px' }, [crear]), eleccion,
     h('div', { class: 'campo' }, [h('label', { text: 'Descripción' }), desc]), error,
     h('div', { class: 'herr', style: 'justify-content:flex-end' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }),
       h('button', { type: 'button', class: 'primario', text: 'Relacionar', onclick: confirmar })])]));

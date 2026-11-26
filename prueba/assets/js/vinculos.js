@@ -72,7 +72,7 @@ export function pintarVinculos(zona, e, v) {
     const de = r.de === 'switch' ? 'rack del switch' : r.de === 'patchera' ? 'rack de la patchera' : '';
     nodos.push(nodoCadena('rack', 'rack', 'Rack', r.rack.rack_nombre + (u0 ? ' · ' + u0 : ''), de, '#/rack/' + r.rack.id + (r.de === 'equipo' ? '?resaltar=' + e.id : '')));
   }
-  if (v.ubicacion) nodos.push(nodoCadena('neutro', 'edificio', 'Ubicación', v.ubicacion.ubicacion_nombre, '', '#/plano/' + v.ubicacion.id));
+  if (v.ubicacion) nodos.push(nodoCadena('neutro', 'edificio', 'Sede / sala', v.ubicacion.ubicacion_nombre, '', '#/plano/' + v.ubicacion.id));
   const hijos = /** @type {Node[]} */ ([]);
   nodos.forEach((n, i) => { if (i) hijos.push(h('span', { class: 'tramo', 'aria-hidden': 'true' })); hijos.push(n); });
   zona.appendChild(h('div', { class: 'cadena vn-pasos', role: 'group', 'aria-label': 'Cadena física: ' + nodos.length + ' pasos enlazados' }, hijos));

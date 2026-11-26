@@ -9,6 +9,7 @@
 
 import * as repositorio from './repositorio.js';
 import * as sesion from './sesion.js';
+import { abrirAlta, textoCrear } from './altas.js';
 import { puede } from './permisos.js';
 import { ir, toast, pantalla, migasRaiz, abrirModal, cerrarModal } from './marco.js';
 import { h, icono, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion, normalizar } from './utiles.js';
@@ -237,7 +238,8 @@ export function textoValor(c, v) {
 /**
  * Formulario de edición para una lista de campos. `leer()` devuelve los valores ya convertidos o los errores.
  * @param {Campo[]} campos @param {Object<string, any>} valores
- * @param {{equipos?: Array<[string, string]>}} [opciones] `equipos`: pares [id, rótulo] para los campos de tipo `equipo`.
+ * @param {{equipos?: Array<[string, string]>, selectorEquipo?: (c: Campo, valor: any) => HTMLSelectElement|null}} [opciones] `equipos`: pares [id, rótulo] para los campos de tipo `equipo`;
+ *   `selectorEquipo`: si devuelve un `<select>` (por ejemplo `selectorConCrear`), se usa en lugar del selector común.
  */
 export function formulario(campos, valores, opciones) {
   /** @type {Object<string, HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>} */
@@ -245,12 +247,15 @@ export function formulario(campos, valores, opciones) {
   const cont = h('div', { class: 'datos' });
   for (const c of campos) {
     const v = valores[c.k];
+    const sx = c.t === 'equipo' && opciones && opciones.selectorEquipo ? opciones.selectorEquipo(c, v) : null;
     /** @type {HTMLElement} */
     let e;
     if (c.t === 'bool' || c.t === 'enum') {
       const ops = c.t === 'bool' ? [['true', 'Sí'], ['false', 'No']] : (c.op || []);
       e = h('select', { 'aria-label': c.r }, [h('option', { value: '', text: c.req ? '— elegir —' : '—' })].concat(ops.map(o => h('option', { value: o[0], text: o[1] }))));
       /** @type {HTMLSelectElement} */ (e).value = v == null ? '' : String(v);
+    } else if (sx) {
+      e = sx;
     } else if (c.t === 'equipo') {
       const ops = (opciones && opciones.equipos) || [];
       const hay = v == null || v === '' || ops.some(o => o[0] === v);
@@ -437,7 +442,7 @@ export async function crearEquipo(ctx, tipo, nombre) {
   return nuevo;
 }
 
-/** Texto «Ubicación / rack» de un equipo. @param {Equipo} e @param {Map<string, any>} racks @param {Map<string, any>} ubicaciones */
+/** Texto «Sede / sala · rack» de un equipo. @param {Equipo} e @param {Map<string, any>} racks @param {Map<string, any>} ubicaciones */
 export function textoUbicacion(e, racks, ubicaciones) {
   const rk = e.rack_id ? racks.get(e.rack_id) : null;
   const ub = e.ubicacion_id ? ubicaciones.get(e.ubicacion_id) : null;
@@ -461,11 +466,12 @@ export async function pedirBaja(ctx, coleccion, id) {
 }
 
 /**
- * Crea un puesto de trabajo nuevo (la ubicación es obligatoria) y lo devuelve.
+ * Crea un puesto de trabajo nuevo (la sede o sala es obligatoria) y lo devuelve. Ya no la usa la pantalla de Red: el alta con
+ * formulario vive en `assets/js/altas/puestos.js` (`abrirAlta('puestos')`).
  * @param {Contexto} ctx @param {string} nombre @param {string} ubicacionId @param {string} [boca]
  */
 export async function crearPuesto(ctx, nombre, ubicacionId, boca) {
-  if (!ubicacionId) throw new Error('Elegí la ubicación del puesto.');
+  if (!ubicacionId) throw new Error('Elegí la sede o sala del puesto.');
   const existentes = await repositorio.listar('puestos', { organizacion_id: ctx.org });
   if (existentes.some(x => normalizar(x.puesto_nombre) === normalizar(nombre))) throw new Error('Ya hay un puesto llamado «' + nombre + '» en esta organización.');
   return repositorio.guardar('puestos', { organizacion_id: ctx.org, ubicacion_id: ubicacionId, puesto_nombre: nombre, puesto_boca_pared: boca || null, puesto_notas: null }, ctx.u.id);
@@ -528,7 +534,7 @@ export async function abrirMoverEquipo(ctx, equipo, alTerminar) {
   const lista = h('div', { role: 'listbox', 'aria-label': 'Puestos de destino', style: 'max-height:240px;overflow:auto;border:1px solid var(--borde);border-radius:6px;margin-top:8px' });
   const aviso = h('div', { role: 'status', style: 'margin-top:8px' });
   const err = h('div', { class: 'rd-err', role: 'alert' });
-  const q = h('input', { type: 'search', placeholder: 'Buscar por nombre, boca o ubicación…', 'aria-label': 'Buscar puesto de destino', style: 'width:100%' });
+  const q = h('input', { type: 'search', placeholder: 'Buscar por nombre, boca o sede / sala…', 'aria-label': 'Buscar puesto de destino', style: 'width:100%' });
   const ok = /** @type {HTMLButtonElement} */ (h('button', { type: 'button', class: 'primario', text: 'Mover el equipo', disabled: true }));
   const textoAviso = () => {
     aviso.textContent = ''; ok.disabled = !elegido; confirmaVlan = false; delete ok.dataset.listo; ok.textContent = 'Mover el equipo';
@@ -550,7 +556,7 @@ export async function abrirMoverEquipo(ctx, equipo, alTerminar) {
       const oc = ocupantes(p.id).length, v = vlans.get(p.id), ub = mapaUb.get(p.ubicacion_id);
       lista.appendChild(h('button', { type: 'button', role: 'option', 'aria-selected': String(!!elegido && elegido.id === p.id), style: 'display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--borde);border-radius:0;padding:7px 10px;' + (elegido && elegido.id === p.id ? 'background:var(--acc-suave)' : ''),
         onclick: () => { elegido = p; pintar(); textoAviso(); } }, [
-        h('b', { text: p.puesto_nombre }), h('span', { class: 'mut', text: ' · ' + (ub ? ub.ubicacion_nombre : 'sin ubicación') + (p.puesto_boca_pared ? ' · boca ' + p.puesto_boca_pared : '') }),
+        h('b', { text: p.puesto_nombre }), h('span', { class: 'mut', text: ' · ' + (ub ? ub.ubicacion_nombre : 'sin sede ni sala') + (p.puesto_boca_pared ? ' · boca ' + p.puesto_boca_pared : '') }),
         h('div', { class: 'mut', text: (oc ? oc + (oc === 1 ? ' equipo' : ' equipos') + ' en el puesto' : 'Vacío') + ' · ' + textoVlan(v) })]));
     }
   };
@@ -572,7 +578,12 @@ export async function abrirMoverEquipo(ctx, equipo, alTerminar) {
     h('h2', { text: 'Mover «' + equipo.equipo_nombre + '» a otro puesto' }),
     h('p', { class: 'mut', text: 'Ahora está en: ' + (actual ? actual.puesto_nombre : 'ningún puesto') + ' · ' + textoVlan(vlanActual) + '. Se mueve el equipo, sin repatchear: se cambia solo el puesto donde está.' }),
     asignado ? h('p', { class: 'mut', text: 'La asignación' + (quien ? ' a ' + quien : '') + ' no cambia al mover el equipo. Si la persona también se muda, resolvelo en su ficha.' }) : null,
-    q, lista, aviso, err,
+    q, lista, h('div', { style: 'margin-top:6px' }, [h('button', { type: 'button', class: 'chico', text: textoCrear('puestos'), onclick: async () => {
+      const nuevo = await abrirAlta('puestos', { organizacion_id: ctx.org, rotulo: 'Mover a otro puesto' });
+      if (!nuevo) return;
+      candidatos.push(nuevo); if (!mapaUb.has(nuevo.ubicacion_id)) mapaUb.set(nuevo.ubicacion_id, await repositorio.obtener('ubicaciones', nuevo.ubicacion_id));
+      vlans.set(nuevo.id, null); elegido = nuevo; q.value = ''; pintar(); textoAviso();
+    } })]), aviso, err,
     h('div', { class: 'herr', style: 'justify-content:flex-end;margin-top:12px' }, [h('button', { type: 'button', text: 'Cancelar', onclick: () => cerrarModal() }), ok])]));
   pintar(); q.focus();
 }

@@ -9,6 +9,7 @@ import * as repositorio from '../assets/js/repositorio.js';
 import * as sesion from '../assets/js/sesion.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, pantalla, migasRaiz, toast, abrirModal, cerrarModal } from '../assets/js/marco.js';
+import { abrirAlta, duplicar, selectorConCrear } from '../assets/js/altas.js';
 import { h, tabla, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import { confirmarConPasos } from '../assets/js/verificacion.js';
@@ -94,9 +95,8 @@ export async function renderVista(contenedor) {
 
     // ---- datos del rack (lectura o edición)
     const datos = h('div', { class: 'datos', style: 'grid-template-columns:repeat(2,1fr)' });
-    const lugares = Array.from(ubicaciones).sort((a, b) => rutaUbicacion(a.id, ubic).localeCompare(rutaUbicacion(b.id, ubic), 'es'));
-    const inNombre = /** @type {HTMLInputElement} */ (h('input', { id: 'rack-nombre', type: 'text' })); inNombre.value = rack.rack_nombre;
-    const selUb = /** @type {HTMLSelectElement} */ (h('select', { id: 'rack-ubic' }, lugares.map(x => h('option', { value: x.id, text: rutaUbicacion(x.id, ubic), selected: x.id === rack.ubicacion_id ? 'selected' : null }))));
+        const inNombre = /** @type {HTMLInputElement} */ (h('input', { id: 'rack-nombre', type: 'text' })); inNombre.value = rack.rack_nombre;
+    const selUb = selectorConCrear({ desde: 'racks', campo: 'ubicacion_id', organizacion_id: org, valor: rack.ubicacion_id, obligatorio: true, id: 'rack-ubic', rotuloOrigen: 'Editar rack' });
     const inAlto = /** @type {HTMLInputElement} */ (h('input', { id: 'rack-alto', type: 'number', min: '1' })); inAlto.value = String(total);
     const inProf = /** @type {HTMLInputElement} */ (h('input', { id: 'rack-prof', type: 'number', min: '1' })); inProf.value = rack.rack_profundidad == null ? '' : String(rack.rack_profundidad);
     const inNotas = /** @type {HTMLTextAreaElement} */ (h('textarea', { id: 'rack-notas', rows: '2', style: 'width:100%' })); inNotas.value = rack.rack_notas || '';
@@ -104,12 +104,12 @@ export async function renderVista(contenedor) {
     const campoEd = (etq, idc, el) => h('div', { class: 'campo' }, [h('label', { for: idc, text: etq }), el]);
     const pct = Math.round(unidadesOcupadas(equipos) / total * 100);
     if (editando) {
-      datos.appendChild(campoEd('Nombre *', 'rack-nombre', inNombre)); datos.appendChild(campoEd('Ubicación *', 'rack-ubic', selUb));
+      datos.appendChild(campoEd('Nombre *', 'rack-nombre', inNombre)); datos.appendChild(campoEd('Sede / sala *', 'rack-ubic', selUb));
       datos.appendChild(campoEd('Alto útil en U *', 'rack-alto', inAlto)); datos.appendChild(campoEd('Profundidad útil (mm)', 'rack-prof', inProf));
       datos.appendChild(h('div', { class: 'campo', style: 'grid-column:1/-1' }, [h('label', { for: 'rack-notas', text: 'Notas' }), inNotas]));
     } else {
       const ficha = (/** @type {string} */ etq, /** @type {string} */ v) => h('div', { class: 'campo' }, [h('label', { text: etq }), h('div', { text: v })]);
-      datos.appendChild(ficha('Ubicación', rutaUbicacion(rack.ubicacion_id, ubic) || '—')); datos.appendChild(ficha('Alto', total + ' U'));
+      datos.appendChild(ficha('Sede / sala', rutaUbicacion(rack.ubicacion_id, ubic) || '—')); datos.appendChild(ficha('Alto', total + ' U'));
       datos.appendChild(ficha('Profundidad útil', rack.rack_profundidad ? rack.rack_profundidad + ' mm' : '—'));
       datos.appendChild(ficha('Ocupación', unidadesOcupadas(equipos) + ' / ' + total + ' U (' + pct + ' %)'));
       datos.appendChild(ficha('U libres', textoUnidadesLibres(total, equipos)));
@@ -141,6 +141,10 @@ export async function renderVista(contenedor) {
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }), h('button', { type: 'button', text: 'Cancelar', onclick: () => { editando = false; errorForm = null; pintar(); } })]
       : [h('button', { type: 'button', text: 'Etiqueta', title: 'Imprimir la etiqueta con QR', onclick: () => { location.hash = '#/etiqueta/racks/' + rack.id; } }),
         puedeModificar ? h('button', { type: 'button', text: 'Editar', onclick: () => { editando = true; errorForm = null; pintar(); } }) : null,
+        puedeModificar ? h('button', { type: 'button', text: 'Duplicar', title: 'Crear otro rack con estos datos, sin los equipos', onclick: async () => {
+          const c = await duplicar('racks', rack, { rack_nombre: rack.rack_nombre + ' (copia)', ubicacion_id: rack.ubicacion_id, rack_unidades_total: rack.rack_unidades_total, rack_profundidad: rack.rack_profundidad, rack_notas: rack.rack_notas }, rack.rack_nombre);
+          if (c) { toast('Rack «' + c.rack_nombre + '» creado a partir de la copia'); ir('#/rack/' + c.id); }
+        } }) : null,
         puedeVerificar ? h('button', { type: 'button', class: 'primario', text: 'Recorrido de verificación', title: 'Confirmar en el lugar, uno por uno, los equipos y puertos de este rack',
           onclick: () => ir('#/recorrido/' + rack.id) }) : null];
     if (!editando) {
@@ -278,7 +282,11 @@ export async function renderVista(contenedor) {
     }
     const alternativa = h('div', { class: 'bloque', style: 'margin-top:10px' }, [
       h('div', { class: 'herr', style: 'justify-content:space-between' }, [h('h3', { text: 'Equipos montados (alternativa en tabla)' }),
-        puedeModificar && !agregando ? h('button', { type: 'button', text: 'Agregar equipo al rack', onclick: () => { agregando = true; pintar(); } }) : null]),
+        puedeModificar && !agregando ? h('span', { class: 'herr', style: 'margin:0' }, [h('button', { type: 'button', text: 'Agregar equipo al rack', onclick: () => { agregando = true; pintar(); } }),
+          h('button', { type: 'button', text: 'Nuevo equipo en este rack', title: 'Crear un equipo nuevo ya montado acá', onclick: async () => {
+            const n = await abrirAlta('equipos', { organizacion_id: org, valores: { rack_id: id, ubicacion_id: rack.ubicacion_id, titulo: 'Nuevo equipo en ' + rack.rack_nombre }, rotulo: null });
+            if (n) { seleccion = n.id; msgEq = ''; toast(n.equipo_nombre + ' creado y montado en ' + rangoU(n)); await pintar(); }
+          } })]) : null]),
       panelAgregar, cuerpoEquipos]);
 
     const migas = raiz.concat([['Racks', '#/racks'], [rack.rack_nombre, enResalt ? '#/rack/' + rack.id : undefined]]);

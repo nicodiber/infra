@@ -11,6 +11,8 @@ import { ir, toast, abrirModal, cerrarModal } from '../assets/js/marco.js';
 import { h, tabla, ahoraISO, fmtFecha, fmtFechaHora, indicadorVerificacion } from '../assets/js/utiles.js';
 import { ROTULO_PERSONA_ESTADO } from '../assets/js/modelos.js';
 import { encabezado, leerRuta, pestanas, campo, enlace, formulario, fichaCab, textoUltimoCambio, pedirBaja, seguro, valorHistorial } from '../assets/js/red.js';
+import { selectorConCrear } from '../assets/js/altas.js';
+import { crearYAbrir } from '../assets/js/altas/comunes.js';
 import {
   cargarContextoPersonas, avisoPersonas, enlaceFila, nombreCuenta, hashDeEquipo, tipoEquipo, pillCuenta, alertaCuentaDeBaja, modalAsignar, modalDevolver, modalMudar
 } from '../assets/js/personas.js';
@@ -46,7 +48,8 @@ export async function renderVista(contenedor) {
   if (!puede(ctx.u, 'ver', 'personas', ctx.org)) { avisoPersonas(contenedor, 'Tu rol no tiene acceso al módulo Personas.'); return; }
   if (nueva) {
     if (!ctx.modifica) { avisoPersonas(contenedor, 'Tu rol no puede cargar personas.', '#/personas'); return; }
-    await dibujarAlta(contenedor, ctx);
+    ir('#/personas');
+    await crearYAbrir('personas', r => '#/persona/' + r.id, { aviso: 'Persona creada' });
     return;
   }
   if (!persona || persona.organizacion_id !== ctx.org) { avisoPersonas(contenedor, 'No encontramos esa persona en esta organización (puede haberse eliminado).', '#/personas'); return; }
@@ -62,38 +65,6 @@ export async function renderVista(contenedor) {
     if (scroller) scroller.scrollTop = y;
   };
   await dibujar(contenedor, ctx, persona, partes, editando, notas, async v => { editando = v; await armar(); }, armar);
-}
-
-/** Selector de puesto con los de la organización. @param {any[]} puestos @param {string|null} actual */
-function selectorPuesto(puestos, actual) {
-  const sel = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Puesto habitual' }, [h('option', { value: '', text: 'Sin puesto fijo' })].concat(puestos.map(x => h('option', { value: x.id, text: x.puesto_nombre })))));
-  sel.value = actual || '';
-  return sel;
-}
-
-/** @param {HTMLElement} cont @param {Contexto} ctx */
-async function dibujarAlta(cont, ctx) {
-  const [puestos, existentes] = await Promise.all([repositorio.listar('puestos', { organizacion_id: ctx.org }, { ordenarPor: 'puesto_nombre' }), repositorio.listar('personas', { organizacion_id: ctx.org })]);
-  const f = formulario(CAMPOS, {});
-  const sel = selectorPuesto(puestos, null);
-  const err = h('div', { class: 'rd-err', role: 'alert' });
-  cont.appendChild(h('h1', { text: 'Nueva persona' }));
-  cont.appendChild(h('div', { class: 'bloque' }, [
-    h('div', { class: 'mut', style: 'margin-bottom:8px', text: 'Es alguien de la organización (no un usuario del sistema). Los campos con * son obligatorios; después podés asignarle equipos y cuentas desde su ficha.' }),
-    h('div', { class: 'rd-edicion' }, [f.nodo, h('div', { class: 'campo', style: 'margin-top:8px;max-width:320px' }, [h('label', { text: 'Puesto habitual' }), sel]), err]),
-    h('div', { class: 'herr' }, [
-      h('button', { type: 'button', class: 'primario', text: 'Crear persona', onclick: async () => {
-        const r = f.leer();
-        const errores = r.errores.slice();
-        const nombre = String(r.valores.persona_nombre || '').trim().toLowerCase();
-        if (nombre && existentes.some(x => x.persona_nombre.trim().toLowerCase() === nombre)) errores.push('Ya hay una persona con ese nombre en esta organización: si es otra, agregale algo que las distinga.');
-        if (errores.length) { err.textContent = errores.join(' '); return; }
-        const creada = await seguro(() => repositorio.guardar('personas', { organizacion_id: ctx.org, ...r.valores, puesto_id: sel.value || null, persona_estado: 'activa' }, ctx.u.id));
-        if (!creada) return;
-        toast('Persona «' + creada.persona_nombre + '» creada');
-        ir('#/persona/' + creada.id);
-      } }),
-      h('button', { type: 'button', text: 'Cancelar', onclick: () => ir('#/personas') })])]));
 }
 
 /**
@@ -121,7 +92,7 @@ async function dibujar(cont, ctx, p, partes, editando, notas, cambiar, rearmar) 
   const err = h('div', { class: 'rd-err', role: 'alert' });
   if (editando) {
     const f = formulario(CAMPOS, p);
-    selPuesto = selectorPuesto(puestos, p.puesto_id);
+    selPuesto = selectorConCrear({ desde: 'personas', campo: 'puesto_id', organizacion_id: ctx.org, valor: p.puesto_id, etiqueta: 'Puesto habitual', rotuloOrigen: 'Editar persona' });
     datos = h('div', { class: 'rd-edicion' }, [f.nodo, h('div', { class: 'campo', style: 'margin-top:8px;max-width:320px' }, [h('label', { text: 'Puesto habitual' }), selPuesto]),
       h('div', { class: 'mut', style: 'margin-top:6px', text: 'El estado (activa o en baja) se cambia con los botones de la ficha.' }), err]);
     leer = f.leer;
@@ -234,7 +205,7 @@ async function cuerpoEquipos(ctx, p, asigs, me, rearmar) {
 function cuerpoCuentas(ctx, p, cuentas) {
   const cuerpo = h('div');
   cuerpo.appendChild(h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }),
-    ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nueva cuenta', onclick: () => ir('#/cuenta/nueva?persona=' + p.id) }) : null]));
+    ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nueva cuenta', onclick: () => crearYAbrir('cuentas_dominio', r => '#/cuenta/' + r.id, { valores: { persona_id: p.id }, aviso: 'Cuenta creada' }) }) : null]));
   if (!cuentas.length) { cuerpo.appendChild(h('div', { class: 'aviso', text: 'Esta persona no tiene cuentas de dominio.' + (ctx.modifica ? ' Usá «Nueva cuenta» para cargar la suya.' : '') })); return cuerpo; }
   cuerpo.appendChild(tabla(['Cuenta', 'Unidad organizativa', 'Grupos', 'Estado', 'Verificado'], cuentas.map(c => [enlaceFila(nombreCuenta(c), '#/cuenta/' + c.id), c.cuenta_unidad_organizativa || '—', (c.cuenta_grupos || []).join(', ') || '—',
     h('span', null, [pillCuenta(c.cuenta_estado), p.persona_estado === 'baja' && c.cuenta_estado === 'habilitada' ? alertaCuentaDeBaja() : null]), indicadorVerificacion(c.verificado_en, ctx.umbrales, true)]),

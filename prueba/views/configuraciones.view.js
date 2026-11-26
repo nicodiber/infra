@@ -13,6 +13,7 @@ import { ROTULO_CONFIGURACION_TIPO } from '../assets/js/modelos.js';
 import { sinPermiso, chips, pestanas, enlaceEquipo } from '../assets/js/credenciales.js';
 import { ROTULO_MAPEO_METODO, ROTULO_MAPEO_APLICA_A } from '../assets/js/modelos.js';
 import { aQuien } from './mapeo.view.js';
+import { crearYAbrir } from '../assets/js/altas/comunes.js';
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
@@ -47,7 +48,13 @@ export async function renderVista(contenedor) {
     zonaChips.appendChild(chips([['todos', 'Todas', base.length], ['vigente', 'Verificadas', base.filter(c => nivel(c) === 'vigente').length],
       ['revisar', 'A revisar', base.filter(c => nivel(c) === 'revisar').length], ['viejo', 'Desactualizadas', base.filter(c => nivel(c) === 'viejo').length]], est.nivel, k => { est.nivel = k; pintar(); }));
     const filas = base.filter(c => est.nivel === 'todos' || nivel(c) === est.nivel);
-    if (!lista.length) { zonaTabla.appendChild(h('div', { class: 'aviso', text: 'Todavía no hay configuraciones cargadas.' + (puede(u, 'modificar', 'configuraciones', orgId) ? ' Usá «Nueva configuración» para cargar la primera.' : '') })); return; }
+    if (!lista.length) {
+      zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [icono('configuracion'), h('h2', { text: 'Todavía no hay configuraciones cargadas' }),
+        h('p', { text: 'Acá se documentan las VPN, el reenvío de puertos, las reglas de firewall y cualquier configuración que haya que poder reconstruir: con su equipo, su fecha y su contenido.' }),
+        puede(u, 'modificar', 'configuraciones', orgId) ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva configuración', onclick: () => crearYAbrir('configuraciones', r => '#/config/' + r.id, { aviso: 'Configuración creada' }) })])
+          : h('p', { class: 'mut', text: 'Tu rol no puede cargar configuraciones: pedíselo a un técnico o gerente.' })]));
+      return;
+    }
     if (!filas.length) { zonaTabla.appendChild(h('div', { class: 'mut', style: 'padding:8px', text: 'Ninguna configuración coincide con el filtro.' })); return; }
     zonaTabla.appendChild(tabla(['Título', 'Tipo', 'Equipo', 'Fecha', 'Verificado'], filas.map(c => [
       c.configuracion_titulo, rotulo(c.configuracion_tipo), c.equipo_id ? nombreEq.get(c.equipo_id) || '—' : '—',
@@ -63,7 +70,7 @@ export async function renderVista(contenedor) {
   contenedor.appendChild(h('h1', { text: 'Configuraciones' }));
   contenedor.appendChild(pestanasConfig('config'));
   contenedor.appendChild(h('div', { class: 'herr' }, [inp, sel, h('span', { style: 'flex:1' }),
-    puede(u, 'modificar', 'configuraciones', orgId) ? h('button', { type: 'button', class: 'primario', text: 'Nueva configuración', onclick: () => ir('#/config/nuevo') }) : null]));
+    puede(u, 'modificar', 'configuraciones', orgId) ? h('button', { type: 'button', class: 'primario', text: 'Nueva configuración', onclick: () => crearYAbrir('configuraciones', r => '#/config/' + r.id, { aviso: 'Configuración creada' }) }) : null]));
   contenedor.appendChild(zonaChips);
   contenedor.appendChild(zonaTabla);
   pintar();
@@ -106,7 +113,7 @@ async function listadoMapeos(contenedor, u, orgId) {
     if (!lista.length) {
       zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [icono('configuracion'), h('h2', { text: 'Todavía no hay mapeos de discos' }),
         h('p', { text: 'Un mapeo dice qué carpeta de red se ve como una letra (por ejemplo P:), en qué servidor está, a quién se le arma y si es por directiva de grupo, script o a mano.' }),
-        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nuevo mapeo', onclick: () => ir('#/mapeo/nuevo') })]) : null]));
+        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nuevo mapeo', onclick: () => crearYAbrir('mapeos_disco', r => '#/mapeo/' + r.id, { aviso: 'Mapeo creado' }) })]) : null]));
       return;
     }
     if (!filas.length) { zonaTabla.appendChild(h('div', { class: 'mut', style: 'padding:8px', text: 'Ningún mapeo coincide con el filtro.' })); return; }
@@ -124,7 +131,7 @@ async function listadoMapeos(contenedor, u, orgId) {
   contenedor.appendChild(h('h1', { text: 'Configuraciones' }));
   contenedor.appendChild(pestanasConfig('mapeos'));
   contenedor.appendChild(h('div', { class: 'herr' }, [inp, selA, selM, h('span', { style: 'flex:1' }),
-    puedeCrear ? h('button', { type: 'button', class: 'primario', text: 'Nuevo mapeo', onclick: () => ir('#/mapeo/nuevo') }) : null]));
+    puedeCrear ? h('button', { type: 'button', class: 'primario', text: 'Nuevo mapeo', onclick: () => crearYAbrir('mapeos_disco', r => '#/mapeo/' + r.id, { aviso: 'Mapeo creado' }) }) : null]));
   contenedor.appendChild(zonaChips);
   contenedor.appendChild(zonaTabla);
   pintar();

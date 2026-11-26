@@ -7,6 +7,7 @@
 import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
 import { ir, toast, abrirModal, cerrarModal, repintarMarco } from '../assets/js/marco.js';
+import { abrirAlta, selectorConCrear, opcionesDe } from '../assets/js/altas.js';
 import { h, tabla, fmtFecha, fmtFechaHora, hoyISO } from '../assets/js/utiles.js';
 import { ROTULO_FIBRA_TIPO, CONECTORES_FIBRA, ATENUACION_ALTA_DB } from '../assets/js/modelos.js';
 import { cargarContexto, encabezado, avisoVista, fichaCab, campo, pestanas, leerRuta, textoUltimoCambio, seguro, enlace, pedirBaja } from '../assets/js/red.js';
@@ -34,6 +35,11 @@ export async function renderVista(contenedor) {
   if (!puede(ctx.u, nuevo ? 'modificar' : 'ver', 'red', org)) {
     await encabezado(contenedor, 'P30', 'Ficha de tramo de fibra', migasBase.concat([['Sin acceso']]));
     avisoVista(contenedor, nuevo ? 'Tu rol no puede cargar tramos de fibra.' : 'Tu rol no tiene acceso al módulo Red.');
+    return;
+  }
+  if (nuevo) { // el alta es el formulario completo de `altas/tramos_fibra.js`; esta ruta solo la abre
+    const creado = await abrirAlta('tramos_fibra', { organizacion_id: org, rotulo: null });
+    ir(creado ? '#/tramo/' + creado.id : '#/fibra');
     return;
   }
   const [ubicaciones, patcheras] = await Promise.all([repositorio.listar('ubicaciones', { organizacion_id: org }, { ordenarPor: 'ubicacion_nombre' }),
@@ -73,10 +79,13 @@ export async function renderVista(contenedor) {
         s.addEventListener('change', () => { ed[k] = s.value; });
         return s;
       };
-      const opsUb = /** @type {Array<[string, string]>} */ ([['', 'Elegí la ubicación…']]).concat(ubicaciones.map(x => /** @type {[string, string]} */ ([x.id, x.ubicacion_nombre])));
-      const opsEq = /** @type {Array<[string, string]>} */ ([['', 'Sin patchera cargada']]).concat(patcheras.map(x => /** @type {[string, string]} */ ([x.id, x.equipo_nombre])));
-      datos.append(campo('Nombre', inp('nombre', 'Nombre', 'text', { maxlength: '120' })), campo('Origen (ubicación)', sel('origen', 'Origen', opsUb)), campo('Patchera de origen', sel('oeq', 'Patchera de origen', opsEq)),
-        campo('Destino (ubicación)', sel('destino', 'Destino', opsUb)), campo('Patchera de destino', sel('deq', 'Patchera de destino', opsEq)),
+      /** Referencia con «+ Crear …»: sede o sala, o patchera. */
+      const ref = (/** @type {string} */ k, /** @type {string} */ campo, /** @type {string} */ et, /** @type {boolean} */ esPatchera) => selectorConCrear({ desde: 'tramos_fibra', campo, organizacion_id: org, valor: ed[k] || null,
+        obligatorio: !esPatchera, etiqueta: et, rotuloOrigen: 'Editar tramo de fibra',
+        ...(esPatchera ? { cargarOpciones: () => opcionesDe('equipos', org, { filtro: e => e.equipo_tipo === 'patchera' }), valoresAlta: { equipo_tipo: 'patchera', tipos: ['patchera'] } } : {}),
+        alCambiar: v => { ed[k] = v; } });
+      datos.append(campo('Nombre', inp('nombre', 'Nombre', 'text', { maxlength: '120' })), campo('Origen (sede / sala)', ref('origen', 'tramo_origen_ubicacion_id', 'Origen', false)), campo('Patchera de origen', ref('oeq', 'tramo_origen_equipo_id', 'Patchera de origen', true)),
+        campo('Destino (sede / sala)', ref('destino', 'tramo_destino_ubicacion_id', 'Destino', false)), campo('Patchera de destino', ref('deq', 'tramo_destino_equipo_id', 'Patchera de destino', true)),
         campo('Cantidad de pelos', inp('pelos', 'Cantidad de pelos', 'number', { min: '1', step: '1' })),
         campo('Tipo de fibra', sel('tipo', 'Tipo de fibra', Object.keys(ROTULO_FIBRA_TIPO).map(k => /** @type {[string, string]} */ ([k, ROTULO_FIBRA_TIPO[k]])))),
         campo('Conector', sel('conector', 'Conector', CONECTORES_FIBRA.map(c => /** @type {[string, string]} */ ([c, c])))),

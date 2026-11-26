@@ -11,6 +11,7 @@ import { ir, pantalla, migasRaiz, toast } from '../assets/js/marco.js';
 import { h, tabla, fmtFecha, fmtFechaHora, indicadorVerificacion, normalizar, hoyISO, icono } from '../assets/js/utiles.js';
 import { sinPermiso, chips, campo, fichaCab, botonBaja, pestanas, rotuloCampo, valorHistorial } from '../assets/js/credenciales.js';
 import { origenDeNota, resumenNota } from '../assets/js/notas.js';
+import { crearYAbrir, altaDesdeRuta } from '../assets/js/altas/comunes.js';
 
 /** @param {HTMLElement} contenedor */
 export async function renderVista(contenedor) {
@@ -55,7 +56,7 @@ async function listado(contenedor) {
       zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [icono('nota'), h('h2', { text: 'Todavía no hay notas' }),
         h('p', { text: 'Las notas son texto libre para documentar lo que no entra en un campo: cómo está armado el dominio, qué hacer al reemplazar un equipo, pendientes del cliente.' }),
         h('p', { text: 'Se escriben desde la ficha (por ejemplo, la pestaña «Notas» de un servidor) o acá, como nota de la organización.' }),
-        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva nota', onclick: () => ir('#/notas/nueva') })]) : null]));
+        puedeCrear ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva nota', onclick: () => crearYAbrir('notas', r => '#/notas/' + r.id, { aviso: 'Nota creada' }) })]) : null]));
       return;
     }
     if (!ver.length) { zonaTabla.appendChild(h('div', { class: 'mut', style: 'padding:8px', text: 'Ninguna nota coincide con el filtro.' })); return; }
@@ -70,7 +71,7 @@ async function listado(contenedor) {
   inp.addEventListener('input', () => { est.texto = inp.value; pintar(); });
   contenedor.appendChild(h('h1', { text: 'Notas' }));
   contenedor.appendChild(h('div', { class: 'herr' }, [inp, h('span', { style: 'flex:1' }),
-    puedeCrear ? h('button', { type: 'button', class: 'primario', text: 'Nueva nota', onclick: () => ir('#/notas/nueva') }) : null]));
+    puedeCrear ? h('button', { type: 'button', class: 'primario', text: 'Nueva nota', onclick: () => crearYAbrir('notas', r => '#/notas/' + r.id, { aviso: 'Nota creada' }) }) : null]));
   contenedor.appendChild(zonaChips);
   contenedor.appendChild(zonaTabla);
   contenedor.appendChild(h('div', { class: 'mut', style: 'margin-top:6px', text: 'Solo ves las notas de los módulos a los que tu rol tiene acceso.' }));
@@ -83,10 +84,11 @@ async function ficha(contenedor, idHash, tab) {
   const nuevo = idHash === 'nueva' || idHash === 'nuevo';
   const migas = await migasRaiz();
   migas.push(['Notas', '#/notas']);
+  if (nuevo) { await altaDesdeRuta('notas', '#/notas', r => '#/notas/' + r.id, 'Nota creada'); return; }
   /** @type {any} */
   let n = null;
   let orgId = /** @type {string} */ (sesion.organizacionActiva());
-  if (!nuevo) {
+  {
     n = await repositorio.obtener('notas', idHash);
     if (!n) {
       pantalla(contenedor, { codigo: 'P26', nombre: 'Nota', migas: migas.concat([['No encontrada']]) });
@@ -95,18 +97,18 @@ async function ficha(contenedor, idHash, tab) {
     }
     orgId = n.organizacion_id;
   }
-  const modulo = nuevo ? 'organizacion' : await repositorio.moduloDeNota(n);
-  if (!puede(u, nuevo ? 'modificar' : 'ver', modulo, orgId)) {
-    pantalla(contenedor, { codigo: 'P26', nombre: 'Nota', migas: migas.concat([[nuevo ? 'Nueva' : 'Nota']]) });
-    sinPermiso(contenedor, u, nuevo ? 'crear notas de la organización' : 'esta nota');
+  const modulo = await repositorio.moduloDeNota(n);
+  if (!puede(u, 'ver', modulo, orgId)) {
+    pantalla(contenedor, { codigo: 'P26', nombre: 'Nota', migas: migas.concat([['Nota']]) });
+    sinPermiso(contenedor, u, 'esta nota');
     return;
   }
   const [umbrales, usuarios] = await Promise.all([repositorio.umbralesVerificacion(), repositorio.listar('usuarios', null, { incluirBajas: true })]);
   const nombreUsuario = new Map(usuarios.map(x => [x.id, x.usuario_nombre]));
   const modifica = puede(u, 'modificar', modulo, orgId);
-  let editando = nuevo || tab === 'editar';
+  let editando = tab === 'editar';
   if (editando && !modifica) editando = false;
-  const verHist = !nuevo && puede(u, 'ver_historial', modulo, orgId);
+  const verHist = puede(u, 'ver_historial', modulo, orgId);
   let pestana = tab === 'historial' && verHist ? 'historial' : 'nota';
   /** @type {any} */
   let ed = null;
@@ -116,8 +118,8 @@ async function ficha(contenedor, idHash, tab) {
 
   async function pintar() {
     contenedor.textContent = '';
-    const origen = nuevo ? await origenDeNota({ entidad: null, entidad_id: null }) : await origenDeNota(n);
-    pantalla(contenedor, { codigo: 'P26', nombre: 'Nota', migas: migas.concat([[nuevo ? 'Nueva nota' : n.nota_titulo]]) });
+    const origen = await origenDeNota(n);
+    pantalla(contenedor, { codigo: 'P26', nombre: 'Nota', migas: migas.concat([[n.nota_titulo]]) });
     const datos = h('div', { class: 'datos' });
     if (editando) {
       if (!ed) ed = { titulo: n ? n.nota_titulo : '', contenido: n ? n.nota_contenido : '' };
@@ -135,21 +137,18 @@ async function ficha(contenedor, idHash, tab) {
       if (!ed.titulo.trim()) { error = 'Escribí un título para la nota.'; await pintar(); return; }
       if (!ed.contenido.trim()) { error = 'Escribí el contenido de la nota.'; await pintar(); return; }
       try {
-        const base = nuevo ? { organizacion_id: orgId, entidad: null, entidad_id: null } : n;
-        const g = await repositorio.guardar('notas', { ...base, nota_titulo: ed.titulo.trim(), nota_contenido: ed.contenido.replace(/\s+$/, '') }, u.id);
-        toast(nuevo ? 'Nota creada' : 'Cambios guardados · verificada hoy (' + hoyISO().split('-').reverse().join('/') + ')');
-        if (nuevo) { ir('#/notas/' + g.id); return; }
+        await repositorio.guardar('notas', { ...n, nota_titulo: ed.titulo.trim(), nota_contenido: ed.contenido.replace(/\s+$/, '') }, u.id);
+        toast('Cambios guardados · verificada hoy (' + hoyISO().split('-').reverse().join('/') + ')');
         editando = false; ed = null; error = ''; await rerender();
       } catch (e) { error = e instanceof Error ? e.message : 'No se pudo guardar.'; await pintar(); }
     };
     const botones = editando
       ? [h('button', { type: 'button', class: 'primario', text: 'Guardar', onclick: guardar }),
-        h('button', { type: 'button', text: 'Cancelar', onclick: () => { if (nuevo) ir('#/notas'); else { editando = false; ed = null; error = ''; pintar(); } } })]
+        h('button', { type: 'button', text: 'Cancelar', onclick: () => { editando = false; ed = null; error = ''; pintar(); } })]
       : [modifica ? h('button', { type: 'button', text: 'Editar', onclick: () => { ed = null; editando = true; pintar(); } }) : null,
-        nuevo ? null : await botonBaja({ u, coleccion: 'notas', registro: n, modulo, orgId, nombre: n.nota_titulo, volver: '#/notas', rerender })];
-    contenedor.appendChild(fichaCab({ tipo: 'nota', etiqueta: 'nota', titulo: nuevo ? 'Nueva nota' : n.nota_titulo, datos, botones, modoEdicion: editando, registro: nuevo ? null : n,
+        await botonBaja({ u, coleccion: 'notas', registro: n, modulo, orgId, nombre: n.nota_titulo, volver: '#/notas', rerender })];
+    contenedor.appendChild(fichaCab({ tipo: 'nota', etiqueta: 'nota', titulo: n.nota_titulo, datos, botones, modoEdicion: editando, registro: n,
       coleccion: 'notas', modulo, u, orgId, umbrales, usuarios: nombreUsuario, rerender }));
-    if (nuevo) return;
 
     /** @type {Array<[string, string]>} */
     const tabs = [['nota', 'Nota']];

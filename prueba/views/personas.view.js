@@ -9,6 +9,7 @@ import { puede } from '../assets/js/permisos.js';
 import { ir } from '../assets/js/marco.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { encabezado, leerRuta, pestanas, chipsEstado } from '../assets/js/red.js';
+import { crearYAbrir } from '../assets/js/altas/comunes.js';
 import { cargarContextoPersonas, avisoPersonas, enlaceFila, nombreCuenta, hashDeEquipo, pillPersona, pillCuenta, alertaCuentaDeBaja } from '../assets/js/personas.js';
 
 // Filtros que se recuerdan al volver a la pantalla.
@@ -34,6 +35,8 @@ export async function renderVista(contenedor) {
   const cuentasDe = new Map();
   for (const c of cuentas) if (c.persona_id) cuentasDe.set(c.persona_id, (cuentasDe.get(c.persona_id) || []).concat([c]));
   const verRed = puede(ctx.u, 'ver', 'red', ctx.org);
+  const nuevaPersona = () => crearYAbrir('personas', r => '#/persona/' + r.id, { aviso: 'Persona creada' });
+  const nuevaCuenta = () => crearYAbrir('cuentas_dominio', r => '#/cuenta/' + r.id, { aviso: 'Cuenta creada' });
 
   contenedor.appendChild(h('h1', { text: 'Personas' }));
   const barra = pestanas([['personas', 'Personas (' + personas.length + ')'], ['cuentas', 'Cuentas de dominio (' + cuentas.length + ')']], tab, k => (k === 'cuentas' ? '#/personas/cuentas' : '#/personas'));
@@ -65,7 +68,7 @@ export async function renderVista(contenedor) {
     if (!personas.length) {
       zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [h('h2', { text: 'Todavía no hay personas cargadas' }),
         h('p', { text: 'Cargá a quienes trabajan en la organización para asignarles equipos y cuentas de dominio.' }),
-        ctx.modifica ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva persona', onclick: () => ir('#/persona/nueva') })]) : h('p', { class: 'mut', text: 'Tu rol no puede cargar personas: pedíselo a un técnico o gerente.' })]));
+        ctx.modifica ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva persona', onclick: () => nuevaPersona() })]) : h('p', { class: 'mut', text: 'Tu rol no puede cargar personas: pedíselo a un técnico o gerente.' })]));
       return;
     }
     const filas = base.filter(p => !filtro.personasChip || regla[filtro.personasChip](p));
@@ -96,7 +99,7 @@ export async function renderVista(contenedor) {
     if (!cuentas.length) {
       zonaTabla.appendChild(h('div', { class: 'estado-vacio', role: 'status' }, [h('h2', { text: 'Todavía no hay cuentas de dominio cargadas' }),
         h('p', { text: 'Cargá las cuentas del dominio con su usuario, unidad organizativa y grupos. Las de servicio no llevan persona.' }),
-        ctx.modifica ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva cuenta', onclick: () => ir('#/cuenta/nueva') })]) : null]));
+        ctx.modifica ? h('div', { class: 'herr' }, [h('button', { type: 'button', class: 'primario', text: 'Nueva cuenta', onclick: () => nuevaCuenta() })]) : null]));
       return;
     }
     const filas = base.filter(c => !filtro.cuentasChip || regla[filtro.cuentasChip](c));
@@ -127,6 +130,6 @@ export async function renderVista(contenedor) {
     zonaHerr.appendChild(sel);
   }
   zonaHerr.appendChild(h('span', { style: 'flex:1' }));
-  if (ctx.modifica) zonaHerr.appendChild(h('button', { type: 'button', class: 'primario', text: tab === 'cuentas' ? 'Nueva cuenta' : 'Nueva persona', onclick: () => ir(tab === 'cuentas' ? '#/cuenta/nueva' : '#/persona/nueva') }));
+  if (ctx.modifica) zonaHerr.appendChild(h('button', { type: 'button', class: 'primario', text: tab === 'cuentas' ? 'Nueva cuenta' : 'Nueva persona', onclick: () => (tab === 'cuentas' ? nuevaCuenta() : nuevaPersona()) }));
   if (tab === 'cuentas') pintarCuentas(); else pintarPersonas();
 }

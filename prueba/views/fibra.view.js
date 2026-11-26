@@ -7,7 +7,8 @@
 
 import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
-import { ir } from '../assets/js/marco.js';
+import { ir, toast } from '../assets/js/marco.js';
+import { abrirAlta } from '../assets/js/altas.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_FIBRA_TIPO, ATENUACION_ALTA_DB } from '../assets/js/modelos.js';
 import { cargarContexto, encabezado, pestanas, chipsEstado, avisoVista } from '../assets/js/red.js';
@@ -62,10 +63,13 @@ export async function renderVista(contenedor) {
     repositorio.listar('tramos_fibra', { organizacion_id: ctx.org }, { ordenarPor: 'tramo_nombre' }),
     repositorio.listar('ubicaciones', { organizacion_id: ctx.org })]);
   const ub = new Map(ubicaciones.map(x => [x.id, x]));
-  const nom = (/** @type {string} */ id) => (ub.get(id) ? ub.get(id).ubicacion_nombre : '(ubicación dada de baja)');
+  const nom = (/** @type {string} */ id) => (ub.get(id) ? ub.get(id).ubicacion_nombre : '(sede o sala dada de baja)');
 
   const barra = h('div', { class: 'herr' }, [h('span', { style: 'flex:1' }),
-    ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo tramo', onclick: () => ir('#/tramo/nuevo') }) : null]);
+    ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo tramo', onclick: async () => {
+      const t = await abrirAlta('tramos_fibra', { organizacion_id: ctx.org, rotulo: null });
+      if (t) { toast('Tramo «' + t.tramo_nombre + '» creado.'); ir('#/tramo/' + t.id); }
+    } }) : null]);
   contenedor.appendChild(barra);
 
   if (!tramos.length) {
@@ -105,7 +109,7 @@ export async function renderVista(contenedor) {
     } else tb.appendChild(h('div', { class: 'aviso', text: 'Ningún tramo coincide con el filtro.' }));
     cuenta.textContent = f.length + ' de ' + tramos.length + ' tramos. Tocá uno para abrir su ficha.';
   };
-  const inp = /** @type {HTMLInputElement} */ (h('input', { placeholder: 'Filtrar por nombre o ubicación…', 'aria-label': 'Filtrar', value: filtroTexto, style: 'width:260px' }));
+  const inp = /** @type {HTMLInputElement} */ (h('input', { placeholder: 'Filtrar por nombre, sede o sala…', 'aria-label': 'Filtrar', value: filtroTexto, style: 'width:260px' }));
   inp.addEventListener('input', () => { filtroTexto = inp.value; pintar(); });
   const selT = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Tipo de fibra' }, [h('option', { value: '', text: 'Todos los tipos' })].concat(Object.keys(ROTULO_FIBRA_TIPO).map(k => h('option', { value: k, text: ROTULO_FIBRA_TIPO[k] })))));
   selT.value = filtroTipo;

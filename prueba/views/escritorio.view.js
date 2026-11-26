@@ -6,7 +6,8 @@
 
 import * as repositorio from '../assets/js/repositorio.js';
 import { puede } from '../assets/js/permisos.js';
-import { ir } from '../assets/js/marco.js';
+import { ir, toast } from '../assets/js/marco.js';
+import { abrirAlta } from '../assets/js/altas.js';
 import { h, tabla, indicadorVerificacion, normalizar } from '../assets/js/utiles.js';
 import { ROTULO_EQUIPO_TIPO } from '../assets/js/modelos.js';
 import { CATEGORIAS_PUESTO, cargarContexto, encabezado, estadoPill, chipsEstado, avisoVista, hashEquipo, enlaceFila, cargarPersonas, abrirMoverEquipo } from '../assets/js/red.js';
@@ -56,16 +57,19 @@ export async function renderVista(contenedor) {
           return fila;
         }), { tipo: 'equipo', onFila: (_, i) => ir(hashEquipo(f[i])) }));
       } else {
-        tb.appendChild(h('div', { class: 'aviso' }, [todos.length ? 'Ningún equipo coincide con el filtro.' : 'Todavía no hay PC de escritorio ni notebooks cargadas en esta organización. Se cargan desde «Nuevo equipo» en Red, con la categoría «PC de escritorio» o «Notebook».']));
+        tb.appendChild(h('div', { class: 'aviso' }, [todos.length ? 'Ningún equipo coincide con el filtro.' : 'Todavía no hay PC de escritorio ni notebooks cargadas en esta organización. Cargá la primera con «Nuevo equipo de escritorio» (arriba a la derecha): elegí PC o notebook y, si hace falta, el puesto.' + '']));
       }
       cuenta.textContent = f.length + ' de ' + todos.length + ' equipos de escritorio. Tocá uno para abrir su ficha.' + (pers.ver ? '' : ' Tu rol no ve las personas, por eso no se muestra a quién está asignado cada equipo.');
     };
     const inp = h('input', { placeholder: 'Filtrar por código, nombre, persona, puesto, IP…', 'aria-label': 'Filtrar equipos de escritorio', value: fTexto, style: 'width:320px' });
     inp.addEventListener('input', () => { fTexto = /** @type {HTMLInputElement} */ (inp).value; pintar(); });
-    const sel = h('select', { 'aria-label': 'Ubicación' }, [h('option', { value: '', text: 'Todas las ubicaciones' })].concat(ubicaciones.slice().sort((a, b) => a.ubicacion_nombre.localeCompare(b.ubicacion_nombre, 'es', { numeric: true })).map(u => h('option', { value: u.id, text: u.ubicacion_nombre }))));
+    const sel = h('select', { 'aria-label': 'Sede / sala' }, [h('option', { value: '', text: 'Todas las sedes y salas' })].concat(ubicaciones.slice().sort((a, b) => a.ubicacion_nombre.localeCompare(b.ubicacion_nombre, 'es', { numeric: true })).map(u => h('option', { value: u.id, text: u.ubicacion_nombre }))));
     /** @type {HTMLSelectElement} */ (sel).value = fUbic;
     sel.addEventListener('change', () => { fUbic = /** @type {HTMLSelectElement} */ (sel).value; pintar(); });
-    raiz.appendChild(h('div', { class: 'herr' }, [inp, sel]));
+    raiz.appendChild(h('div', { class: 'herr' }, [inp, sel, h('span', { style: 'flex:1' }), ctx.modifica ? h('button', { type: 'button', class: 'primario', text: 'Nuevo equipo de escritorio', onclick: async () => {
+      const e = await abrirAlta('equipos', { organizacion_id: ctx.org, valores: { equipo_tipo: 'otro', tipos: ['otro'], categorias: ['PC de escritorio', 'Notebook'], otro_categoria: 'PC de escritorio', titulo: 'Nuevo equipo de escritorio' }, rotulo: null });
+      if (e) { toast('«' + e.equipo_nombre + '» creado.'); ir(hashEquipo(e)); }
+    } }) : null]));
     raiz.appendChild(chipsCont); raiz.appendChild(tb); raiz.appendChild(cuenta);
     pintar();
   };
